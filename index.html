@@ -20,6 +20,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-s
 #status.err{display:block;background:#fee2e2;color:#b91c1c}
 #status.info{display:block;background:#dbeafe;color:#1d4ed8}
 #reader{width:100%;border-radius:10px;overflow:hidden;background:#000;min-height:260px}
+.scan-card{transition:background-color .15s ease,box-shadow .15s ease}
+.scan-card.flash-ok{background-color:#bbf7d0;box-shadow:0 0 0 4px #16a34a inset}
+.scan-card.flash-err{background-color:#fed7aa;box-shadow:0 0 0 4px #ea580c inset}
 .counters{margin-top:4px}
 .counter-row{display:flex;justify-content:space-between;align-items:center;padding:10px 4px;border-bottom:1px solid #f1f5f9;font-size:14px}
 .counter-row:last-child{border-bottom:none}
@@ -50,7 +53,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-s
   <div id="mainContent" style="display:none">
     <div id="completeBanner" class="complete-banner" style="display:none">✅ This box is already complete.</div>
 
-    <div class="card">
+    <div class="card scan-card" id="scanCard">
       <div id="status"></div>
       <div id="reader"></div>
     </div>
@@ -96,6 +99,45 @@ let html5QrInstance = null;
 let scanRequestInFlight = false;
 let lastScanAcceptedAt = 0;
 let currentBoxState = null; // { status, items: [{ sku, upc, expectedQty, scannedQty }] }
+let flashResetTimer = null;
+
+/** Plays a short beep via the Web Audio API — no external sound file
+ *  needed. freq/duration differ between the success tone (higher,
+ *  short) and the mismatch tone (lower, slightly longer), so the two
+ *  are also distinguishable by ear without looking at the screen. */
+let audioCtx = null;
+function beep(freq, durationMs) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = 0.25;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + durationMs / 1000);
+    osc.stop(audioCtx.currentTime + durationMs / 1000);
+  } catch (e) {
+    // Audio can fail silently in some browser states (e.g. before any
+    // user interaction) — never let a sound failure break scanning.
+  }
+}
+
+/** Flashes the camera card green (accepted scan) or orange (mismatch/
+ *  rejected scan) for a brief moment, then returns to normal. Each
+ *  call resets the timer so rapid scans don't cut a flash short and
+ *  leave the card stuck mid-color. */
+function flashScanCard(type) {
+  const card = document.getElementById('scanCard');
+  card.classList.remove('flash-ok', 'flash-err');
+  card.classList.add(type === 'ok' ? 'flash-ok' : 'flash-err');
+  clearTimeout(flashResetTimer);
+  flashResetTimer = setTimeout(() => {
+    card.classList.remove('flash-ok', 'flash-err');
+  }, 450);
+}
 
 function showStatus(msg, type) {
   const el = document.getElementById('status');
@@ -208,29 +250,68 @@ function handleScanResult(upc) {
   lastScanAcceptedAt = now;
   scanRequestInFlight = true;
 
+  // Pause scanning immediately — otherwise the SAME physical barcode,
+  // still sitting in frame, gets decoded and handled again on the very
+  // next camera frame (often within the same fraction of a second),
+  // which is what was causing the flash/beep feedback to look like a
+  // continuous flicker instead of one clean pulse per scan. Resumed
+  // automatically a moment after the result comes back, by which point
+  // the employee has typically already moved to the next item.
+  if (html5QrInstance) {
+    try { html5QrInstance.pause(true); } catch (e) {}
+  }
+
   callShipmentManager('scan', { upc, employee }).then(res => {
     scanRequestInFlight = false;
+    let stoppedForCompletion = false;
     if (res.success) {
+      flashScanCard('ok');
+      beep(880, 120); // short, high, pleasant — "accepted"
       showStatus('✅ Scanned: ' + res.sku + ' (' + res.scannedQty + '/' + res.expectedQty + ')', 'ok');
       const item = currentBoxState.items.find(it => it.sku === res.sku);
       if (item) item.scannedQty = res.scannedQty;
       renderCounters();
       if (res.readyToComplete) {
         stopCamera();
+        stoppedForCompletion = true;
         showStatus('All items scanned! Tap "Mark Box Complete" below.', 'ok');
       }
     } else if (res.duplicate) {
+      // Fires constantly while the camera lingers on an already-scanned
+      // item — no flash/beep here, or every normal scan would also
+      // trigger a flurry of these as the decoder re-reads the same code
+      // across consecutive frames before the cooldown window passes.
       showStatus('⚠️ ' + res.message, 'warn');
     } else if (res.mismatch) {
+      flashScanCard('err');
+      beep(220, 280); // lower, longer, buzzer-like — "rejected"
       showStatus('❌ ' + res.message, 'err');
     } else if (res.alreadyComplete) {
       showStatus('⚠️ ' + res.message, 'warn');
     } else {
       showStatus('❌ ' + (res.message || 'Could not record scan.'), 'err');
     }
+
+    // Resume scanning a moment later (long enough for the flash/beep to
+    // be clearly noticeable, short enough to not feel sluggish) — unless
+    // the camera was already stopped because the box just got finished.
+    if (!stoppedForCompletion && html5QrInstance) {
+      setTimeout(() => {
+        if (html5QrInstance) {
+          try { html5QrInstance.resume(); } catch (e) {}
+        }
+      }, 500);
+    }
   }).catch(err => {
     scanRequestInFlight = false;
     showStatus('❌ Network error: ' + err.message, 'err');
+    if (html5QrInstance) {
+      setTimeout(() => {
+        if (html5QrInstance) {
+          try { html5QrInstance.resume(); } catch (e) {}
+        }
+      }, 500);
+    }
   });
 }
 
