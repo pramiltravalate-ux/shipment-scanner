@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Box Scanner — Travalate Shipment Manager</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#0f1320;color:#1a1a2e;min-height:100vh}
+.topbar{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.topbar .title{font-weight:700;font-size:15px}
+.topbar .title span{color:#FFE600}
+.topbar .box-label{font-size:13px;opacity:.85}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+#status{min-height:20px;font-size:13.5px;font-weight:600;margin-bottom:10px;padding:8px 10px;border-radius:8px;display:none}
+#status.ok{display:block;background:#dcfce7;color:#15803d}
+#status.warn{display:block;background:#fef9c3;color:#854d0e}
+#status.err{display:block;background:#fee2e2;color:#b91c1c}
+#status.info{display:block;background:#dbeafe;color:#1d4ed8}
+#reader{width:100%;border-radius:10px;overflow:hidden;background:#000;min-height:260px}
+.counters{margin-top:4px}
+.counter-row{display:flex;justify-content:space-between;align-items:center;padding:10px 4px;border-bottom:1px solid #f1f5f9;font-size:14px}
+.counter-row:last-child{border-bottom:none}
+.counter-row .sku{font-weight:600}
+.counter-row.done .sku{color:#15803d}
+.counter-row .qty{font-weight:700;font-size:15px}
+.btn{display:block;width:100%;padding:13px;border:none;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;text-align:center}
+.btn-primary{background:#0f3460;color:#fff}
+.btn-success{background:#16a34a;color:#fff}
+.btn-success:disabled{background:#94a3b8;cursor:not-allowed}
+.btn-secondary{background:#f1f5f9;color:#1a1a2e}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.muted{color:#64748b;font-size:13px;text-align:center;padding:30px 10px}
+.complete-banner{background:#dcfce7;color:#15803d;border-radius:10px;padding:14px;text-align:center;font-weight:700;font-size:15px;margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="title">📷 Box <span id="boxNumLabel">—</span> Scanner</div>
+  <div class="box-label" id="shipmentLabel"></div>
+</div>
+
+<div class="wrap">
+  <div id="rootError" class="card muted" style="display:none"></div>
+
+  <div id="mainContent" style="display:none">
+    <div id="completeBanner" class="complete-banner" style="display:none">✅ This box is already complete.</div>
+
+    <div class="card">
+      <div id="status"></div>
+      <div id="reader"></div>
+    </div>
+
+    <div class="card">
+      <div class="counters" id="counters"></div>
+      <button class="btn btn-success" id="markCompleteBtn" style="display:none" disabled>✅ Mark Box Complete</button>
+    </div>
+
+    <button class="btn btn-secondary" onclick="window.close()">Close this tab when done</button>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   STANDALONE BOX SCANNER (hosted outside Apps Script)
+   ------------------------------------------------------------
+   Exists ONLY because Google currently has an unresolved bug
+   blocking camera access inside Apps Script's own sandboxed
+   iframe (see Google Issue Tracker #486623612 / #486922850).
+   This page is opened from Shipment Manager in a new tab with
+   ?shipmentId=...&boxNumber=...&employee=... in the URL, and talks
+   to the SAME Shipment Manager Apps Script project via its /exec
+   Web App URL using plain fetch() POST calls (since google.script.run
+   only works for pages actually served BY Apps Script).
+══════════════════════════════════════════════ */
+
+// ── CONFIGURE THESE TWO VALUES ──
+// Your Shipment Manager script's deployed /exec Web App URL.
+const SHIPMENT_MANAGER_WEBAPP_URL = "PASTE_YOUR_SHIPMENT_MANAGER_/exec_URL_HERE";
+// Must match SCANNER_SHARED_SECRET in ShipmentManager.gs EXACTLY.
+const SCANNER_SHARED_SECRET = "CHANGE_ME_SCANNER_SECRET";
+
+const DUPLICATE_SCAN_LOCAL_DEBOUNCE_MS = 150; // bare client-side debounce only — the
+                                               // real 0.5s duplicate cooldown is enforced server-side
+
+const params = new URLSearchParams(window.location.search);
+const shipmentId = params.get('shipmentId');
+const boxNumber  = params.get('boxNumber');
+const employee   = params.get('employee') || '';
+
+let html5QrInstance = null;
+let scanRequestInFlight = false;
+let lastScanAcceptedAt = 0;
+let currentBoxState = null; // { status, items: [{ sku, upc, expectedQty, scannedQty }] }
+
+function showStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.className = type;
+  el.textContent = msg;
+}
+
+function callShipmentManager(action, extra) {
+  const body = Object.assign({ secret: SCANNER_SHARED_SECRET, action, shipmentId, boxNumber }, extra || {});
+  return fetch(SHIPMENT_MANAGER_WEBAPP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight on Apps Script
+    body: JSON.stringify(body)
+  }).then(r => r.json());
+}
+
+function init() {
+  if (!shipmentId || !boxNumber) {
+    document.getElementById('rootError').style.display = 'block';
+    document.getElementById('rootError').textContent =
+      'Missing shipment or box information in the link. Please open this page from the Complete Shipment checklist in Shipment Manager.';
+    return;
+  }
+  if (SHIPMENT_MANAGER_WEBAPP_URL.indexOf('PASTE_YOUR') === 0) {
+    document.getElementById('rootError').style.display = 'block';
+    document.getElementById('rootError').textContent =
+      'This scanner page has not been configured yet — SHIPMENT_MANAGER_WEBAPP_URL needs to be set.';
+    return;
+  }
+
+  document.getElementById('boxNumLabel').textContent = boxNumber;
+  document.getElementById('shipmentLabel').textContent = 'PO lookup…';
+  document.getElementById('mainContent').style.display = 'block';
+
+  loadProgress();
+}
+
+function loadProgress() {
+  callShipmentManager('getProgress').then(res => {
+    if (!res || !res.success) {
+      showStatus((res && res.message) || 'Could not load this shipment.', 'err');
+      return;
+    }
+    document.getElementById('shipmentLabel').textContent = res.platform.toUpperCase();
+    const box = res.boxes.find(b => String(b.boxNumber) === String(boxNumber));
+    if (!box) {
+      showStatus('Box ' + boxNumber + ' not found on this shipment.', 'err');
+      return;
+    }
+    currentBoxState = box;
+    renderCounters();
+    if (box.status === 'complete') {
+      document.getElementById('completeBanner').style.display = 'block';
+      document.getElementById('markCompleteBtn').style.display = 'none';
+      showStatus('Viewing only — this box is already marked complete.', 'info');
+      // Don't start the camera for an already-complete box — nothing left to scan.
+    } else {
+      startCamera();
+    }
+  }).catch(err => {
+    showStatus('Network error: ' + err.message, 'err');
+  });
+}
+
+function renderCounters() {
+  const wrap = document.getElementById('counters');
+  if (!currentBoxState) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = currentBoxState.items.map(it => {
+    const done = it.scannedQty >= it.expectedQty;
+    return `
+    <div class="counter-row ${done ? 'done' : ''}">
+      <div class="sku">${it.sku} ${done ? '✅' : ''}</div>
+      <div class="qty">${Math.min(it.scannedQty, it.expectedQty)} / ${it.expectedQty}</div>
+    </div>`;
+  }).join('');
+
+  const allDone = currentBoxState.items.every(it => it.scannedQty >= it.expectedQty);
+  const btn = document.getElementById('markCompleteBtn');
+  btn.style.display = allDone ? 'block' : 'none';
+  btn.disabled = false;
+}
+
+function startCamera() {
+  if (typeof Html5Qrcode === 'undefined') {
+    showStatus('Camera scanning library failed to load. Check your internet connection and reload this page.', 'err');
+    return;
+  }
+  html5QrInstance = new Html5Qrcode('reader');
+  html5QrInstance.start(
+    { facingMode: 'environment' },
+    { fps: 12, qrbox: { width: 260, height: 160 } },
+    decodedText => handleScanResult(decodedText),
+    () => {} // per-frame "no code found" — intentionally silent, fires constantly
+  ).catch(err => {
+    showStatus('Could not access the camera: ' + (err.message || err) + '. Please allow camera access and reload this page.', 'err');
+  });
+}
+
+function stopCamera() {
+  if (html5QrInstance) {
+    try { html5QrInstance.stop().catch(() => {}); } catch (e) {}
+    html5QrInstance = null;
+  }
+}
+
+function handleScanResult(upc) {
+  if (scanRequestInFlight) return;
+  const now = Date.now();
+  if (now - lastScanAcceptedAt < DUPLICATE_SCAN_LOCAL_DEBOUNCE_MS) return;
+  lastScanAcceptedAt = now;
+  scanRequestInFlight = true;
+
+  callShipmentManager('scan', { upc, employee }).then(res => {
+    scanRequestInFlight = false;
+    if (res.success) {
+      showStatus('✅ Scanned: ' + res.sku + ' (' + res.scannedQty + '/' + res.expectedQty + ')', 'ok');
+      const item = currentBoxState.items.find(it => it.sku === res.sku);
+      if (item) item.scannedQty = res.scannedQty;
+      renderCounters();
+      if (res.readyToComplete) {
+        stopCamera();
+        showStatus('All items scanned! Tap "Mark Box Complete" below.', 'ok');
+      }
+    } else if (res.duplicate) {
+      showStatus('⚠️ ' + res.message, 'warn');
+    } else if (res.mismatch) {
+      showStatus('❌ ' + res.message, 'err');
+    } else if (res.alreadyComplete) {
+      showStatus('⚠️ ' + res.message, 'warn');
+    } else {
+      showStatus('❌ ' + (res.message || 'Could not record scan.'), 'err');
+    }
+  }).catch(err => {
+    scanRequestInFlight = false;
+    showStatus('❌ Network error: ' + err.message, 'err');
+  });
+}
+
+document.getElementById('markCompleteBtn').addEventListener('click', function() {
+  const btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Marking complete…';
+  callShipmentManager('complete').then(res => {
+    if (res.success) {
+      stopCamera();
+      document.getElementById('completeBanner').style.display = 'block';
+      btn.style.display = 'none';
+      showStatus('✅ Box marked complete!', 'ok');
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '✅ Mark Box Complete';
+      showStatus('❌ ' + res.message, 'err');
+    }
+  }).catch(err => {
+    btn.disabled = false;
+    btn.innerHTML = '✅ Mark Box Complete';
+    showStatus('❌ Network error: ' + err.message, 'err');
+  });
+});
+
+window.addEventListener('beforeunload', stopCamera);
+
+init();
+</script>
+</body>
+</html>
