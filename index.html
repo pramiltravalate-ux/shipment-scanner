@@ -88,7 +88,10 @@ const SHIPMENT_MANAGER_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyD
 const SCANNER_SHARED_SECRET = "Sacftn-204126-kPf9fxLam4q";
 
 const DUPLICATE_SCAN_LOCAL_DEBOUNCE_MS = 150; // bare client-side debounce only — the
-                                               // real 0.5s duplicate cooldown is enforced server-side
+                                               // real duplicate cooldown is enforced server-side
+const SCAN_PAUSE_AFTER_RESULT_MS = 1000; // how long the camera freezes after each scan
+                                          // result, so the flash/beep are clearly visible
+                                          // before scanning resumes
 
 const params = new URLSearchParams(window.location.search);
 const shipmentId = params.get('shipmentId');
@@ -300,7 +303,7 @@ function handleScanResult(upc) {
         if (html5QrInstance) {
           try { html5QrInstance.resume(); } catch (e) {}
         }
-      }, 500);
+      }, SCAN_PAUSE_AFTER_RESULT_MS);
     }
   }).catch(err => {
     scanRequestInFlight = false;
@@ -310,7 +313,7 @@ function handleScanResult(upc) {
         if (html5QrInstance) {
           try { html5QrInstance.resume(); } catch (e) {}
         }
-      }, 500);
+      }, SCAN_PAUSE_AFTER_RESULT_MS);
     }
   });
 }
