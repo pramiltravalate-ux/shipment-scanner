@@ -5677,6 +5677,23 @@ function median_(arr){
  *     contain together, with a typical (median) quantity per item in
  *     that pattern learned across every time it occurred historically.
  */
+// Warehouses whose past shipments must NOT be learned from — they pack
+// to their own different box setup, so mixing their history into the
+// pattern pool would teach the AI/statistical suggester box shapes that
+// don't apply anywhere else and drag down suggestion quality generally.
+// Matched case-insensitively, trimmed, against the shipment's CITY field
+// (which is auto-filled from the PO's warehouse name — see onPoSelected_
+// in ShipmentManagerIndex.html) — keep these strings in sync with
+// whatever the warehouse name actually looks like there if it ever
+// changes. Shipments TO these warehouses can still be created and can
+// still ask for a suggestion — they just won't have much (or any)
+// packing history to draw on, same as any other warehouse with no
+// history yet.
+const BOX_SUGGESTION_EXCLUDED_WAREHOUSES_ = ['faridabad', 'jaipur j3', 'noida n1'];
+function isExcludedWarehouseForBoxLearning_(cityValue) {
+  return BOX_SUGGESTION_EXCLUDED_WAREHOUSES_.indexOf((cityValue || '').toString().trim().toLowerCase()) !== -1;
+}
+
 function mineBoxPatterns_(poNumber, platform) {
   platform = (platform || 'blinkit').toString().trim().toLowerCase();
   if (!poPlatformConfig_(platform)) return {success:false,reason:"error",message:"Unknown platform: "+platform};
@@ -5722,6 +5739,7 @@ function mineBoxPatterns_(poNumber, platform) {
     const r=shData[i];
     if (r[SHIP_COLS.DELETED-1]===true||r[SHIP_COLS.DELETED-1]==="TRUE") continue;
     if ((r[SHIP_COLS.PLATFORM-1]||"").toString().trim().toLowerCase()!==platform) continue;
+    if (isExcludedWarehouseForBoxLearning_(r[SHIP_COLS.CITY-1])) continue; // different box setup — don't pollute the learned patterns
     let boxes;try{boxes=JSON.parse(r[SHIP_COLS.BOXES_JSON-1]||"[]");}catch(e){continue;}
     if (!boxes.length) continue;
     let touchedThisShipment=false;
