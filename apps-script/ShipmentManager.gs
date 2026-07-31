@@ -5950,15 +5950,27 @@ function callGeminiStructured_(systemPrompt, userPayload, schema) {
  *  an AI suggestion at all (BOX_SUGGESTION_PATCH_FALLBACK_RATIO_). */
 function reconcileAiBoxes_(aiBoxes, allowedItemCodes, itemCodeToSkuInfo, poItems) {
   const allowed = {}; allowedItemCodes.forEach(ic=>allowed[ic]=true);
-  let boxes = (aiBoxes||[]).map(b=>({
-    items: (b.items||[])
-      .filter(it => it && allowed[(it.itemCode||"").toString().trim()] && Number.isFinite(it.qty) && Math.floor(it.qty)>0)
-      .map(it => {
-        const ic=(it.itemCode||"").toString().trim();
+  // Gemini sometimes lists the same itemCode more than once within a
+  // SINGLE box's items array (e.g. mashing two patterns together) —
+  // merge those into one line by summing quantities BEFORE anything
+  // else runs, so a box never shows the same SKU twice with a split or
+  // duplicated quantity. Same itemCode appearing in DIFFERENT boxes is
+  // left alone — splitting a SKU across multiple boxes is normal.
+  let boxes = (aiBoxes||[]).map(b=>{
+    const qtyByItem = {};
+    (b.items||[]).forEach(it => {
+      if (!it) return;
+      const ic=(it.itemCode||"").toString().trim();
+      if (!allowed[ic] || !Number.isFinite(it.qty) || Math.floor(it.qty)<=0) return;
+      qtyByItem[ic]=(qtyByItem[ic]||0)+Math.floor(it.qty);
+    });
+    return {
+      items: Object.keys(qtyByItem).map(ic => {
         const info=itemCodeToSkuInfo[ic]||{sku:ic,upc:'',weight:0};
-        return { sku:info.sku, upc:info.upc, qty:Math.floor(it.qty), weightPerUnit:info.weight, inPo:true, _ic:ic };
+        return { sku:info.sku, upc:info.upc, qty:qtyByItem[ic], weightPerUnit:info.weight, inPo:true, _ic:ic };
       })
-  })).filter(b=>b.items.length);
+    };
+  }).filter(b=>b.items.length);
 
   const assigned={};
   boxes.forEach(b=>b.items.forEach(it=>{ assigned[it._ic]=(assigned[it._ic]||0)+it.qty; }));
@@ -6046,7 +6058,7 @@ function getAiSuggestedBoxLayout(poNumber, platform) {
       if (sizes && sizes.length) soloQtyHint[ic] = median_(sizes);
     });
 
-    const systemPrompt = "You are a warehouse packing assistant for Travalate's Shipment Manager. You are given itemsToAllocate (SKUs that must be packed for a purchase order, each with an exact quantity to pack) and historicalPatterns mined from this warehouse's own past shipments on the same platform — which SKUs were typically boxed together, how often (seenNTimes), and the typical quantity of each (typicalQtyPerItem) when that combination was used, plus soloQtyHint as a sensible box size when packing an item alone. Propose a box layout: decide which historical patterns to reuse (favor more frequently-seen patterns and combinations that use up quantities cleanly), and how to size leftovers no pattern fully covers. Every itemCode you use MUST come from itemsToAllocate — never invent one. You do not need to hit qtyToAllocate exactly; quantities are reconciled against the real remaining balance afterward — but get as close as you reasonably can using the given patterns. Avoid many boxes with just 1-2 units each unless the historical pattern genuinely only ever used small quantities. Keep note to one short plain sentence, no markdown.";
+    const systemPrompt = "You are a warehouse packing assistant for Travalate's Shipment Manager. You are given itemsToAllocate (SKUs that must be packed for a purchase order, each with an exact quantity to pack) and historicalPatterns mined from this warehouse's own past shipments on the same platform — which SKUs were typically boxed together, how often (seenNTimes), and the typical quantity of each (typicalQtyPerItem) when that combination was used, plus soloQtyHint as a sensible box size when packing an item alone. Propose a box layout: decide which historical patterns to reuse (favor more frequently-seen patterns and combinations that use up quantities cleanly), and how to size leftovers no pattern fully covers. Every itemCode you use MUST come from itemsToAllocate — never invent one. Within a single box's items array, each itemCode must appear AT MOST ONCE — if an item needs more quantity than fits one line, put the rest in a separate box, never a second line for the same itemCode in the same box. You do not need to hit qtyToAllocate exactly; quantities are reconciled against the real remaining balance afterward — but get as close as you reasonably can using the given patterns. Avoid many boxes with just 1-2 units each unless the historical pattern genuinely only ever used small quantities. Keep note to one short plain sentence, no markdown.";
 
     const aiResp = callGeminiStructured_(systemPrompt, { itemsToAllocate, historicalPatterns: topPatterns, soloQtyHint }, boxSuggestionSchema_());
     if (!aiResp.ok) return fallbackResult;
