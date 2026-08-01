@@ -1397,6 +1397,12 @@ input.input-error,select.input-error,.platform-card.input-error,#invoiceModalWra
           <label>Link to Warehouse *</label>
           <select id="poWarehouseSelect" style="width:100%" onchange="onPoWarehouseSelectChange_()"><option value=""> -  select warehouse  - </option></select>
         </div>
+        <div class="form-group" id="poDummyOrderWrap" style="display:none">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="poDummyOrderCheckbox" style="width:auto;margin:3px 0 0 0">
+            <span>🧪 Dummy Order <span style="font-weight:400;color:#64748b;font-size:11.5px">— only to get an RO Invoice, not a real fulfillment. Any shipment built against this PO won't touch Inventory and won't be saved anywhere; it only exists for this browser tab's current session.</span></span>
+          </label>
+        </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
           <button class="btn btn-secondary" onclick="closePoUploadModal()">Cancel</button>
           <button class="btn btn-primary" id="poParseBtn" onclick="parsePoPdf_()">Parse PDF →</button>
@@ -1812,6 +1818,11 @@ let currentUser = null;
 // even on a shared packing-station PC.
 const SESSION_STORAGE_KEY_ = 'tsm_session_v1';
 let skuData = [];
+// Dummy Order (Blinkit-only): true whenever the currently-selected PO in
+// the New Shipment form was flagged "Dummy Order" at upload time — see
+// onPoSelected_/submitForm. Reset to false whenever no PO (or a non-
+// dummy one) is selected.
+let currentPoIsDummy_ = false;
 let boxCount = 0;
 // Monotonic counter for item row IDs  -  NOT Date.now(), which can collide
 // when many rows are created synchronously in a tight loop (e.g. applying
@@ -2360,6 +2371,7 @@ function resetEntryForm() {
   });
   document.getElementById('poNumber').value = '';
   document.getElementById('city').value = '';
+  currentPoIsDummy_ = false;
   // Reset both header layouts
   const blRow = document.getElementById('blinkitHeaderFields');
   const nbRow = document.getElementById('nonBlinkitHeaderFields');
@@ -6734,6 +6746,30 @@ function submitForm() {
   }
   const payload = { employee: currentUser.name, role: currentUser.role, platform, poNumber, invoiceNumber: '', date, city, boxes };
   const btn = document.getElementById('submitBtn');
+
+  // Dummy Order (Blinkit-only): built entirely client-side, no
+  // submitShipment call at all — nothing is written to the Shipments
+  // sheet, Inventory is never touched, and this "shipment" only exists
+  // in this tab's memory for as long as the session lasts (see
+  // loadShipments, which keeps it alive across a Shipments-list
+  // refresh but never fetches it from anywhere). See onPoSelected_ for
+  // where currentPoIsDummy_ gets set from the PO's own IS_DUMMY flag.
+  if (currentPoIsDummy_) {
+    const entry = {
+      id: 'DUMMY-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      ts: new Date().toISOString(),
+      platform, poNumber, invoiceNumber: '', date, city,
+      employee: currentUser.name, boxes, boxHtml: null, labelHtml: null,
+      isDummy: true, hasRoInvoice: false
+    };
+    savedShipments.unshift(entry);
+    showSuccessToast_('Dummy Order Created');
+    showEntryAlert('🧪 Dummy shipment created for this session only  -  nothing was saved or touched in Inventory. Find the RO Invoice option for it in the Shipments tab.', 'success');
+    resetEntryForm();
+    renderShipmentsList();
+    return;
+  }
+
   btn.innerHTML = '<span class="spinner"></span> Generating…'; btn.disabled = true;
   showLoadingOverlay_('Generating Output');
   google.script.run
@@ -6956,12 +6992,40 @@ function openRoInvoiceFlow(i, editMode) {
   const s = savedShipments[i];
   if (!s) return;
   roInvoiceShipmentIdx = i;
-  roInvoiceEditMode = !!editMode;
+  // Dummy shipments never support Edit RO — they're never saved, so
+  // there's nothing an "edit" could pull from; only Create is offered
+  // (see renderShipmentsList's dummy branch, which never renders an
+  // Edit RO button in the first place).
+  roInvoiceEditMode = !!editMode && !s.isDummy;
   const titleEl = document.getElementById('roInvoiceModalTitle');
   if (titleEl) titleEl.textContent = roInvoiceEditMode ? '✏️ Edit RO Invoice' : '🧾 Create RO Invoice';
   document.getElementById('roInvoiceModalBody').innerHTML =
     '<div class="spinner"></div> ' + (roInvoiceEditMode ? 'Loading RO Invoice…' : 'Checking shipment…');
   document.getElementById('roInvoiceModal').style.display = 'flex';
+
+  if (s.isDummy) {
+    // Dummy Order: eligibility is checked straight off this shipment's
+    // own in-memory boxes — no shipmentId to look up, since nothing
+    // was ever saved.
+    google.script.run
+      .withSuccessHandler(res => {
+        if (res && res.success) {
+          renderRoInvoiceForm_(null);
+        } else if (res && res.unmapped) {
+          renderRoUnmappedError_(res.unmappedSkus);
+        } else {
+          document.getElementById('roInvoiceModalBody').innerHTML =
+            '<div style="color:#dc2626;font-size:13.5px">' + ((res && res.message) || 'Could not check eligibility.') + '</div>'
+            + '<button class="btn btn-secondary" style="margin-top:14px" onclick="closeRoInvoiceModal()">Close</button>';
+        }
+      })
+      .withFailureHandler(err => {
+        document.getElementById('roInvoiceModalBody').innerHTML =
+          '<div style="color:#dc2626;font-size:13.5px">Server error: ' + err.message + '</div>';
+      })
+      .getDummyRoEligibility(s.boxes, s.platform);
+    return;
+  }
 
   if (roInvoiceEditMode) {
     // EDIT: pull the existing RO Invoice's values to pre-fill the form.
@@ -7034,6 +7098,16 @@ function parseRoResponse_(raw) {
 function downloadExistingRoInvoice(i, btnEl) {
   const s = savedShipments[i];
   if (!s) return;
+  if (s.isDummy) {
+    // Nothing is stored server-side for a Dummy Order — re-download just
+    // re-renders the invoice data cached at creation time, no round-trip.
+    try {
+      downloadRoInvoicePdf_(s._dummyInvoice, s);
+    } catch (e) {
+      alert('Could not generate the RO Invoice PDF: ' + e.message + '\n\n' + (e.stack || ''));
+    }
+    return;
+  }
   const origLabel = btnEl ? btnEl.innerHTML : '';
   if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<span class="spinner"></span> Preparing…'; }
 
@@ -7503,6 +7577,9 @@ function submitRoInvoice() {
     deliveryPartner: document.getElementById('roFDeliveryPartner').value.trim(),
     employee: currentUser.name
   };
+  // Dummy Order: no shipmentId exists server-side to look boxes up by —
+  // hand them over directly (see createDummyRoInvoice_impl_).
+  if (s.isDummy) { params.boxes = s.boxes; params.platform = s.platform; params.city = s.city; }
   const errEl = document.getElementById('roFormError');
   const missing = ['roInvoiceNumber','invoiceDate','deliveryDate'].filter(k => !params[k]);
   if (missing.length) {
@@ -7530,7 +7607,16 @@ function submitRoInvoice() {
         // (so Box Labels are "completed" with the same number) and mark
         // the RO as existing.
         s.hasRoInvoice = true;
-        applyInvoiceNumberLocally_(s, params.roInvoiceNumber);
+        if (s.isDummy) {
+          // No Box Labels for Dummy Orders (see renderShipmentsList), so
+          // no need to regenerate labelHtml — just cache the invoice
+          // itself so a later "RO Invoice (PDF)" click can re-download
+          // without hitting the server again (nothing is stored there).
+          s.invoiceNumber = params.roInvoiceNumber;
+          s._dummyInvoice = res.invoice;
+        } else {
+          applyInvoiceNumberLocally_(s, params.roInvoiceNumber);
+        }
         btn.disabled = false; btn.innerHTML = defaultLabel;
         closeRoInvoiceModal();
         renderShipmentsList();
@@ -7550,6 +7636,7 @@ function submitRoInvoice() {
     });
 
   if (isEdit) runner.updateRoInvoice(params);
+  else if (s.isDummy) runner.createDummyRoInvoice(params);
   else runner.createRoInvoice(params);
 }
 
@@ -8186,10 +8273,16 @@ function loadShipments(dateFilter, dateFilterEnd) {
       .withFailureHandler(() => {})
       .getPodStatusMap(platform);
   });
+  // Dummy Order shipments (Blinkit-only) are never saved server-side —
+  // getShipments() below has no idea they exist. Carry any currently
+  // in-memory ones across this refresh so switching tabs/dates doesn't
+  // wipe them mid-session; they only ever disappear when the tab itself
+  // is closed/reloaded (savedShipments is plain JS memory).
+  const dummyEntries_ = savedShipments.filter(s => s.isDummy);
   google.script.run
     .withSuccessHandler(list => {
       try {
-        savedShipments = (list || []).map(s => {
+        savedShipments = dummyEntries_.concat((list || []).map(s => {
           // Defensive: ensure boxes is always an array, even if the server
           // returned null/undefined for an old or malformed shipment row.
           if (!Array.isArray(s.boxes)) s.boxes = [];
@@ -8197,7 +8290,7 @@ function loadShipments(dateFilter, dateFilterEnd) {
           try { boxHtml = generateBoxDetailsHtml(s); } catch(e) { boxHtml = '<div style="color:red">Box details unavailable</div>'; }
           try { labelHtml = s.invoiceNumber ? generateLabelHtml(s) : null; } catch(e) { labelHtml = null; }
           return { ...s, boxHtml, labelHtml };
-        });
+        }));
         lastShipmentsFetchAt = Date.now();
         if (hint) hint.textContent = '';
         renderShipmentsList();
@@ -8349,20 +8442,20 @@ function renderShipmentsList() {
       return `
       <div class="shipment-item">
         <div class="shipment-meta">
-          <div class="s-title">${platform} - ${city} &nbsp;|&nbsp; PO: ${s.poNumber || ''}${s.invoiceNumber ? ' &nbsp;|&nbsp; INV: '+s.invoiceNumber : ''}</div>
+          <div class="s-title">${s.isDummy ? '🧪 <span style="color:#7c3aed">DUMMY</span> &nbsp;|&nbsp; ' : ''}${platform} - ${city} &nbsp;|&nbsp; PO: ${s.poNumber || ''}${s.invoiceNumber ? ' &nbsp;|&nbsp; INV: '+s.invoiceNumber : ''}</div>
           <div class="s-sub">📅 ${formatDDMMYYYY_(s.date) || ''} &nbsp;·&nbsp; 📦 ${boxes.length} box(es) &nbsp;·&nbsp; 👤 ${s.employee || ''} &nbsp;·&nbsp; 🕐 ${formatTimestamp(s.ts)}</div>
         </div>
         <div class="shipment-actions">
-          ${hasModule_('SHIPMENT_BOX_DETAILS') ? `<div class="action-group ag-box">
+          ${hasModule_('SHIPMENT_BOX_DETAILS') && !s.isDummy ? `<div class="action-group ag-box">
             <button class="btn btn-secondary btn-sm" onclick="downloadShipment(${i},'boxDetails')">📊 Box Details</button>
             <button class="btn btn-secondary btn-sm" onclick="downloadJpg(${i})" title="Download Box Details as JPG">📥 JPG</button>
           </div>` : ''}
-          ${hasModule_('SHIPMENT_LABELS') ? `<div class="action-group ag-labels">
+          ${hasModule_('SHIPMENT_LABELS') && !s.isDummy ? `<div class="action-group ag-labels">
             <button class="btn btn-secondary btn-sm" onclick="downloadShipment(${i},'labels')">🏷️ Labels${s.invoiceNumber ? '' : ' <span style="opacity:.7;font-weight:400">(needs inv #)</span>'}</button>
             <button class="btn btn-secondary btn-sm" onclick="downloadLabelsPdf(${i})" title="Download Box Labels as PDF">📥 PDF</button>
           </div>` : ''}
-          ${hasModule_('SHIPMENT_EDIT') ? `<div class="action-group ag-edit"><button class="btn btn-warning btn-sm" onclick="editShipment(${i})">✏️ Edit</button></div>` : ''}
-          ${isPoDrivenPlatform_(s.platform) && s.poNumber
+          ${hasModule_('SHIPMENT_EDIT') && !s.isDummy ? `<div class="action-group ag-edit"><button class="btn btn-warning btn-sm" onclick="editShipment(${i})">✏️ Edit</button></div>` : ''}
+          ${isPoDrivenPlatform_(s.platform) && s.poNumber && !s.isDummy
             ? (() => {
                 const fulfillment = poFulfillmentMap_[poCacheKey_(s.platform, s.poNumber.toString().trim())];
                 // Not yet touched by anything (shouldn't normally happen for
@@ -8392,10 +8485,20 @@ function renderShipmentsList() {
                 return `${balanceBtn}${podBtn ? `<div class="action-group ag-pod">${podBtn}</div>` : ''}`;
               })()
             : ''}
-          ${(s.platform || '').toLowerCase() === 'blinkit' && hasModule_('SHIPMENT_ADJUST')
+          ${(s.platform || '').toLowerCase() === 'blinkit' && hasModule_('SHIPMENT_ADJUST') && !s.isDummy
             ? `<div class="action-group ag-adjust"><button class="btn btn-sm" style="background:#fde047;border-color:#facc15;color:#713f12" onclick="openAdjustmentModal_(${i})">🔧 Adjustment${(s.adjustments && s.adjustments.length) ? ' <span style="opacity:.75;font-weight:400">(' + s.adjustments.length + ')</span>' : ''}</button></div>`
             : ''}
-          ${(s.platform || '').toLowerCase() === 'blinkit'
+          ${s.isDummy
+            // Dummy Order: RO Invoice is the ONLY output — no Box Details,
+            // Labels, Tally Excel, Balance/POD, Adjustment, or Edit RO.
+            // See createDummyRoInvoice/getDummyRoEligibility in
+            // ShipmentManager.gs and openRoInvoiceFlow's dummy branch.
+            ? (hasModule_('RO_INVOICE')
+                ? (s.hasRoInvoice
+                    ? `<div class="action-group ag-ro"><button class="btn btn-secondary btn-sm" onclick="downloadExistingRoInvoice(${i}, this)">📥 RO Invoice (PDF)</button></div>`
+                    : `<div class="action-group ag-ro"><button class="btn btn-primary btn-sm" onclick="openRoInvoiceFlow(${i})">🧾 Create RO Invoice</button></div>`)
+                : '')
+            : (s.platform || '').toLowerCase() === 'blinkit'
             ? (s.hasRoInvoice
                 ? `<div class="action-group ag-ro">
                      ${hasModule_('RO_INVOICE') ? `<button class="btn btn-secondary btn-sm" onclick="downloadExistingRoInvoice(${i}, this)">📥 RO Invoice (PDF)</button>` : ''}
@@ -8577,6 +8680,17 @@ function deleteShipment(i) {
   }
   const s = savedShipments[i];
   if (!s) return;
+  if (s.isDummy) {
+    // Never saved anywhere, so there's nothing to delete server-side and
+    // nothing for Inventory to add back — just drop it from this tab's
+    // memory. Confirm dialog kept for consistency (still a real click).
+    showConfirmModal_('Delete this dummy shipment? Nothing was ever saved for it, so this just removes it from view.', 'Delete', () => {
+      savedShipments.splice(i, 1);
+      renderShipmentsList();
+      showSuccessToast_('Deleted Successfully');
+    });
+    return;
+  }
   showConfirmModal_('Delete this shipment record? This will remove it for everyone.', 'Delete', () => {
     showLoadingOverlay_('Deleting');
     google.script.run
@@ -9637,6 +9751,13 @@ function openPoUploadModal() {
   document.getElementById('poFileInput').value = '';
   document.getElementById('poParseBtn').disabled = false;
   document.getElementById('poParseBtn').textContent = 'Parse PDF →';
+  // Dummy Order is Blinkit-only — hidden and reset to unchecked for
+  // every other platform, so a stale checked state from a previous
+  // Blinkit upload can never leak into a Zepto/Swiggy one.
+  const dummyWrap = document.getElementById('poDummyOrderWrap');
+  const dummyCheckbox = document.getElementById('poDummyOrderCheckbox');
+  if (dummyCheckbox) dummyCheckbox.checked = false;
+  if (dummyWrap) dummyWrap.style.display = (poUploadPlatform_ === 'blinkit') ? '' : 'none';
   const sel = document.getElementById('poWarehouseSelect');
   sel.innerHTML = '<option value=""> -  select warehouse  - </option>';
   google.script.run
@@ -9956,7 +10077,12 @@ function confirmPoUpload_() {
       } else { errEl.textContent=res.message||'Could not save the PO.'; errEl.style.display='block'; }
     })
     .withFailureHandler(err => { btn.disabled=false; btn.textContent='✅ Confirm & Save PO'; errEl.textContent='Server error: '+err.message; errEl.style.display='block'; })
-    [rpc.upload]({rawText:parsedPoData_._rawText||'',warehouseName:parsedPoData_.warehouseName,uploadedBy:currentUser?currentUser.name:''});
+    [rpc.upload]({
+      rawText:parsedPoData_._rawText||'',
+      warehouseName:parsedPoData_.warehouseName,
+      uploadedBy:currentUser?currentUser.name:'',
+      isDummy: poUploadPlatform_==='blinkit' && !!document.getElementById('poDummyOrderCheckbox')?.checked
+    });
 }
 
 let poDropdownReqSeq_ = 0; // see loadPoDropdown_'s race-guard comment
@@ -9994,7 +10120,7 @@ function populatePoSelect_(list) {
   // Output done, just waiting on a POD upload) shown in amber so the
   // two states are visually distinguishable at a glance in the list.
   const statusColor = s => (s==='OPEN'||s==='PARTIAL') ? '#15803d' : (s==='PACKED' ? '#b45309' : '#1e293b');
-  sel.innerHTML='<option value=""> -  select a PO  - </option>'+list.map(po=>`<option value="${po.poNumber}" style="color:${statusColor(po.status)}">${po.poNumber} · ${po.warehouseName} · ${po.status} · ${po.remainingQty} left</option>`).join('');
+  sel.innerHTML='<option value=""> -  select a PO  - </option>'+list.map(po=>`<option value="${po.poNumber}" style="color:${po.isDummy?'#7c3aed':statusColor(po.status)}">${po.isDummy?'🧪 DUMMY · ':''}${po.poNumber} · ${po.warehouseName} · ${po.status} · ${po.remainingQty} left</option>`).join('');
   if (prev&&list.some(p=>p.poNumber===prev)) sel.value=prev;
 }
 
@@ -10014,6 +10140,7 @@ function onPoSelected_() {
     if (pill) pill.style.display = 'none';
     closePoBalancePopup_();
     document.getElementById('city').value = '';
+    currentPoIsDummy_ = false;
     return;
   }
 
@@ -10022,12 +10149,20 @@ function onPoSelected_() {
   const warehouseName = (poEntry && poEntry.warehouseName) ? poEntry.warehouseName : '';
   if (warehouseName) document.getElementById('city').value = warehouseName;
 
+  // Dummy Order (Blinkit-only) — flagged at PO-upload time. Drives
+  // submitForm's client-only save path below: no server round-trip, no
+  // Inventory sync, nothing written anywhere.
+  currentPoIsDummy_ = platform === 'blinkit' && !!(poEntry && poEntry.isDummy);
+
   // Show info pill: PO Number + Warehouse (kept large/bold  -  this is the
   // single most-referenced piece of info while packing a shipment).
   if (pill && pillText) {
-    pillText.innerHTML = '📋 PO: ' + poNum +
+    pillText.innerHTML = (currentPoIsDummy_ ? '🧪 <strong>DUMMY ORDER</strong> &nbsp;&nbsp;·&nbsp;&nbsp;' : '') + '📋 PO: ' + poNum +
       (warehouseName ? '&nbsp;&nbsp;·&nbsp;&nbsp;🏭 ' + warehouseName : '');
     pill.style.display = 'block';
+    pill.style.background = currentPoIsDummy_ ? '#f5f3ff' : '#f0fdf4';
+    pill.style.borderColor = currentPoIsDummy_ ? '#c4b5fd' : '#86efac';
+    pill.style.color = currentPoIsDummy_ ? '#5b21b6' : '#166534';
   }
 
   if (sw) sw.style.display = isPoDrivenPlatform_(platform) ? 'block' : 'none';

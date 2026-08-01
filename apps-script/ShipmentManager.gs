@@ -3537,6 +3537,133 @@ function createRoInvoice(params) {
   return JSON.stringify(createRoInvoice_impl_(params));
 }
 
+// ════════════════════════════════════════════════════════════════
+//  DUMMY ORDER RO INVOICE — Blinkit only. A "Dummy Order" is a PO
+//  uploaded purely to get an RO Invoice out of the system (no real
+//  fulfillment behind it) — flagged at upload time via the "Dummy
+//  Order" checkbox in the Upload PO popup (see uploadBlinkitPo's
+//  IS_DUMMY column). A shipment built against a dummy PO is never
+//  saved anywhere: submitShipment/syncShipmentInventory_ are never
+//  called for it (see submitForm's currentPoIsDummy_ branch in
+//  ShipmentManagerIndex.html) — the whole thing lives in the browser
+//  tab's memory only, for exactly as long as that tab stays open, and
+//  touches Inventory, the Shipments sheet, and the RO_INVOICES sheet
+//  nowhere at all. The functions below are the ONLY server-side
+//  involvement a dummy shipment ever has: computing an RO Invoice's
+//  numbers from boxes handed to it directly (never a stored shipment
+//  ID, since none exists), same tax math as a real one, but nothing
+//  written down — not even an invoice-number-uniqueness check against
+//  real invoices on file, since nothing here is meant to be traceable
+//  or reusable afterward.
+// ════════════════════════════════════════════════════════════════
+
+/** Same aggregation + unmapped-SKU-mapping check as checkRoEligibility_
+ *  above, but operating directly on a raw boxes array instead of
+ *  looking up a shipment by ID. Deliberately NOT shared with
+ *  checkRoEligibility_ itself (a little duplication here is a much
+ *  smaller risk than the real RO Invoice flow ever being affected by a
+ *  change made for the dummy path). */
+function checkDummyRoEligibility_(boxes, platform) {
+  platform = (platform || 'blinkit').toString().trim().toLowerCase();
+  if (platform !== 'blinkit') return { success:false, message:"Dummy Order RO Invoice is only available for Blinkit." };
+  if (!boxes || !boxes.length) return { success:false, message:"No boxes to invoice." };
+
+  const roFields = roFieldsForPlatform_(platform);
+  const skuRows = getSkuData();
+  const skuByCode = {};
+  skuRows.forEach(r => {
+    if (r.sku) skuByCode[r.sku.toUpperCase()] = r;
+    if (r.amazonSku) skuByCode[r.amazonSku.toUpperCase()] = r;
+  });
+
+  const agg = {};
+  boxes.forEach(box => {
+    (box.items || []).forEach(item => {
+      const key = String(item.sku).trim().toUpperCase();
+      if (!agg[key]) agg[key] = { sku: item.sku, upc: item.upc, boxNumbers: new Set(), totalQty: 0, perBoxQty: [] };
+      agg[key].boxNumbers.add(box.boxNumber);
+      agg[key].totalQty += (parseInt(item.qty, 10) || 0);
+      agg[key].perBoxQty.push(parseInt(item.qty, 10) || 0);
+    });
+  });
+
+  const unmapped = [];
+  Object.values(agg).forEach(a => {
+    const master = skuByCode[String(a.sku).trim().toUpperCase()];
+    if (!master || !master[roFields.itemIdField] || !master.mrp || !master.hsn || !master.tax || !master[roFields.landingPriceField]) {
+      unmapped.push(a.sku);
+    }
+  });
+  if (unmapped.length) {
+    return { success:false, unmapped:true, unmappedSkus:unmapped,
+      message: "The following SKU(s) are not fully mapped for RO Invoice (Item ID / MRP / HSN / Tax / Landing Price): " + unmapped.join(", ") };
+  }
+
+  return { success:true, agg, skuByCode, itemIdField: roFields.itemIdField, landingPriceField: roFields.landingPriceField, upcField: roFields.upcField };
+}
+
+/** Lightweight pre-check for the Dummy Order RO Invoice form — mirrors
+ *  getRoEligibility() but takes the boxes straight from the client's
+ *  in-memory dummy shipment instead of looking one up by ID. */
+function getDummyRoEligibility(boxes, platform) {
+  const result = checkDummyRoEligibility_(boxes, platform);
+  if (!result.success) return result;
+  return { success:true };
+}
+
+/** Dummy-Order counterpart to createRoInvoice_impl_ above — computes and
+ *  returns the exact same `invoice` shape (so the client's existing PDF
+ *  renderer, buildRoInvoiceHtml_, works completely unchanged) but
+ *  deliberately skips everything that writes anywhere: no RO_INVOICES
+ *  row, no invoice-number lock/uniqueness check, no updateShipment call
+ *  (there's no saved shipment to update). Nothing here touches
+ *  Inventory, the Shipments sheet, or the RO_INVOICES sheet. */
+function createDummyRoInvoice_impl_(params) {
+  try {
+    const platform = (params.platform || 'blinkit').toString().trim().toLowerCase();
+    const check = checkDummyRoEligibility_(params.boxes, platform);
+    if (!check.success) return check;
+    const { agg, skuByCode, itemIdField, landingPriceField, upcField } = check;
+
+    const required = ["roInvoiceNumber", "roNumber", "invoiceDate", "deliveryDate"];
+    for (const f of required) {
+      if (!params[f] || !String(params[f]).trim()) {
+        return { success: false, message: "Missing required field: " + f };
+      }
+    }
+
+    const built = buildRoInvoiceRows_(agg, skuByCode, itemIdField, landingPriceField, upcField);
+    const settings = buildRoInvoiceSettings_(params.city);
+    return {
+      success: true,
+      invoice: {
+        roInvoiceNumber: params.roInvoiceNumber,
+        roNumber: params.roNumber,
+        invoiceDate: params.invoiceDate,
+        deliveryDate: params.deliveryDate,
+        ewayBillNumber: params.ewayBillNumber,
+        deliveryPartner: params.deliveryPartner,
+        totalQuantity: built.totalQuantity,
+        itemCount: built.itemCount,
+        platform: platform,
+        city: params.city,
+        poNumber: params.poNumber,
+        rows: built.rows,
+        totals: built.totals,
+        settings: settings,
+        taxType: roTaxTypeForState_(settings.state),
+        isDummy: true
+      }
+    };
+  } catch (err) { return { success: false, message: err.message }; }
+}
+
+/** Public wrapper — JSON.stringify'd for the same reason as
+ *  createRoInvoice's wrapper (see redownloadRoInvoice's comment). */
+function createDummyRoInvoice(params) {
+  return JSON.stringify(createDummyRoInvoice_impl_(params));
+}
+
 /** Lightweight fetch of just the E-way Bill Number and Delivery
  *  Partner for an already-created RO Invoice — used to pre-fill the
  *  "Edit E-way Bill / Delivery Partner" modal from the shipments list,
@@ -4295,7 +4422,8 @@ const PO_COLS = {
   PO_NUMBER:1, WAREHOUSE:2, UPLOAD_DATE:3, EXPIRY_DATE:4,
   UPLOADED_BY:5, ITEM_CODE:6, UPC:7, DESCRIPTION:8,
   MRP:9, LANDING_RATE:10, GST_PCT:11, PO_QTY:12,
-  SHIPPED_QTY:13, STATUS:14
+  SHIPPED_QTY:13, STATUS:14,
+  IS_DUMMY:15 // Blinkit-only "Dummy Order" flag set at PO upload time — see uploadBlinkitPo. Always blank/false for Zepto/Swiggy.
 };
 
 /** Every "PO-driven" platform (one where a PO is uploaded first, and
@@ -4326,8 +4454,13 @@ function ensurePoSheet_(platform) {
     sheet.appendRow([
       "PO_NUMBER","WAREHOUSE","UPLOAD_DATE","EXPIRY_DATE","UPLOADED_BY",
       "ITEM_CODE","UPC","DESCRIPTION","MRP","LANDING_RATE","GST_PCT",
-      "PO_QTY","SHIPPED_QTY","STATUS"
+      "PO_QTY","SHIPPED_QTY","STATUS","IS_DUMMY"
     ]);
+  } else if (sheet.getLastColumn() < PO_COLS.IS_DUMMY) {
+    // Self-heal: PO sheets created before the Dummy Order feature existed
+    // are missing this column — add the header so new uploads have
+    // somewhere to write it. Existing rows are simply blank (falsy) there.
+    sheet.getRange(1, PO_COLS.IS_DUMMY).setValue("IS_DUMMY");
   }
   return sheet;
 }
@@ -4616,7 +4749,12 @@ function uploadBlinkitPo(params) {
     // BLINKIT column actually stores, so it's the value everything
     // downstream (checkSkuInPo_, checkPoQtyAcrossBoxes_, shipped-qty
     // deduction) matches shipment items against.
-    const newRows = rows.map(r => [poNumber,params.warehouseName,uploadDate,expiryDate,uploadedBy,r.itemCode,r.itemCode,"",0,0,0,r.qty,0,"OPEN"]);
+    // Dummy Order: a PO uploaded purely to get an RO Invoice from, never
+    // a real fulfillment — see uploadBlinkitPo's own IS_DUMMY column and
+    // createDummyRoInvoice_impl_ for what changes downstream once a
+    // shipment is built against it.
+    const isDummy = !!params.isDummy;
+    const newRows = rows.map(r => [poNumber,params.warehouseName,uploadDate,expiryDate,uploadedBy,r.itemCode,r.itemCode,"",0,0,0,r.qty,0,"OPEN",isDummy]);
     if (!newRows.length) return {success:false,message:'PO '+poNumber+' has no item rows to upload.'};
     sheet.getRange(sheet.getLastRow()+1,1,newRows.length,newRows[0].length).setValues(newRows);
     invalidateOpenPosCache_('blinkit');
@@ -4830,7 +4968,7 @@ function uploadZeptoPo(params) {
     if (dupCheck.duplicate) return {success:false,message:dupCheck.message};
     const uploadDate = toDateString_(new Date());
     const uploadedBy = (params.uploadedBy||"").trim();
-    const newRows = rows.map(r => [poNumber,params.warehouseName,uploadDate,expiryDate,uploadedBy,r.itemCode,r.itemCode,"",0,0,0,r.qty,0,"OPEN"]);
+    const newRows = rows.map(r => [poNumber,params.warehouseName,uploadDate,expiryDate,uploadedBy,r.itemCode,r.itemCode,"",0,0,0,r.qty,0,"OPEN",false]); // Dummy Order is Blinkit-only — always false here
     if (!newRows.length) return {success:false,message:'PO '+poNumber+' has no item rows to upload.'};
     sheet.getRange(sheet.getLastRow()+1,1,newRows.length,newRows[0].length).setValues(newRows);
     invalidateOpenPosCache_('zepto');
@@ -5141,7 +5279,7 @@ function uploadSwiggyPo(params) {
     if (dupCheck.duplicate) return {success:false,message:dupCheck.message};
     const uploadDate = toDateString_(new Date());
     const uploadedBy = (params.uploadedBy||"").trim();
-    const newRows = rows.map(r => [poNumber,params.warehouseName,uploadDate,expiryDate,uploadedBy,r.itemCode,r.itemCode,"",0,0,0,r.qty,0,"OPEN"]);
+    const newRows = rows.map(r => [poNumber,params.warehouseName,uploadDate,expiryDate,uploadedBy,r.itemCode,r.itemCode,"",0,0,0,r.qty,0,"OPEN",false]); // Dummy Order is Blinkit-only — always false here
     if (!newRows.length) return {success:false,message:'PO '+poNumber+' has no item rows to upload.'};
     sheet.getRange(sheet.getLastRow()+1,1,newRows.length,newRows[0].length).setValues(newRows);
     invalidateOpenPosCache_('swiggy');
@@ -5200,7 +5338,7 @@ function getOpenPosForPlatform_uncached_(platform) {
     if (status==="CANCELLED") continue; // voided by a shipment delete — never selectable again
     const poNum=(data[i][PO_COLS.PO_NUMBER-1]||"").toString().trim();
     if (!poNum) continue;
-    if (!map[poNum]) map[poNum]={poNumber:poNum,warehouseName:(data[i][PO_COLS.WAREHOUSE-1]||"").toString().trim(),uploadDate:toDateString_(data[i][PO_COLS.UPLOAD_DATE-1]),expiryDate:(data[i][PO_COLS.EXPIRY_DATE-1]||"").toString().trim(),itemCount:0,totalQty:0,remainingQty:0,status:"OPEN",_allFulfilled:true};
+    if (!map[poNum]) map[poNum]={poNumber:poNum,warehouseName:(data[i][PO_COLS.WAREHOUSE-1]||"").toString().trim(),uploadDate:toDateString_(data[i][PO_COLS.UPLOAD_DATE-1]),expiryDate:(data[i][PO_COLS.EXPIRY_DATE-1]||"").toString().trim(),itemCount:0,totalQty:0,remainingQty:0,status:"OPEN",isDummy:(data[i][PO_COLS.IS_DUMMY-1]===true||data[i][PO_COLS.IS_DUMMY-1]==="TRUE"),_allFulfilled:true};
     const pq=parseInt(data[i][PO_COLS.PO_QTY-1],10)||0;
     const sq=parseInt(data[i][PO_COLS.SHIPPED_QTY-1],10)||0;
     map[poNum].itemCount++; map[poNum].totalQty+=pq; map[poNum].remainingQty+=(pq-sq);
