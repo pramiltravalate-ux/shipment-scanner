@@ -2455,7 +2455,7 @@ function refreshCurrentTab_(forceRefresh) {
   if (name === 'dashboard') loadDashboardStats_(forceRefresh);
   else if (name === 'shipments') loadShipmentsIfStale_(forceRefresh);
   else if (name === 'warehouses') loadWarehousesTab_(forceRefresh);
-  else if (name === 'sku') loadSkuMaster_();
+  else if (name === 'sku') loadSkuMaster_(forceRefresh);
   else if (name === 'admin') loadAdminTab_(forceRefresh);
   else if (name === 'snapshot') loadSnapshotTab_(forceRefresh);
 }
@@ -2473,10 +2473,22 @@ function stopTabAutoRefresh_() {
 }
 // Also catches the browser-tab case, not just switching between this
 // app's own internal tabs  -  e.g. an admin who alt-tabs away to Gmail for
-// a while and comes back should see current data immediately rather than
-// whatever was on screen before they left.
+// a while and comes back should see current data once it's actually gone
+// stale, rather than whatever was on screen before they left.
+//
+// Deliberately forceRefresh=false here, NOT true  -  this fires on every
+// OS/browser window switch, including a brief one where someone is still
+// mid-edit (e.g. typing in a SKU Master cell, or scrolled deep into a
+// long list) and never actually navigated away from the tab at all.
+// forceRefresh=true skips both the "already fresh, don't bother"
+// staleness window AND the "don't rebuild out from under an active
+// input" guard that every tab loader has (see refreshCurrentTab_) -  a
+// plain alt-tab-and-back isn't the deliberate "I want this current"
+// signal that clicking a different app tab and back is, so it shouldn't
+// force a full reload. Actual tab clicks (showTab) still always force a
+// fresh reload, unchanged.
 document.addEventListener('visibilitychange', function () {
-  if (document.visibilityState === 'visible' && currentUser) refreshCurrentTab_(true);
+  if (document.visibilityState === 'visible' && currentUser) refreshCurrentTab_(false);
 });
 
 /** The Admin tab (employee list + RO Invoice seller settings) used to
@@ -9369,13 +9381,29 @@ function saveEditEmp_() {
 
 // -- SKU MASTER EDITOR -----------------------------------------
 let skuMasterData_ = null; // { headers, rows }
+let skuMasterLoadedAt_ = 0;
 
-function loadSkuMaster_() {
+/** Unlike every other tab (Dashboard/Shipments/Warehouses/Admin/
+ *  Snapshot), this used to have NO staleness guard at all — it blanked
+ *  the whole table to "Loading…" and re-fetched from scratch on every
+ *  single call, including a plain alt-tab-away-and-back (visibilitychange
+ *  triggers a refresh of whatever tab is open  -  see refreshCurrentTab_).
+ *  For a big editable grid people scroll/search/type in for long
+ *  stretches, that meant merely switching windows and coming back wiped
+ *  scroll position and any not-yet-committed cell edit. Now follows the
+ *  same pattern as the other tabs: skip entirely (nothing on screen
+ *  needs to change — it's already showing this exact data) unless
+ *  actually forced (a real click on the SKU tab) or genuinely stale. */
+function loadSkuMaster_(forceRefresh) {
+  if (skuMasterData_ && !forceRefresh && (Date.now() - skuMasterLoadedAt_ < TAB_AUTO_REFRESH_MS)) {
+    return; // already showing this data — re-rendering would only reset scroll/edit state for nothing
+  }
   document.getElementById('skuMasterTbody').innerHTML = '<tr><td style="color:#64748b;text-align:center;padding:30px" colspan="20">Loading…</td></tr>';
   document.getElementById('skuLoadingHint').textContent = 'Loading SKU Master…';
   google.script.run
     .withSuccessHandler(data => {
       skuMasterData_ = data;
+      skuMasterLoadedAt_ = Date.now();
       document.getElementById('skuLoadingHint').textContent = (data.rows||[]).length + ' SKUs';
       renderSkuTable_();
     })
