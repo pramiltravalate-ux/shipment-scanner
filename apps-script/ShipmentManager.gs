@@ -3664,6 +3664,33 @@ function createDummyRoInvoice(params) {
   return JSON.stringify(createDummyRoInvoice_impl_(params));
 }
 
+/** Voids the PO a Dummy Order shipment was built against, called when
+ *  that shipment is deleted (see deleteShipment's dummy branch in
+ *  ShipmentManagerIndex.html — dummy shipments are never saved, so
+ *  they never go through deleteShipmentRecord, which is what does this
+ *  for a real shipment). Reuses the exact same fullyCancelPo_ a real
+ *  delete uses, so a used-and-discarded dummy PO drops out of the PO
+ *  dropdown the same way — otherwise nothing ever would, since dummy
+ *  shipments never touch SHIPPED_QTY. Only ever cancels a PO actually
+ *  flagged IS_DUMMY, as a guard against this path voiding a real one. */
+function cancelDummyPo(platform, poNumber) {
+  try {
+    platform = (platform || 'blinkit').toString().trim().toLowerCase();
+    if (platform !== 'blinkit') return { success: false, message: "Dummy Order is only available for Blinkit." };
+    poNumber = (poNumber || '').toString().trim();
+    if (!poNumber) return { success: false, message: "No PO Number given." };
+    const sheet = ensurePoSheet_(platform);
+    const data = sheet.getDataRange().getValues();
+    const isDummyPo = data.slice(1).some(r =>
+      (r[PO_COLS.PO_NUMBER - 1] || "").toString().trim() === poNumber &&
+      (r[PO_COLS.IS_DUMMY - 1] === true || r[PO_COLS.IS_DUMMY - 1] === "TRUE")
+    );
+    if (!isDummyPo) return { success: false, message: "PO " + poNumber + " is not a Dummy Order — refusing to cancel it." };
+    fullyCancelPo_(platform, poNumber);
+    return { success: true };
+  } catch (err) { return { success: false, message: err.message }; }
+}
+
 /** Lightweight fetch of just the E-way Bill Number and Delivery
  *  Partner for an already-created RO Invoice — used to pre-fill the
  *  "Edit E-way Bill / Delivery Partner" modal from the shipments list,

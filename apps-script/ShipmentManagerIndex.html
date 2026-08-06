@@ -8684,10 +8684,24 @@ function deleteShipment(i) {
     // Never saved anywhere, so there's nothing to delete server-side and
     // nothing for Inventory to add back — just drop it from this tab's
     // memory. Confirm dialog kept for consistency (still a real click).
-    showConfirmModal_('Delete this dummy shipment? Nothing was ever saved for it, so this just removes it from view.', 'Delete', () => {
+    // The PO it was built against DOES still need voiding server-side
+    // (cancelDummyPo) though — a dummy shipment never touches SHIPPED_QTY,
+    // so without this its PO would sit in the dropdown forever even after
+    // everything built from it is gone.
+    showConfirmModal_('Delete this dummy shipment? Nothing was ever saved for it, so this just removes it from view — its PO will also drop out of the PO dropdown.', 'Delete', () => {
       savedShipments.splice(i, 1);
       renderShipmentsList();
       showSuccessToast_('Deleted Successfully');
+      if (s.poNumber) {
+        google.script.run
+          .withSuccessHandler(() => {
+            openPosCache_['blinkit'] = null;
+            delete poLineItemsCache_[poCacheKey_('blinkit', s.poNumber)];
+            loadPoDropdown_(true);
+          })
+          .withFailureHandler(() => {}) // best-effort — the shipment itself is already gone regardless
+          .cancelDummyPo(s.platform, s.poNumber);
+      }
     });
     return;
   }
