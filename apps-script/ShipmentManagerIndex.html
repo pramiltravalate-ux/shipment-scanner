@@ -356,6 +356,14 @@ input::placeholder{color:#b0bec5;font-style:italic}
 .data-table th{background:#1a1a2e;color:#fff;padding:9px 12px;text-align:left}
 .data-table td{padding:9px 12px;border-bottom:1px solid #f1f5f9}
 .data-table tr:hover td{background:#f8fafc}
+/* SKU Master's header row stays visible while scrolling down its (often
+   long) list  -  52px matches .topbar's own height, which is itself
+   sticky at top:0, so the header sits directly below it instead of
+   underneath/behind it. z-index above plain body cells but still under
+   the topbar (z-index:300) and any modal. Combines with .sticky-actions-col
+   on the trailing "Actions" header cell (also present on that <th>) so
+   that one corner cell sticks to both the top AND the right edge. */
+#skuMasterThead th{position:sticky;top:52px;z-index:8;background:#1a1a2e}
 /* The grid's own scroll container. overflow-x:auto on its own forces
    overflow-y to compute as 'auto' too (per spec: if one axis is
    non-visible the other can't stay 'visible')  -  so this div was ALWAYS
