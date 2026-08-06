@@ -493,7 +493,16 @@ function getSkuData() {
     swiggyItemId: hm['SWIGGY_ITEM_ID'],
     zeptoItemId:  hm['ZEPTO_ITEM_ID'],
     zeptoLandingPrice: hm['ZEPTO_LANDING_PRICE'],
-    swiggyLandingPrice: hm['SWIGGY_LANDING_PRICE']
+    swiggyLandingPrice: hm['SWIGGY_LANDING_PRICE'],
+    // Product Label printing fields (see migrateSkuMasterAddLabelColumns
+    // and generateSkuLabelTspl_impl_) — physical product attributes, so
+    // deliberately ONE value per SKU rather than per-platform like the
+    // barcode/MRP columns above.
+    mfgDate:      hm['MFG_DATE'],
+    productType:  hm['PRODUCT_TYPE'],
+    color:        hm['COLOR'],
+    country:      hm['COUNTRY'],
+    packQty:      hm['PACK_QTY']
   };
   const str_ = (r, idx) => idx === undefined ? "" : (r[idx] || "").toString().trim();
   const num_ = (r, idx) => idx === undefined ? 0 : (parseFloat(r[idx]) || 0);
@@ -524,7 +533,12 @@ function getSkuData() {
     zeptoLandingPrice:   num_(r, c.zeptoLandingPrice),
     swiggyLandingPrice:  num_(r, c.swiggyLandingPrice),
     swiggyItemId:  str_(r, c.swiggyItemId),
-    zeptoItemId:   str_(r, c.zeptoItemId)
+    zeptoItemId:   str_(r, c.zeptoItemId),
+    mfgDate:       str_(r, c.mfgDate),
+    productType:   str_(r, c.productType),
+    color:         str_(r, c.color),
+    country:       str_(r, c.country),
+    packQty:       str_(r, c.packQty)
   }));
   return result;
 }
@@ -652,6 +666,44 @@ function migrateSkuMasterAddSwiggyLandingPriceColumn() {
   const newCol = anchorIdx + 2;
   sheet.getRange(1, newCol).setValue("SWIGGY_LANDING_PRICE");
   return { success: true, message: "Inserted SWIGGY_LANDING_PRICE at column " + columnLetter_(newCol) + "." };
+}
+
+/** ONE-TIME SETUP — run this once from the Apps Script editor (select
+ *  migrateSkuMasterAddLabelColumns in the function dropdown, then ▶ Run)
+ *  to add the columns Product Label printing needs (see
+ *  generateSkuLabelTspl_impl_ in the PRODUCT LABEL PRINTING section
+ *  below): MFG_DATE, PRODUCT_TYPE, COLOR, COUNTRY, PACK_QTY. These are
+ *  physical product attributes — deliberately ONE column each (not
+ *  split per platform like BLINKIT/SWIGGY/ZEPTO), since a product's
+ *  color/type/origin/manufacture date don't change depending on which
+ *  platform sells it; only its barcode and MRP do, and those columns
+ *  already exist. Appended at the true end of the sheet, one at a
+ *  time, same idempotent by-NAME pattern as the migrations above — safe
+ *  to re-run, a no-op for any column that already exists. Once added,
+ *  they show up automatically in the SKU Master tab's editor grid (it
+ *  reads the sheet's own header row) — nothing else to wire up. */
+function migrateSkuMasterAddLabelColumns() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_SKU);
+  if (!sheet) return { success: false, message: "SKU_MASTER sheet not found." };
+
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const upper = headers.map(h => (h || "").toString().trim().toUpperCase());
+  const notes = [];
+
+  ["MFG_DATE", "PRODUCT_TYPE", "COLOR", "COUNTRY", "PACK_QTY"].forEach(name => {
+    if (upper.indexOf(name) !== -1) {
+      notes.push(name + " already present in column " + columnLetter_(upper.indexOf(name) + 1) + " — left as-is.");
+      return;
+    }
+    const nextCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, nextCol).setValue(name);
+    upper.push(name);
+    notes.push("Added " + name + " at column " + columnLetter_(nextCol) + ".");
+  });
+
+  return { success: true, message: notes.join(" ") };
 }
 
 /** Converts a 1-based column number to its A1 letter (1→A, 27→AA, etc). */
@@ -6571,3 +6623,403 @@ function aiAssistantAsk(userMessage, history) {
     return { success: false, message: err.message };
   }
 }
+
+// ════════════════════════════════════════════════════════════════
+//  PRODUCT LABEL PRINTING — TSC TSPL generator + QZ Tray, ported from
+//  the standalone Travalate Label System into this project. Blinkit
+//  only for now (see generateSkuLabelTspl_impl_'s platform check) —
+//  the "🟢 All" / "🟡 Custom" print buttons live in the Balance popup
+//  on a saved Blinkit shipment (renderPoBalancePopup_'s dummy-free,
+//  non-live branch in ShipmentManagerIndex.html), printing that SKU's
+//  own Packed quantity (or a manually-typed quantity) straight to a
+//  QZ-Tray-connected label printer.
+//
+//  DATA SOURCE: unlike the standalone app's separate Products +
+//  PlatformData sheets, label fields live directly on SKU_MASTER (see
+//  migrateSkuMasterAddLabelColumns above) — one shared source of truth
+//  with the rest of Shipment Manager instead of a second place to keep
+//  a SKU's details in sync. Barcode and MRP reuse the SAME per-platform
+//  columns everything else already reads (roFieldsForPlatform_);
+//  MFG_DATE/PRODUCT_TYPE/COLOR/COUNTRY/PACK_QTY are the only genuinely
+//  new columns, since those don't vary by platform.
+//
+//  QZ TRAY SIGNING SETUP (one-time, same as the standalone app): run
+//  setQzPrivateKey() once from this Apps Script project's editor —
+//  the private key below is the SAME key/cert pair already in use for
+//  the standalone label app, just needs to be persisted into THIS
+//  project's own Script Properties store (a separate project = a
+//  separate PropertiesService, even with the identical key value).
+// ════════════════════════════════════════════════════════════════
+
+const LABEL_CONFIG_ = {
+  LABEL_WIDTH_MM: 60,
+  LABEL_HEIGHT_MM: 40,
+  GAP_MM: 3,
+  DPI: 300,
+  DENSITY: 8,
+  SPEED: 4,
+
+  BRAND: "Travalate",
+
+  CUSTOMER_CARE: {
+    contact: "6358606060",
+    email: "support@travalate.com",
+    website: "www.travalate.com",
+  },
+
+  MANUFACTURER: {
+    name: "Sethi Industries",
+    address: "H-1177, Sitapura Industrial Area, Jaipur-302022",
+  },
+
+  // Public half of the QZ Tray signing cert — safe to send to the
+  // browser. Paired with the private key stored in Script Properties
+  // via setQzPrivateKey() below.
+  QZ_CERTIFICATE: `-----BEGIN CERTIFICATE-----
+MIIECzCCAvOgAwIBAgIGAZ9ge7GEMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
+UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
+HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
+RGVtbyBDZXJ0MB4XDTI2MDcxMzExNTU0NloXDTQ2MDcxMzExNTU0NlowgaIxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
+VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
+IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
+VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDB
+Mmt0ZxfcikV5cWtSl6Ogd5vE6vT1epJJIE25UAFYYsYbLwki/4BrOZw9GR4o+c50
+a0lR9GM2pcpkZNT6h6noveebe7pWQyhJ8e4OngxdfodLhPxCdn+ribsUMgo7ZWs0
+0kRX2Z2el9hyKo2AqYinta3BjYvf1qAuY7oCusPzp5FQglKlFF9/DpGn3U3L/N7K
+ceT0ex54KBpPWwjriq7tVsZgiFZZOWCVaXXG1eB/Y/Zu55UBLmEfYEGR7Un5oHKi
+7mF7Y6M7dLK8XT37vv5ZhkKkpppV2e98FcXL4GFMGKUevBQ4EVSNPECLDRe8pNIg
++EgHTMZqMIoQEv7+YJ0jAgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
+VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBSQY/Ml3ICCM/PSbcSruvBj2jNlJTANBgkq
+hkiG9w0BAQsFAAOCAQEAs01cpdFUS2CoKnwx+OCMSPj2QKfA507ZESgT6W9tifDR
+80WpOS48zTkNcCO2MZI5WLh9NPiNfODymNEQku86XpwVVix3DAnoIKRVmahz3BGq
+6jx91zqSOILcI9N4GN9HbqZtzW4YixK45OSsyw9ONV42U9FgWvxcvAm5Hwz6pKBk
+bRbyYLCFByc+ErKqH742Xn+fglW2kMe3sevcgvO+W7IIxCD2+8dnlKBmrzhOQP0c
+vn4n9ri3V04nIejL7spWjmd30HdsdK1r8h+81Dc2LyviPRnv7a+Er/IpS63iATr+
+w0NWx2YtzhOMCVH5ui1Pl3OGDiqJcX9A/PG7XF2iRg==
+-----END CERTIFICATE-----
+`,
+};
+
+function labelDotsPerMm_() {
+  return LABEL_CONFIG_.DPI / 25.4;
+}
+function labelMmToDots_(mm) {
+  return Math.round(mm * labelDotsPerMm_());
+}
+function labelPlatformInitial_(platform) {
+  return (platform || "?").charAt(0).toUpperCase();
+}
+function labelTsplEscape_(str) {
+  return String(str == null ? "" : str).replace(/"/g, "'");
+}
+
+/** Estimates the physical printed width (in mm) of a Code128 barcode.
+ *  All-numeric values render as Code128 Subset C (2 digits per symbol);
+ *  anything else (alphanumeric SKU/ASIN-style values) renders as
+ *  Subset B (1 character per symbol). Official Code128 length formula:
+ *  L = (11*C + 35) * X, where C is the symbol count and X is the
+ *  narrow-bar dot width. */
+function labelEstimateCode128Width_(value, narrowBarWidthDots) {
+  const str = String(value || "");
+  const isAllDigits = /^\d+$/.test(str);
+  const symbols = isAllDigits ? Math.ceil(str.length / 2) : str.length;
+  const totalUnits = 11 * symbols + 35;
+  return (totalUnits * narrowBarWidthDots) / labelDotsPerMm_();
+}
+
+/** Wider narrow-bar for all-numeric UPC-style codes (Subset C's digit-
+ *  pairing leaves plenty of spare room); narrower for alphanumeric
+ *  codes (already close to the label's width limit). */
+function labelPickNarrowBarWidth_(value) {
+  const isAllDigits = /^\d+$/.test(String(value || ""));
+  return isAllDigits ? 5 : 3;
+}
+
+function labelTruncate_(str, maxChars) {
+  str = String(str || "");
+  if (str.length <= maxChars) return str;
+  return str.slice(0, maxChars - 3) + "...";
+}
+
+/** Wraps text to exactly 2 lines on word boundaries (never mid-word).
+ *  If what's left after line 1 still doesn't fit line 2, it's
+ *  truncated with "..." — only kicks in for genuinely long values. */
+function labelWrapToTwoLines_(str, maxCharsPerLine) {
+  str = String(str || "").trim();
+  if (str.length <= maxCharsPerLine) return [str, ""];
+
+  const words = str.split(/\s+/);
+  let line1 = "";
+  let i = 0;
+  for (; i < words.length; i++) {
+    const candidate = line1 ? line1 + " " + words[i] : words[i];
+    if (candidate.length > maxCharsPerLine) break;
+    line1 = candidate;
+  }
+  if (!line1) {
+    line1 = words[0].slice(0, maxCharsPerLine);
+    i = 1;
+  }
+  const line2Raw = words.slice(i).join(" ");
+  const line2 = labelTruncate_(line2Raw, maxCharsPerLine);
+  return [line1, line2];
+}
+
+function labelManufacturerLines_(country) {
+  const isIndia = String(country || "India").toLowerCase().startsWith("ind");
+  const header = isIndia ? "Manufactured & Packed By:" : "Packed By:";
+  return [header, LABEL_CONFIG_.MANUFACTURER.name, LABEL_CONFIG_.MANUFACTURER.address];
+}
+
+/** Builds the raw TSPL command stream for one SKU's label, ported
+ *  as-is from the standalone Travalate Label System (60mm x 40mm,
+ *  platform-initial box + barcode + product name + two-column detail
+ *  block). `data` is the labelData object built by
+ *  generateSkuLabelTspl_impl_ below. */
+function buildLabelTspl_(data, qty) {
+  const widthMm = LABEL_CONFIG_.LABEL_WIDTH_MM;
+  const heightMm = LABEL_CONFIG_.LABEL_HEIGHT_MM;
+  const gapMm = LABEL_CONFIG_.GAP_MM;
+
+  const lines = [];
+  lines.push(`SIZE ${widthMm} mm,${heightMm} mm`);
+  lines.push(`GAP ${gapMm} mm,0 mm`);
+  lines.push(`DIRECTION 1`);
+  lines.push(`DENSITY ${LABEL_CONFIG_.DENSITY}`);
+  lines.push(`SPEED ${LABEL_CONFIG_.SPEED}`);
+  lines.push(`CLS`);
+
+  // ---- Platform initial box (top-left) ----
+  const boxX = 1.5, boxY = 1.5, boxW = 9, boxH = 9;
+  lines.push(
+    `BOX ${labelMmToDots_(boxX)},${labelMmToDots_(boxY)},${labelMmToDots_(boxX + boxW)},${labelMmToDots_(boxY + boxH)},2`
+  );
+  lines.push(
+    `TEXT ${labelMmToDots_(boxX + 3)},${labelMmToDots_(boxY + 2.4)},"5",0,1,1,"${labelPlatformInitial_(data.platform)}"`
+  );
+
+  // ---- Barcode (Code128), to the right of the platform box ----
+  const barcodeAreaX = boxX + boxW + 1;
+  const barcodeAreaRightMargin = 1;
+  const barcodeAreaWidth = widthMm - barcodeAreaX - barcodeAreaRightMargin;
+  const barcodeHmm = 8;
+  const narrowBar = labelPickNarrowBarWidth_(data.barcodeValue);
+  const estimatedBarcodeWidthMm = labelEstimateCode128Width_(data.barcodeValue, narrowBar);
+  const barcodeCenterOffset = Math.max(0, (barcodeAreaWidth - estimatedBarcodeWidthMm) / 2);
+  const barcodeX = barcodeAreaX + barcodeCenterOffset;
+  lines.push(
+    `BARCODE ${labelMmToDots_(barcodeX)},${labelMmToDots_(boxY)},"128",${labelMmToDots_(barcodeHmm)},0,0,${narrowBar},${narrowBar},"${labelTsplEscape_(data.barcodeValue)}"`
+  );
+
+  // ---- Barcode value text (left-aligned — proven safe across every
+  // detail line; centering this specifically caused edge-clipping in
+  // physical testing on the original label system) ----
+  let y = Math.max(boxY + boxH, boxY + barcodeHmm) + 1.5;
+  const textLeftMargin = 3;
+  lines.push(`TEXT ${labelMmToDots_(textLeftMargin)},${labelMmToDots_(y)},"2",0,1,1,"${labelTsplEscape_(data.barcodeValue)}"`);
+  y += 2.3;
+  y += 1;
+
+  // ---- Product name, left-aligned, max 2 lines with "..." fallback ----
+  const nameLines = labelWrapToTwoLines_(data.productName, 53);
+  lines.push(`TEXT ${labelMmToDots_(textLeftMargin)},${labelMmToDots_(y)},"2",0,1,1,"${labelTsplEscape_(nameLines[0])}"`);
+  y += 2.3;
+  if (nameLines[1]) {
+    lines.push(`TEXT ${labelMmToDots_(textLeftMargin)},${labelMmToDots_(y)},"2",0,1,1,"${labelTsplEscape_(nameLines[1])}"`);
+  }
+  y += 2.3;
+  y += 1;
+
+  // ---- Two-column block: left = product/platform details, right =
+  // manufacturer + customer care ----
+  const leftX = 3;
+  const rightX = widthMm / 2 + 1;
+  let leftY = y;
+  let rightY = y;
+  const leftLineStep = (heightMm - y - 1.5) / 9;
+  const rightLineStep = (heightMm - y - 1.5) / 8;
+  const FONT = "2";
+  const COL_MAX_CHARS = 27;
+
+  const leftLines = [
+    `SKU: ${labelTsplEscape_(data.sku)}`,
+    `MRP: Rs. ${labelTsplEscape_(data.mrp)}.00`,
+    `MFG: ${labelTsplEscape_(data.mfgDate)}`,
+    `Qty: ${labelTsplEscape_(data.quantity)}`,
+    `Brand: ${labelTsplEscape_(data.brand)}`,
+    `Type: ${labelTsplEscape_(labelTruncate_(data.productType, 16))}`,
+    `Color: ${labelTsplEscape_(data.color)}`,
+    `Origin: ${labelTsplEscape_(data.country)}`,
+  ];
+
+  leftLines.forEach((txt, idx) => {
+    lines.push(`TEXT ${labelMmToDots_(leftX)},${labelMmToDots_(leftY)},"${FONT}",0,1,1,"${labelTruncate_(txt, COL_MAX_CHARS)}"`);
+    leftY += leftLineStep;
+    if (idx === 1) {
+      lines.push(`TEXT ${labelMmToDots_(leftX)},${labelMmToDots_(leftY)},"1",0,1,1,"(Inclusive of Taxes)"`);
+      leftY += leftLineStep;
+    }
+  });
+
+  const mfgHeaderAndName = labelManufacturerLines_(data.country).slice(0, 2);
+  const addressLines = labelWrapToTwoLines_(LABEL_CONFIG_.MANUFACTURER.address, COL_MAX_CHARS);
+  const rightLines = mfgHeaderAndName
+    .concat(addressLines.filter((l) => l !== ""))
+    .concat([
+      "Customer Care:",
+      `Ph: ${LABEL_CONFIG_.CUSTOMER_CARE.contact}`,
+      LABEL_CONFIG_.CUSTOMER_CARE.email,
+      LABEL_CONFIG_.CUSTOMER_CARE.website,
+    ]);
+
+  rightLines.forEach((txt) => {
+    lines.push(`TEXT ${labelMmToDots_(rightX)},${labelMmToDots_(rightY)},"${FONT}",0,1,1,"${labelTruncate_(labelTsplEscape_(txt), COL_MAX_CHARS)}"`);
+    rightY += rightLineStep;
+  });
+
+  lines.push(`PRINT ${qty},1`);
+
+  return lines.join("\r\n") + "\r\n";
+}
+
+/** Generates the TSPL for one SKU's label, `qty` copies. Blinkit only
+ *  for now — the SKU's Blinkit barcode/UPC and MRP (from SKU_MASTER,
+ *  same columns everything else uses) must both be present, or this
+ *  returns a clear "map it first" error instead of printing a blank/
+ *  wrong barcode. */
+function generateSkuLabelTspl_impl_(sku, platform, qty) {
+  try {
+    platform = (platform || "blinkit").toString().trim().toLowerCase();
+    if (platform !== "blinkit") {
+      return { success: false, message: "Product Label printing is only available for Blinkit right now." };
+    }
+    sku = (sku || "").toString().trim();
+    if (!sku) return { success: false, message: "No SKU given." };
+    const qtyNum = Math.max(0, parseInt(qty, 10) || 0);
+    if (!qtyNum) return { success: false, message: "Quantity must be at least 1." };
+
+    const skuRows = getSkuData();
+    const row = skuRows.find((r) => r.sku === sku);
+    if (!row) return { success: false, message: 'SKU "' + sku + '" not found in SKU_MASTER.' };
+
+    const roFields = roFieldsForPlatform_(platform);
+    const barcodeValue = (row[roFields.upcField] || "").toString().trim();
+    if (!barcodeValue) {
+      return { success: false, message: 'SKU "' + sku + '" has no Blinkit barcode/UPC in SKU_MASTER — add one in the SKU Master tab before printing labels.' };
+    }
+    if (!row.mrp) {
+      return { success: false, message: 'SKU "' + sku + '" has no MRP in SKU_MASTER — add one in the SKU Master tab before printing labels.' };
+    }
+
+    const labelData = {
+      platform: platform.charAt(0).toUpperCase() + platform.slice(1),
+      productName: row.description || sku,
+      brand: LABEL_CONFIG_.BRAND,
+      country: row.country || "India",
+      barcodeValue: barcodeValue,
+      sku: sku,
+      mrp: row.mrp,
+      mfgDate: row.mfgDate,
+      quantity: row.packQty || "1",
+      productType: row.productType,
+      color: row.color,
+    };
+
+    const tspl = buildLabelTspl_(labelData, qtyNum);
+    const safeSku = sku.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename =
+      "label_" + labelData.platform + "_" + safeSku + "_" +
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Etc/UTC", "yyyyMMdd_HHmmss") + ".tspl";
+
+    return { success: true, tspl: tspl, filename: filename };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/** Public wrapper called from the Balance popup's 🟢 All / 🟡 Custom
+ *  buttons. */
+function generateSkuLabelTspl(sku, platform, qty) {
+  return generateSkuLabelTspl_impl_(sku, platform, qty);
+}
+
+// ---------------------------------------------------------------
+// QZ TRAY SIGNING — stops the repeated "Allow" popups. Ported as-is
+// from the standalone label app; see that project's SETUP_GUIDE.md for
+// the one-time cert-generation walkthrough. The private key must NEVER
+// be sent to or stored in the browser — it stays in Script Properties
+// (server-side only) and is used to sign each request on demand via
+// signQzRequest(), which the page calls instead of signing locally.
+// ---------------------------------------------------------------
+
+/** Run this ONCE from the Apps Script editor (select setQzPrivateKey in
+ *  the function dropdown, click Run) to store the private key in this
+ *  project's own Script Properties. Never expose this value in
+ *  ShipmentManagerIndex.html or any client-side code. */
+function setQzPrivateKey() {
+  const PRIVATE_KEY_PEM = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDBMmt0ZxfcikV5
+cWtSl6Ogd5vE6vT1epJJIE25UAFYYsYbLwki/4BrOZw9GR4o+c50a0lR9GM2pcpk
+ZNT6h6noveebe7pWQyhJ8e4OngxdfodLhPxCdn+ribsUMgo7ZWs00kRX2Z2el9hy
+Ko2AqYinta3BjYvf1qAuY7oCusPzp5FQglKlFF9/DpGn3U3L/N7KceT0ex54KBpP
+Wwjriq7tVsZgiFZZOWCVaXXG1eB/Y/Zu55UBLmEfYEGR7Un5oHKi7mF7Y6M7dLK8
+XT37vv5ZhkKkpppV2e98FcXL4GFMGKUevBQ4EVSNPECLDRe8pNIg+EgHTMZqMIoQ
+Ev7+YJ0jAgMBAAECggEAI/RCrCiNd8Uh1c6GRxoiYPgxfI2vZcnYVJSW8mBRx8Wm
+EaQIwsMi/pF7oqE8jCqlQeQ/gmmFV0O2bUWYn0FFHSPOaRC3JlucMVq9T2oZagLk
+oejPW30bGGzq7IC9h71BnNRu1JySqVOf++swZ1vlqzRz8Dvr5o3WRJvZn61rTzoy
+zkd+kserH2nLTk0rZm4GuQNAywnlB7o4yhHgXSwB/l7UwxVVR0J+tWoFuLT7otqy
+cLx2mkBgPCKhnn4bsJH2Vocc4DHbGUKAIxSNVpA3fCxWJmZBescdJQFxVkxHE+3H
+Mha+j6l+Em+LwPhBnrTuYppdM2UYFGVkDRT8Y0iM5QKBgQDl1T+/8uMZFTBRU7fR
+IWAKBgxKXslUbLeJYwfT+xQcCJP0IbAdpaZfmyqanq7naD16e5oyoy0U1l3S/jIy
+4Cil4ErOswWg0wbaO4lL2ixcL4JApPtLXO4p33PWevugN4OIsjnAY7EvGaGWd0bQ
+ULm8qVLffJzHI7kFJsjP0KY0/QKBgQDXMV7JQ2omA6vhz3YFG4HDBQZDNZQ8AVwB
+pE5evTg9208SOUJmgmZ5mKjvUASK9hWtASr/Ah+YyBrA6rJSv45Cu5O1DWMCX79v
+P8GPhPp/5p8oBubum7buojFm+QoAv4O38FXxFfo/SpPUCQGy4PSUaXOwJHY5R8Ij
+b59kbyTEnwKBgATimH1K+1rAIYvI/MI8NF9iK4a1JxBdUzVfXn45+v5xjDuHL8gh
+ijzD/o7UyqDujUf6Mpfa8g1cVRg0APsl2pdUAiMMmRUHB0FCPLPZClJXTCx1lUXP
+ztwi/MJVUN3h8DDKoQGe3NhEcjPRizbIUHpbGwDXFDoDX15lqaUJKU89AoGABBCk
+r7ycRrePCab3ncUVQG/Z3G8oq7GC4W0PJe8BHvoDll6KiJEyCl394vdp/o4Dfs8k
+1shdfG9bQgWs9K81qsEMW0Eze5n/bcSQjXt/l+btXr4yopNCc2OQ91cA/16eyFy7
+4t/9aDCqdjjtVUm2lQ8g5lTp/s8CNdUn96e51BUCgYEAnR1+ngqdWPqQ3RtB3TiX
+87UXYOxWe9b54hR+dpgewIO/VK+6uIVKKLrWyhl1unaVWO+rv7/iyWCcVUV5/ZOI
+ShRBbClANV4oHDTJNm4tjFpztkQUxIIy0y0h+U3f33VUF0MDfkBIAKN5xM6T8lCQ
+2XnWUxRxz71RhUuG7HVu6rU=
+-----END PRIVATE KEY-----
+`;
+  PropertiesService.getScriptProperties().setProperty("QZ_PRIVATE_KEY", PRIVATE_KEY_PEM);
+  Logger.log("QZ Tray private key saved to Script Properties.");
+}
+
+/** Returns the QZ Tray digital certificate text (the PUBLIC half) so
+ *  the page can supply it via qz.security.setCertificatePromise(). */
+function getQzCertificate() {
+  return LABEL_CONFIG_.QZ_CERTIFICATE || "";
+}
+
+/** Signs a value on the server using the private key stored in Script
+ *  Properties, returning the base64 signature QZ Tray expects. The
+ *  page calls this via google.script.run instead of signing locally,
+ *  so the private key never leaves the server. */
+function signQzRequest(valueToSign) {
+  const privateKey = PropertiesService.getScriptProperties().getProperty("QZ_PRIVATE_KEY");
+  if (!privateKey) {
+    throw new Error("QZ Tray private key not configured — run setQzPrivateKey() once from the Apps Script editor first.");
+  }
+  const signatureBytes = Utilities.computeRsaSha256Signature(valueToSign, privateKey);
+  return Utilities.base64Encode(signatureBytes);
+}
+
+// NOTE: the last-used label printer is deliberately NOT remembered here
+// via PropertiesService — this app is explicitly built to run on shared
+// packing-station PCs (see the sessionStorage comment on SESSION_STORAGE_KEY_
+// in ShipmentManagerIndex.html), and a label printer is physically wired
+// to one PC, not to whichever employee happens to be logged in right now.
+// Worse, this web app typically runs "Execute as: Me" so every visitor
+// shares ONE effective script user — PropertiesService.getUserProperties()
+// would be the SAME store for every packing station, not a separate one
+// per PC, so different stations' printer choices would overwrite each
+// other. The printer choice is saved client-side in localStorage instead
+// (see initQzTrayForLabels_ in ShipmentManagerIndex.html) — genuinely
+// per-browser/per-PC, and persists across logins on that same PC.

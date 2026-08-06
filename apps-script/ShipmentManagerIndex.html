@@ -39,6 +39,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- QZ Tray: sends Product Label print jobs (raw TSPL) directly to a
+     local/USB label printer, no file download step. Requires QZ Tray
+     running on the user's PC (https://qz.io). See the PRODUCT LABEL
+     PRINTING section in ShipmentManager.gs for the signing setup. -->
+<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sha.js/2.4.11/sha512.min.js"></script>
 <style>
 /* -- RESET -- */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -1563,6 +1569,31 @@ input.input-error,select.input-error,.platform-card.input-error,#invoiceModalWra
   </div>
 </div>
 
+<!-- Product Label printing — "Custom" quantity popup, opened from the
+     🟡 Custom button in the Balance popup (Blinkit shipments only).
+     The "All" (🟢) button reuses the existing global confirm modal
+     instead (Yes/No, no quantity to type) — see openLabelPrintAll_/
+     openLabelPrintCustom_ below. -->
+<div id="labelCustomQtyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10420;align-items:center;justify-content:center" onclick="if(event.target===this)closeLabelCustomQtyModal_()">
+  <div style="background:#fff;border-radius:14px;width:min(360px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.4)">
+    <div style="background:linear-gradient(135deg,#a16207,#ca8a04);color:#fff;padding:16px 20px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:15px">🏷️ Print Custom Quantity</span>
+      <button class="btn btn-secondary btn-sm" onclick="closeLabelCustomQtyModal_()">✕</button>
+    </div>
+    <div style="padding:18px 20px">
+      <div id="labelCustomQtySkuLine" style="font-size:13px;color:#475569;margin-bottom:12px"></div>
+      <label style="font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;display:block;margin-bottom:4px">Number of Labels *</label>
+      <input type="number" id="labelCustomQtyInput" min="1" step="1" style="width:100%;padding:9px 10px;border:2px solid #e2e8f0;border-radius:8px;font-size:14px"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();confirmLabelPrintCustom_();}">
+      <div id="labelCustomQtyError" style="color:#dc2626;font-size:12px;margin-top:8px;display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-secondary" onclick="closeLabelCustomQtyModal_()">Cancel</button>
+        <button class="btn btn-primary" id="labelCustomQtyPrintBtn" onclick="confirmLabelPrintCustom_()">🖨 Print</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- POD (Proof of Delivery) upload/view  -  same top-level, centered-modal
      pattern as poBalancePopup above (see its comment for why: must live
      outside any tab's content div). Upload only ever appears once a PO
@@ -1677,6 +1708,20 @@ input.input-error,select.input-error,.platform-card.input-error,#invoiceModalWra
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
         <button class="btn btn-secondary" onclick="closeSettingsModal_()">Cancel</button>
         <button class="btn btn-primary" id="settingsSaveBtn" onclick="saveSettings_()">💾 Save Changes</button>
+      </div>
+
+      <!-- Product Label printer — remembered per-PC (browser localStorage),
+           NOT saved to the spreadsheet: this app runs on shared packing-
+           station PCs, and the label printer is physically wired to
+           whichever PC this browser is on, not to whoever's logged in.
+           See initQzTrayForLabels_. -->
+      <div style="margin-top:22px;padding-top:16px;border-top:1px solid #e2e8f0">
+        <div style="font-weight:700;font-size:13.5px;margin-bottom:2px">🏷️ Label Printer</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:10px">Remembered on this PC only (via QZ Tray), for the 🟢 All / 🟡 Custom print buttons on Blinkit shipments.</div>
+        <div class="form-group" style="margin-bottom:6px">
+          <select id="labelPrinterSelect" disabled onchange="onLabelPrinterSelected_()"><option value="">Checking for QZ Tray…</option></select>
+          <div class="hint" id="labelPrinterStatusHint" style="font-size:11px;color:#64748b;margin-top:4px">Connecting to QZ Tray…</div>
+        </div>
       </div>
     </div>
   </div>
@@ -1831,6 +1876,12 @@ let skuData = [];
 // onPoSelected_/submitForm. Reset to false whenever no PO (or a non-
 // dummy one) is selected.
 let currentPoIsDummy_ = false;
+
+// Product Label printing (QZ Tray) — see initQzTrayForLabels_ and the
+// 🟢 All / 🟡 Custom buttons in renderPoBalancePopup_.
+let qzLabelConnected_ = false;
+let qzLabelInitStarted_ = false;
+const LABEL_PRINTER_STORAGE_KEY_ = 'tsm_label_printer_v1'; // localStorage — deliberately per-PC, not per-login; see the Settings modal's Label Printer section
 let boxCount = 0;
 // Monotonic counter for item row IDs  -  NOT Date.now(), which can collide
 // when many rows are created synchronously in a tight loop (e.g. applying
@@ -2167,6 +2218,7 @@ const ESCAPE_CLOSABLE_MODALS_ = [
   { id: 'adjustmentModal',          close: () => closeAdjustmentModal_() },
   { id: 'aiHelpPanel',              close: () => toggleAiHelpPanel_() },
   { id: 'suggestBoxesModal',        close: () => closeSuggestBoxesModal_() },
+  { id: 'labelCustomQtyModal',      close: () => closeLabelCustomQtyModal_() },
   { id: 'editWarehousePickerModal', close: () => closeEditWarehousePickerModal_() },
   { id: 'addWarehouseModal',        close: () => closeAddWarehouseModal() },
   { id: 'poUploadModal',            close: () => closePoUploadModal() },
@@ -2361,6 +2413,7 @@ function showApp() {
     showTab('dashboard');
     startTabAutoRefresh_();
     resetIdleTimer();
+    initQzTrayForLabels_(); // Product Label printing (Blinkit Balance popup) — connect early so it's ready by the time anyone opens it
   } catch (err) {
     // Surface startup errors visibly instead of freezing the page
     document.getElementById('loginPage').classList.remove('hidden');
@@ -10352,6 +10405,12 @@ function renderPoBalancePopup_(poNum, items, shipment) {
   const balancePlatform = isLiveContext
     ? (document.getElementById('selectedPlatform').value || '').toLowerCase()
     : (shipment.platform || '').toLowerCase();
+  // Product Label print buttons (🟢 All / 🟡 Custom) only make sense
+  // against a shipment that's actually been saved — "Packed" in the
+  // live New Shipment form is just whatever's currently typed into the
+  // box builder, nothing physical to print labels for yet. Blinkit
+  // only for now — see generateSkuLabelTspl_impl_ in ShipmentManager.gs.
+  const showLabelButtons = !isLiveContext && balancePlatform === 'blinkit';
 
   // Build Item Code → SKU lookup from skuData (PO lines are keyed by
   // that platform's own Item Code  -  SKU_MASTER's BLINKIT_ITEM_ID/
@@ -10400,11 +10459,13 @@ function renderPoBalancePopup_(poNum, items, shipment) {
             <th style="padding:5px 8px;text-align:center;color:#0369a1">${packedLabel}</th>
             ${hasAdjustments ? '<th style="padding:5px 8px;text-align:center;color:#a16207">Short</th>' : ''}
             <th style="padding:5px 8px;text-align:center;font-weight:700">Remaining</th>
+            ${showLabelButtons ? '<th style="padding:5px 8px;text-align:center">All</th><th style="padding:5px 8px;text-align:center">Custom</th>' : ''}
           </tr>
         </thead>
         <tbody>
           ${items.map(it => {
             const sku = upcToSku[it.upc] || ' - ';
+            const skuEsc = sku.toString().replace(/'/g, "\\'");
             const originalPacked = packedMap[it.upc] || 0;
             const short = shortMap[it.upc] || 0;
             // Live context: "Packed" must include quantity already
@@ -10444,6 +10505,7 @@ function renderPoBalancePopup_(poNum, items, shipment) {
               <td style="padding:4px 8px;text-align:center;font-weight:700;color:${netPacked>0?'#0369a1':'#94a3b8'}">${netPacked}</td>
               ${hasAdjustments ? `<td style="padding:4px 8px;text-align:center;font-weight:700;color:${short>0?'#a16207':'#94a3b8'}">${short}</td>` : ''}
               <td style="padding:4px 8px;text-align:center;font-weight:700;color:${rc}">${remainingAfterPacking}</td>
+              ${showLabelButtons ? labelPrintButtonsHtml_(skuEsc, netPacked) : ''}
             </tr>`;
           }).join('')}
         </tbody>
@@ -10454,10 +10516,170 @@ function renderPoBalancePopup_(poNum, items, shipment) {
             <td style="padding:6px 8px;text-align:center;font-weight:700;color:#0369a1">${totalPacked}</td>
             ${hasAdjustments ? `<td style="padding:6px 8px;text-align:center;font-weight:700;color:#a16207">${totalShort}</td>` : ''}
             <td style="padding:6px 8px;text-align:center;font-weight:700;color:${totalRemaining<=0?'#dc2626':'#166534'}">${totalRemaining}</td>
+            ${showLabelButtons ? '<td></td><td></td>' : ''}
           </tr>
         </tfoot>
       </table>
     </div>`;
+}
+
+/** The 🟢 All / 🟡 Custom Product Label print button pair for one PO
+ *  Balance popup row — see showLabelButtons above (Blinkit, saved
+ *  shipment context only). Disabled whenever there's nothing sensible
+ *  to print: no resolvable SKU, or zero packed quantity. */
+function labelPrintButtonsHtml_(skuEsc, netPacked) {
+  const disabled = (!skuEsc || skuEsc === ' - ' || netPacked <= 0) ? 'disabled' : '';
+  const sqBtn = (bg, border, title, handler) =>
+    `<button class="btn btn-sm" style="width:26px;height:26px;padding:0;background:${bg};border:1px solid ${border};color:#fff;font-size:13px;line-height:1;border-radius:5px" title="${title}" ${disabled} onclick="${handler}">🖨</button>`;
+  return `<td style="padding:4px 8px;text-align:center">${sqBtn('#16a34a', '#15803d', 'Print all ' + netPacked + ' packed label(s) for this SKU', `openLabelPrintAll_('${skuEsc}',${netPacked})`)}</td>` +
+         `<td style="padding:4px 8px;text-align:center">${sqBtn('#eab308', '#ca8a04', 'Print a custom number of labels for this SKU', `openLabelPrintCustom_('${skuEsc}',${netPacked})`)}</td>`;
+}
+
+// ---------------------------------------------------------------
+// PRODUCT LABEL PRINTING — QZ Tray. Connects once at login (see
+// showApp), independent of the Balance popup being open, so it's
+// already connected with a printer list ready by the time anyone
+// clicks 🟢/🟡. Mirrors the standalone Travalate Label System's own
+// QZ Tray setup (signed requests via ShipmentManager.gs's
+// getQzCertificate/signQzRequest, so the private key never reaches
+// the browser) — see that file's PRODUCT LABEL PRINTING section.
+// ---------------------------------------------------------------
+function initQzTrayForLabels_() {
+  if (qzLabelInitStarted_) return;
+  qzLabelInitStarted_ = true;
+  const sel = document.getElementById('labelPrinterSelect');
+  const hint = document.getElementById('labelPrinterStatusHint');
+  if (typeof qz === 'undefined') {
+    if (hint) hint.textContent = 'QZ Tray library failed to load (check internet connection).';
+    if (sel) sel.innerHTML = '<option value="">QZ Tray unavailable</option>';
+    return;
+  }
+
+  qz.security.setCertificatePromise(function (resolve) {
+    google.script.run
+      .withSuccessHandler(function (cert) { resolve(cert || ''); })
+      .withFailureHandler(function () { resolve(''); })
+      .getQzCertificate();
+  });
+  qz.security.setSignatureAlgorithm('SHA256');
+  qz.security.setSignaturePromise(function (toSign) {
+    return function (resolve) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function () { resolve(''); })
+        .signQzRequest(toSign);
+    };
+  });
+
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timed out after ' + ms + 'ms')), ms))
+    ]);
+  }
+
+  qz.websocket.connect().then(() => {
+    qzLabelConnected_ = true;
+    if (hint) hint.textContent = 'QZ Tray connected, listing printers…';
+    return withTimeout(qz.printers.find(), 8000, 'qz.printers.find()');
+  }).then(printers => {
+    const list = Array.isArray(printers) ? printers : [printers];
+    if (sel) {
+      sel.disabled = false;
+      sel.innerHTML = '<option value="">Select a printer…</option>' +
+        list.map(p => `<option value="${escAttr_(p)}">${escAttr_(p)}</option>`).join('');
+      const saved = localStorage.getItem(LABEL_PRINTER_STORAGE_KEY_);
+      if (saved && list.includes(saved)) sel.value = saved;
+    }
+    if (hint) hint.textContent = 'QZ Tray connected — ' + list.length + ' printer(s) found.';
+  }).catch(err => {
+    qzLabelConnected_ = false;
+    const isTimeout = err && err.message && err.message.indexOf('timed out') !== -1;
+    if (hint) hint.textContent = isTimeout
+      ? 'QZ Tray connected but printer list never responded. Try restarting QZ Tray.'
+      : 'QZ Tray not running on this PC — install/start it from qz.io, then reopen this tab.';
+    if (sel) sel.innerHTML = '<option value="">QZ Tray not running</option>';
+  });
+}
+
+/** Saved to localStorage — per-PC, not per-login. See
+ *  LABEL_PRINTER_STORAGE_KEY_'s comment above for why this is
+ *  deliberately NOT sent to the server. */
+function onLabelPrinterSelected_() {
+  const sel = document.getElementById('labelPrinterSelect');
+  if (sel && sel.value) localStorage.setItem(LABEL_PRINTER_STORAGE_KEY_, sel.value);
+}
+
+/** Core print action shared by both the 🟢 All and 🟡 Custom buttons —
+ *  generates the TSPL for one SKU server-side (generateSkuLabelTspl,
+ *  Blinkit only) and sends it straight to the saved printer via QZ
+ *  Tray. `qty` copies. */
+function printSkuLabel_(sku, qty, btnLabel) {
+  const printer = localStorage.getItem(LABEL_PRINTER_STORAGE_KEY_);
+  if (!qzLabelConnected_ || typeof qz === 'undefined') {
+    alert('QZ Tray is not connected on this PC. Open Settings → Label Printer to check its status, or install/start QZ Tray from qz.io.');
+    return;
+  }
+  if (!printer) {
+    alert('No label printer selected yet. Open Settings → Label Printer and pick one first.');
+    return;
+  }
+  showLoadingOverlay_('Preparing ' + (btnLabel || 'labels'));
+  google.script.run
+    .withSuccessHandler(res => {
+      if (!res || !res.success) {
+        hideLoadingOverlay_();
+        alert((res && res.message) || 'Could not generate the label.');
+        return;
+      }
+      const config = qz.configs.create(printer);
+      const data = [{ type: 'raw', format: 'plain', data: res.tspl }];
+      qz.print(config, data).then(() => {
+        hideLoadingOverlay_();
+        showSuccessToast_('Sent ' + qty + ' label(s) to ' + printer);
+      }).catch(err => {
+        hideLoadingOverlay_();
+        alert('Print failed: ' + (err.message || err));
+      });
+    })
+    .withFailureHandler(err => {
+      hideLoadingOverlay_();
+      alert('Server error: ' + err.message);
+    })
+    .generateSkuLabelTspl(sku, 'blinkit', qty);
+}
+
+function openLabelPrintAll_(sku, qty) {
+  showConfirmModal_('Print all ' + qty + ' packed label(s) for ' + sku + '?', 'Print', () => {
+    printSkuLabel_(sku, qty, 'labels');
+  });
+}
+
+let labelCustomQtyTargetSku_ = null;
+function openLabelPrintCustom_(sku, defaultQty) {
+  labelCustomQtyTargetSku_ = sku;
+  document.getElementById('labelCustomQtySkuLine').textContent = 'SKU: ' + sku + ' (packed: ' + defaultQty + ')';
+  const input = document.getElementById('labelCustomQtyInput');
+  input.value = defaultQty > 0 ? defaultQty : '';
+  document.getElementById('labelCustomQtyError').style.display = 'none';
+  document.getElementById('labelCustomQtyModal').style.display = 'flex';
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+function closeLabelCustomQtyModal_() {
+  document.getElementById('labelCustomQtyModal').style.display = 'none';
+  labelCustomQtyTargetSku_ = null;
+}
+function confirmLabelPrintCustom_() {
+  const qty = parseInt(document.getElementById('labelCustomQtyInput').value, 10);
+  const errEl = document.getElementById('labelCustomQtyError');
+  if (!qty || qty < 1) {
+    errEl.textContent = 'Enter a quantity of at least 1.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const sku = labelCustomQtyTargetSku_;
+  closeLabelCustomQtyModal_();
+  printSkuLabel_(sku, qty, 'labels');
 }
 
 // Legacy stubs (called from resetEntryForm / selectPlatform in some paths)
