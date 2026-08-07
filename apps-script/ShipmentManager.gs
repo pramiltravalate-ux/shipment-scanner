@@ -506,6 +506,21 @@ function getSkuData() {
   };
   const str_ = (r, idx) => idx === undefined ? "" : (r[idx] || "").toString().trim();
   const num_ = (r, idx) => idx === undefined ? 0 : (parseFloat(r[idx]) || 0);
+  // MFG_DATE specifically: Sheets auto-converts date-looking typed text
+  // (e.g. "Aug-26") into a real Date cell — plain str_ above would then
+  // print that Date object's full JS toString() ("Wed Aug 26 2026
+  // 00:00:00 GMT+0530...") straight onto the label. Format it down to
+  // "AUG-26" when it's a real Date; left alone as typed if it's plain
+  // text (e.g. someone intentionally typed something else).
+  const dateStr_ = (r, idx) => {
+    if (idx === undefined) return "";
+    const v = r[idx];
+    if (!v) return "";
+    if (Object.prototype.toString.call(v) === "[object Date]") {
+      return Utilities.formatDate(v, Session.getScriptTimeZone() || "Etc/UTC", "MMM-yy").toUpperCase();
+    }
+    return v.toString().trim();
+  };
   // A row is kept if it has EITHER a normal SKU (col B) or an Amazon SKU
   // (col C) — some rows exist only to carry an extra Amazon listing for
   // a product that already has its own row under its normal SKU, so col
@@ -534,7 +549,7 @@ function getSkuData() {
     swiggyLandingPrice:  num_(r, c.swiggyLandingPrice),
     swiggyItemId:  str_(r, c.swiggyItemId),
     zeptoItemId:   str_(r, c.zeptoItemId),
-    mfgDate:       str_(r, c.mfgDate),
+    mfgDate:       dateStr_(r, c.mfgDate),
     productType:   str_(r, c.productType),
     color:         str_(r, c.color),
     country:       str_(r, c.country),
@@ -6813,12 +6828,19 @@ function buildLabelTspl_(data, qty) {
     `BARCODE ${labelMmToDots_(barcodeX)},${labelMmToDots_(boxY)},"128",${labelMmToDots_(barcodeHmm)},0,0,${narrowBar},${narrowBar},"${labelTsplEscape_(data.barcodeValue)}"`
   );
 
-  // ---- Barcode value text (left-aligned — proven safe across every
-  // detail line; centering this specifically caused edge-clipping in
-  // physical testing on the original label system) ----
+  // ---- Barcode value text, centered under the BARCODE ITSELF (not the
+  // whole label — the barcode sits well right of the platform box, so
+  // centering against the full label width would push the text off to
+  // one side of the actual bars). Estimated the same way the barcode
+  // bars' own width is estimated: Font "2" nominal 12-dot char cell.
+  // Clamped so it can never start left of the barcode's own left edge,
+  // in case a very short numeric value would otherwise center further
+  // left than that.
   let y = Math.max(boxY + boxH, boxY + barcodeHmm) + 1.5;
   const textLeftMargin = 3;
-  lines.push(`TEXT ${labelMmToDots_(textLeftMargin)},${labelMmToDots_(y)},"2",0,1,1,"${labelTsplEscape_(data.barcodeValue)}"`);
+  const barcodeTextWidthMm = String(data.barcodeValue || "").length * (12 / labelDotsPerMm_());
+  const barcodeTextX = Math.max(barcodeAreaX, barcodeX + (estimatedBarcodeWidthMm - barcodeTextWidthMm) / 2);
+  lines.push(`TEXT ${labelMmToDots_(barcodeTextX)},${labelMmToDots_(y)},"2",0,1,1,"${labelTsplEscape_(data.barcodeValue)}"`);
   y += 2.3;
   y += 1;
 
@@ -6840,13 +6862,23 @@ function buildLabelTspl_(data, qty) {
   let rightY = y;
   const leftLineStep = (heightMm - y - 1.5) / 9;
   const rightLineStep = (heightMm - y - 1.5) / 8;
-  const FONT = "2";
-  const COL_MAX_CHARS = 27;
+  // Font "2" (used here until now) measured wider in real prints than
+  // its nominal 12-dot spec — at COL_MAX_CHARS=27 that was enough to run
+  // a long SKU straight into the right column's text, and independently
+  // run the wrapped manufacturer address past the label's own right
+  // edge (both reported against a physical print). Font "1" is TSC's
+  // next size down — already proven legible on this exact printer (the
+  // "(Inclusive of Taxes)" sub-line below has used it all along) — and
+  // buys enough real width back to fit every fixed string here (the
+  // longest, "Manufactured & Packed By:", is 25 characters) with actual
+  // margin to spare, rather than sitting right at the edge like before.
+  const FONT = "1";
+  const COL_MAX_CHARS = 34;
 
   const leftLines = [
     `SKU: ${labelTsplEscape_(data.sku)}`,
     `MRP: Rs. ${labelTsplEscape_(data.mrp)}.00`,
-    `MFG: ${labelTsplEscape_(data.mfgDate)}`,
+    `MFG Date: ${labelTsplEscape_(data.mfgDate)}`,
     `Qty: ${labelTsplEscape_(data.quantity)}`,
     `Brand: ${labelTsplEscape_(data.brand)}`,
     `Type: ${labelTsplEscape_(labelTruncate_(data.productType, 16))}`,
