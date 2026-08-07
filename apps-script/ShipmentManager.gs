@@ -510,14 +510,29 @@ function getSkuData() {
   // (e.g. "Aug-26") into a real Date cell — plain str_ above would then
   // print that Date object's full JS toString() ("Wed Aug 26 2026
   // 00:00:00 GMT+0530...") straight onto the label. Format it down to
-  // "AUG-26" when it's a real Date; left alone as typed if it's plain
-  // text (e.g. someone intentionally typed something else).
+  // "AUG-26" whenever the cell holds (or contains text that reads like)
+  // a date; left alone only if it's genuinely unparseable as one.
+  // Checks BOTH forms since either can turn up here: a true Date object
+  // (the normal case — Sheets auto-converted what was typed), or a
+  // plain STRING that already reads like Date.toString() output (e.g.
+  // pasted in from elsewhere as unformatted text, or the column was set
+  // to "Plain text" format before typing, which stops Sheets' own
+  // auto-conversion from ever happening) — the first fix only caught
+  // the former.
+  const MFG_DATE_STRING_PATTERN_ = /^\w{3}\s+\w{3}\s+\d{1,2}\s+\d{4}\s+\d{1,2}:\d{2}(:\d{2})?/;
   const dateStr_ = (r, idx) => {
     if (idx === undefined) return "";
     const v = r[idx];
     if (!v) return "";
+    let d = null;
     if (Object.prototype.toString.call(v) === "[object Date]") {
-      return Utilities.formatDate(v, Session.getScriptTimeZone() || "Etc/UTC", "MMM-yy").toUpperCase();
+      d = v;
+    } else if (MFG_DATE_STRING_PATTERN_.test(v.toString().trim())) {
+      const parsed = new Date(v.toString().trim());
+      if (!isNaN(parsed.getTime())) d = parsed;
+    }
+    if (d) {
+      return Utilities.formatDate(d, Session.getScriptTimeZone() || "Etc/UTC", "MMM-yy").toUpperCase();
     }
     return v.toString().trim();
   };
