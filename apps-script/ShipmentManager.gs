@@ -1004,6 +1004,19 @@ function callInventoryWebApp_(body) {
   }
 }
 
+/** Public: live company-wide current-stock-per-SKU pull straight from
+ *  the Travalate Inventory Management system's own running stock
+ *  register — NOT the Blinkit-specific, upload-based Snapshot tab
+ *  (getSnapshotMatrix/INVENTORY_SNAPSHOT_LOG), which is a periodic
+ *  manual import. Backs the "Inventory Snapshot" nav tab and the
+ *  topbar stock widget — see loadInventoryLiveSnapshot_ in
+ *  ShipmentManagerIndex.html. Reuses callInventoryWebApp_'s existing
+ *  auth (INVENTORY_SHARED_SECRET) against Inventory's own new
+ *  getCurrentStockSnapshot() (action "getStockSnapshot" in its doPost). */
+function getInventoryStockSnapshot() {
+  return callInventoryWebApp_({ action: "getStockSnapshot" });
+}
+
 /** Builds a { "INVENTORY_SKU": totalQty } map from a shipment's boxes,
  *  using each line item's Shipment Manager SKU mapped through
  *  SKU_MASTER's INVENTORY_SKU column. A line item's `sku` may be either
