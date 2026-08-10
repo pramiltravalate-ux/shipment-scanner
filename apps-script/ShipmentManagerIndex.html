@@ -916,7 +916,10 @@ input.input-error,select.input-error,.platform-card.input-error,#invoiceModalWra
       <div style="font-weight:700;font-size:14px">📦 Live Stock</div>
       <button class="btn btn-secondary btn-sm" onclick="toggleTopbarStockPopup_()">✕</button>
     </div>
-    <div id="topbarStockPopupBody" style="padding:12px 16px;overflow-y:auto"></div>
+    <div style="padding:10px 16px 0;flex-shrink:0">
+      <input type="text" id="topbarStockSearchInput" placeholder="Search SKU…" style="width:100%;padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12.5px" oninput="renderTopbarStockPopup_()">
+    </div>
+    <div id="topbarStockPopupBody" style="padding:10px 16px 12px;overflow-y:auto"></div>
   </div>
 
   <!-- -- LEFT SIDEBAR NAV (permanent on desktop, off-canvas on mobile) -- -->
@@ -5662,27 +5665,55 @@ function renderInventoryLiveSnapshot_() {
     </tr>`).join('');
 }
 
-/** Compact view for the topbar's "📦 Stock" popup — total SKU count and
- *  the lowest-stock items (never the whole table; that's what the nav
- *  tab is for), plus a shortcut into the full tab. */
+const TOPBAR_STOCK_POPUP_MAX_ROWS_ = 15;
+
+/** Compact view for the topbar's "📦 Stock" popup. With the search box
+ *  empty, shows the top 15 lowest-stock items (never the whole table;
+ *  that's what the nav tab is for). Typing in the search box switches
+ *  to matching against EVERY tracked SKU (not just low-stock ones),
+ *  same 15-row cap with a "N more" hint if there's more than that. The
+ *  search input lives outside this function's own re-rendered markup
+ *  (see topbarStockPopup's static HTML) so typing never loses focus. */
 function renderTopbarStockPopup_() {
   const body = document.getElementById('topbarStockPopupBody');
   if (!body || !invSnapshotData_) return;
   const stocks = invSnapshotData_.stocks || [];
-  const lowStock = stocks.filter(r => r.low).sort((a, b) => a.qty - b.qty);
   const updatedHint = invSnapshotData_.updatedAt ? formatTimestamp(invSnapshotData_.updatedAt) : '';
+  const q = (document.getElementById('topbarStockSearchInput')?.value || '').trim().toLowerCase();
 
-  const lowRowsHtml = lowStock.length
-    ? lowStock.slice(0, 10).map(r => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;border-bottom:1px solid #f1f5f9">
-        <span>${escAttr_(r.sku)}</span><span style="font-weight:700;color:#dc2626">${r.qty}</span>
-      </div>`).join('')
+  const viewAllBtn = `<button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px" onclick="closeTopbarStockPopup_();showTab('invsnapshot')">View Full Snapshot</button>`;
+  const summaryHtml = `<div style="font-size:12px;color:#64748b;margin-bottom:8px">${stocks.length} SKUs tracked · updated ${updatedHint}</div>`;
+
+  const rowHtml = r => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;border-bottom:1px solid #f1f5f9">
+      <span>${escAttr_(r.sku)}</span><span style="font-weight:700;color:${r.low ? '#dc2626' : '#166534'}">${r.qty}</span>
+    </div>`;
+
+  if (q) {
+    const matches = stocks.filter(r => r.sku.toLowerCase().includes(q));
+    const shown = matches.slice(0, TOPBAR_STOCK_POPUP_MAX_ROWS_);
+    const rowsHtml = shown.length
+      ? shown.map(rowHtml).join('')
+      : '<div style="color:#64748b;font-size:12.5px;padding:6px 0">No matching SKUs.</div>';
+    const moreHint = matches.length > shown.length
+      ? `<div style="color:#64748b;font-size:11.5px;padding-top:4px">+${matches.length - shown.length} more — refine your search or view the full snapshot.</div>` : '';
+    body.innerHTML = `${summaryHtml}<div style="font-weight:700;font-size:12.5px;margin-bottom:4px">Results (${matches.length})</div>${rowsHtml}${moreHint}${viewAllBtn}`;
+    return;
+  }
+
+  const lowStock = stocks.filter(r => r.low).sort((a, b) => a.qty - b.qty);
+  const shown = lowStock.slice(0, TOPBAR_STOCK_POPUP_MAX_ROWS_);
+  const lowRowsHtml = shown.length
+    ? shown.map(rowHtml).join('')
     : '<div style="color:#64748b;font-size:12.5px;padding:6px 0">No SKUs below the low-stock threshold.</div>';
+  const moreHint = lowStock.length > shown.length
+    ? `<div style="color:#64748b;font-size:11.5px;padding-top:4px">+${lowStock.length - shown.length} more low-stock SKUs — view the full snapshot.</div>` : '';
 
   body.innerHTML = `
-    <div style="font-size:12px;color:#64748b;margin-bottom:8px">${stocks.length} SKUs tracked · updated ${updatedHint}</div>
+    ${summaryHtml}
     ${lowStock.length ? `<div style="font-weight:700;font-size:12.5px;color:#dc2626;margin-bottom:4px">⚠️ Low stock (${lowStock.length})</div>` : ''}
     ${lowRowsHtml}
-    <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px" onclick="closeTopbarStockPopup_();showTab('invsnapshot')">View Full Snapshot</button>
+    ${moreHint}
+    ${viewAllBtn}
   `;
 }
 
@@ -5691,6 +5722,8 @@ function toggleTopbarStockPopup_() {
   if (topbarStockPopupOpen_) { closeTopbarStockPopup_(); return; }
   document.getElementById('topbarStockPopup').classList.remove('hidden');
   topbarStockPopupOpen_ = true;
+  const searchInput = document.getElementById('topbarStockSearchInput');
+  if (searchInput) searchInput.value = ''; // start each open on the default low-stock view, not a stale search
   const isStale = !invSnapshotData_ || (Date.now() - invSnapshotLoadedAt_ > TAB_AUTO_REFRESH_MS);
   if (isStale) {
     document.getElementById('topbarStockPopupBody').innerHTML = '<div style="text-align:center;padding:10px"><span class="spinner"></span></div>';
