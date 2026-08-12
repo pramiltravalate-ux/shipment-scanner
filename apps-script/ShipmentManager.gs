@@ -857,13 +857,25 @@ function getInventoryStockForSku(sku) {
 
 // ── FETCH CURRENT STOCK FOR MANY SKUS AT ONCE (Blinkit Shipment Planning's
 //    QTY column) ────────────────────────────────────────────────
-// Same mapping/lookup as getInventoryStockForSku above, just batched
-// into one round trip for every distinct SKU the Snapshot grid has
-// open, instead of one google.script.run call per SKU. Matches against
-// INVENTORY_SKU too (not just SKU/AMAZON_SKU) since the Snapshot log's
-// itemId is often already the canonical INVENTORY_SKU itself (see
-// buildSkuIdentityMap_ — canonicalId prefers INVENTORY_SKU when set).
-// Returns { success, stocks: { <sku>: { stock, unmapped? , error? } } }.
+// Same mapping/lookup as getInventoryStockForSku above. Used to fire one
+// HTTP round trip PER DISTINCT SKU in the grid (via fetchAll, "parallel"
+// but still N real requests under the hood) — every 2 minutes, for as
+// long as the grid stayed open (see startSnapshotInvStockAutoRefresh_ in
+// ShipmentManagerIndex.html). With a grid holding dozens of distinct
+// SKUs that was genuinely slow, and gave each individual request its
+// own chance to fail/time out under load — which is exactly what showed
+// up as scattered "?" cells (a failed lookup renders the same as a
+// SKU that's legitimately missing from Inventory's stock register; see
+// invText's fallback logic in ShipmentManagerIndex.html).
+//
+// Now makes exactly ONE HTTP call total, regardless of how many
+// distinct SKUs are in the grid — the new getStockSnapshot action
+// (added for the "Inventory Snapshot" nav tab/topbar widget) has
+// Inventory read its ENTIRE stock register once and hand back every
+// SKU's current value in one response; this just looks each grid SKU
+// up in that single result instead of asking for it individually.
+// Returns { success, stocks: { <sku>: { stock, unmapped? , error? } } } —
+// same shape as before, so no client-side change was needed.
 function getSnapshotInventoryStock(skuList) {
   try {
     if (!INVENTORY_WEBAPP_URL || INVENTORY_WEBAPP_URL.indexOf("PASTE_YOUR") === 0) {
@@ -871,7 +883,7 @@ function getSnapshotInventoryStock(skuList) {
     }
     const skuRows = getSkuData();
     const stocks = {};
-    const invSkuToRaws = {}; // inventorySku -> [raw sku(s) that resolved to it] — dedupes the actual HTTP calls when multiple raw SKUs map to the same canonical id
+    const needsLookup = []; // [{raw, inventorySku}]
 
     (skuList || []).forEach(function (sku) {
       const raw = String(sku || "").trim();
@@ -884,54 +896,28 @@ function getSnapshotInventoryStock(skuList) {
       });
       const inventorySku = match ? (match.inventorySku || "").trim() : raw;
       if (!inventorySku) { stocks[raw] = { stock: null, unmapped: true }; return; }
-      if (!invSkuToRaws[inventorySku]) invSkuToRaws[inventorySku] = [];
-      invSkuToRaws[inventorySku].push(raw);
+      needsLookup.push({ raw: raw, inventorySku: inventorySku });
     });
 
-    const uniqueInvSkus = Object.keys(invSkuToRaws);
-    if (!uniqueInvSkus.length) return { success: true, stocks: stocks };
+    if (!needsLookup.length) return { success: true, stocks: stocks };
 
-    // Fire every SKU's stock request IN PARALLEL instead of one at a
-    // time — sequential UrlFetchApp.fetch() calls were taking ~90+
-    // seconds for a grid with many distinct SKUs, since each round
-    // trip carries real network + cold-start latency that was being
-    // paid N times in a row. fetchAll sends them together, so total
-    // time is roughly the slowest single request, not the sum of all
-    // of them.
-    const requests = uniqueInvSkus.map(function (invSku) {
-      return {
-        url: INVENTORY_WEBAPP_URL,
-        method: "post",
-        contentType: "application/json",
-        payload: JSON.stringify({ secret: INVENTORY_SHARED_SECRET, action: "getStock", sku: invSku }),
-        muteHttpExceptions: true
-      };
-    });
-
-    let responses;
-    try {
-      responses = UrlFetchApp.fetchAll(requests);
-    } catch (fetchErr) {
-      uniqueInvSkus.forEach(function (invSku) {
-        invSkuToRaws[invSku].forEach(function (raw) { stocks[raw] = { stock: null, error: "Could not reach Inventory: " + fetchErr.message }; });
-      });
+    const snap = callInventoryWebApp_({ action: "getStockSnapshot" });
+    if (!snap || !snap.success) {
+      const errMsg = (snap && (snap.error || snap.message)) || "Could not reach Inventory.";
+      needsLookup.forEach(function (item) { stocks[item.raw] = { stock: null, error: errMsg }; });
       return { success: true, stocks: stocks };
     }
 
-    uniqueInvSkus.forEach(function (invSku, i) {
-      const raws = invSkuToRaws[invSku];
-      let parsed;
-      try {
-        parsed = JSON.parse(responses[i].getContentText());
-      } catch (parseErr) {
-        raws.forEach(function (raw) { stocks[raw] = { stock: null, error: "Inventory returned a non-JSON response (HTTP " + responses[i].getResponseCode() + ")." }; });
-        return;
-      }
-      if (!parsed.success) {
-        raws.forEach(function (raw) { stocks[raw] = { stock: null, error: parsed.error || "Failed to fetch stock." }; });
-        return;
-      }
-      raws.forEach(function (raw) { stocks[raw] = { stock: parsed.stock }; });
+    const byInvSku = {};
+    (snap.stocks || []).forEach(function (row) { byInvSku[String(row.sku).trim().toUpperCase()] = row.qty; });
+
+    needsLookup.forEach(function (item) {
+      const qty = byInvSku[item.inventorySku.toUpperCase()];
+      // Present in SKU_MASTER's mapping but genuinely not in Inventory's
+      // stock register (never stocked / typo'd) → stock:null, same as
+      // before — the client shows this as "?", same as any other
+      // lookup miss, not "-" (that's reserved for no mapping AT ALL).
+      stocks[item.raw] = qty !== undefined ? { stock: qty } : { stock: null };
     });
 
     return { success: true, stocks: stocks };
