@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Task Sheet Tracker — Travalate</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f7f8fa;color:#1a1a2e;height:100vh;overflow:hidden}
+.app{display:flex;height:100vh}
+
+/* ── Sidebar ── */
+.sidebar{width:220px;flex:none;background:#fbfbfc;border-right:1px solid #eceef2;display:flex;flex-direction:column;padding:10px 8px}
+.ws-switch{display:flex;align-items:center;gap:8px;padding:8px 6px;border-radius:8px;cursor:default;font-weight:700;font-size:14px}
+.ws-switch .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#0f3460,#3b82f6);display:flex;align-items:center;justify-content:center;color:#FFE600;font-size:13px}
+.nav{margin-top:6px;display:flex;flex-direction:column;gap:1px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;font-size:13.5px;color:#43465a;cursor:pointer;position:relative}
+.nav-item:hover{background:#f0f1f5}
+.nav-item .ic{width:16px;text-align:center;font-size:14px}
+.nav-item .badge{margin-left:auto;background:#ef4444;color:#fff;font-size:10.5px;font-weight:700;border-radius:9px;padding:1px 6px}
+.sp-title{margin-top:16px;padding:4px 8px;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9aa0ae;text-transform:uppercase}
+.space-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;font-size:13.5px;color:#43465a;cursor:pointer}
+.space-item:hover{background:#f0f1f5}
+.space-item.active{background:#eee9fb;color:#5b21b6;font-weight:600}
+.space-item .sq{width:19px;height:19px;border-radius:5px;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.add-space{margin-top:2px;color:#9aa0ae;font-size:13px;padding:7px 8px;cursor:default}
+
+/* ── Main ── */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid #eceef2;background:#fff}
+.tabs{display:flex;align-items:center;gap:4px}
+.tab{padding:6px 12px;border-radius:7px;font-size:13.5px;font-weight:600;color:#6b7080;cursor:default;display:flex;align-items:center;gap:6px}
+.tab.active{background:#f0f1f5;color:#1a1a2e}
+.tab.add{color:#9aa0ae}
+.topbar .spacer{flex:1}
+.icon-btn{background:none;border:none;color:#6b7080;font-size:13.5px;cursor:pointer;padding:6px 8px;border-radius:7px;display:flex;align-items:center;gap:6px}
+.icon-btn:hover{background:#f0f1f5}
+.avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#f472b6,#818cf8);flex:none}
+
+.daybar{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid #eceef2;background:#fff;flex-wrap:wrap}
+.day-nav{display:flex;align-items:center;gap:2px}
+.day-nav button{background:#f7f8fa;border:1px solid #eceef2;color:#43465a;width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:13px}
+.day-nav button:hover{background:#eef0f4}
+.day-label{font-weight:700;font-size:14.5px;min-width:190px}
+.day-label .rel{font-weight:500;color:#9aa0ae;font-size:12.5px;margin-left:6px}
+.btn-chip{background:#f0f1f5;border:none;color:#43465a;font-size:12.5px;font-weight:600;padding:6px 10px;border-radius:7px;cursor:pointer}
+.btn-chip:hover{background:#e5e7ec}
+.btn-chip.primary{background:#0f3460;color:#fff}
+.btn-chip.primary:hover{background:#0c2a4e}
+.daybar .spacer{flex:1}
+.search-box{display:flex;align-items:center;gap:6px;background:#f7f8fa;border:1px solid #eceef2;border-radius:7px;padding:5px 9px}
+.search-box input{border:none;background:none;outline:none;font-size:13px;width:150px}
+
+.toolbar{display:flex;align-items:center;gap:4px;padding:8px 20px;border-bottom:1px solid #eceef2;background:#fff;flex-wrap:wrap}
+.toolbar .icon-btn{font-size:12.5px}
+.toolbar .divider{width:1px;height:16px;background:#eceef2;margin:0 4px}
+select.filter-select{border:none;background:none;font-size:12.5px;color:#6b7080;font-weight:600;cursor:pointer}
+
+.table-scroll{flex:1;overflow:auto;background:#fff}
+table.sheet{width:100%;border-collapse:collapse;font-size:13.5px}
+table.sheet thead th{position:sticky;top:0;background:#fbfbfc;z-index:2;text-align:left;font-size:11.5px;color:#8a8f9c;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid #eceef2;white-space:nowrap}
+table.sheet th.num{width:34px}
+table.sheet th.task-col{min-width:260px}
+table.sheet th.pri-col{width:120px}
+table.sheet th.tags-col{width:180px}
+table.sheet th.labels-col{width:150px}
+table.sheet th.sub-col{width:170px}
+table.sheet th.del-col{width:34px}
+
+.group-row td{padding:0;border:none}
+.group-header{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#f7f8fa;font-weight:700;font-size:12.5px;cursor:pointer;user-select:none;border-bottom:1px solid #eceef2;border-top:1px solid #eceef2}
+.group-header .chev{transition:transform .12s;font-size:10px;color:#9aa0ae;width:10px}
+.group-header.collapsed .chev{transform:rotate(-90deg)}
+.group-header .dot{width:8px;height:8px;border-radius:50%}
+.group-header .cnt{color:#9aa0ae;font-weight:600}
+.group-header .add-in-group{margin-left:auto;color:#9aa0ae;font-weight:600;font-size:12px;cursor:pointer;padding:2px 8px;border-radius:6px}
+.group-header .add-in-group:hover{background:#eceef2;color:#43465a}
+
+tr.task-row{border-bottom:1px solid #f2f3f6}
+tr.task-row:hover{background:#fafbfd}
+tr.task-row.done .task-name{color:#9aa0ae;text-decoration:line-through}
+tr.task-row td{padding:7px 10px;vertical-align:middle}
+.numcell{width:34px;color:#c2c5cd;font-size:12px;position:relative}
+tr.task-row:hover .numcell .rownum{display:none}
+.numcell .rownum{display:block}
+.trash-btn{display:none;background:none;border:none;cursor:pointer;color:#c2c5cd;font-size:13px}
+tr.task-row:hover .trash-btn{display:block}
+.trash-btn:hover{color:#ef4444}
+
+.task-cell{display:flex;align-items:center;gap:9px}
+.chk{width:16px;height:16px;border-radius:5px;border:1.6px solid #cbd0da;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+.chk.checked{background:#16a34a;border-color:#16a34a}
+.task-name{outline:none;flex:1;min-width:0;padding:2px 4px;border-radius:5px;cursor:text}
+.task-name:focus{background:#f0f4ff;box-shadow:0 0 0 2px #c7d7ff}
+
+.pri-pill{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;cursor:pointer;padding:3px 7px;border-radius:6px}
+.pri-pill:hover{background:#f0f1f5}
+.pri-pill .flag{font-size:11px}
+.pri-none{color:#c2c5cd}
+
+.chip-cell{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:12px;white-space:nowrap}
+.chip .x{cursor:pointer;opacity:.55;font-size:10px}
+.chip .x:hover{opacity:1}
+.chip-add{width:20px;height:20px;border-radius:50%;border:1px dashed #d2d5dc;background:none;color:#9aa0ae;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.chip-add:hover{border-color:#9aa0ae;color:#43465a}
+.chip-input{border:1px solid #cbd0da;border-radius:6px;font-size:11.5px;padding:3px 6px;outline:none;width:88px}
+
+.sub-cell{cursor:pointer}
+.sub-preview{display:flex;align-items:center;gap:6px;color:#43465a;font-size:12.5px}
+.sub-preview .bullet{color:#ef4444;font-size:9px}
+.sub-count{color:#9aa0ae;font-size:12px}
+.sub-none{color:#c2c5cd}
+
+.subtask-panel td{padding:0 10px 10px 44px;background:#fafbfd;border-bottom:1px solid #f2f3f6}
+.subtask-list{display:flex;flex-direction:column;gap:5px;padding:6px 0}
+.subtask-item{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.subtask-item .chk{width:14px;height:14px}
+.subtask-item.done span{color:#9aa0ae;text-decoration:line-through}
+.subtask-item .stx{flex:1;outline:none}
+.subtask-item .rm{opacity:0;cursor:pointer;color:#c2c5cd;font-size:11px}
+.subtask-item:hover .rm{opacity:1}
+.subtask-item .rm:hover{color:#ef4444}
+.add-subtask{display:flex;align-items:center;gap:6px;margin-top:2px}
+.add-subtask input{border:1px solid #e5e7ec;border-radius:6px;font-size:12.5px;padding:4px 7px;outline:none;flex:1;max-width:220px}
+
+.add-row{padding:9px 10px;color:#9aa0ae;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
+.add-row:hover{color:#43465a;background:#fafbfd}
+.empty-day{padding:50px 10px;text-align:center;color:#9aa0ae;font-size:13.5px}
+
+.pri-menu{position:fixed;background:#fff;border:1px solid #e5e7ec;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px;z-index:50;min-width:130px}
+.pri-menu .opt{padding:7px 9px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px}
+.pri-menu .opt:hover{background:#f0f1f5}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="ws-switch"><div class="logo">✳</div> Travalate</div>
+    <div class="nav">
+      <div class="nav-item"><span class="ic">🏠</span> Home</div>
+      <div class="nav-item"><span class="ic">📥</span> Inbox <span class="badge" id="inboxBadge">0</span></div>
+      <div class="nav-item"><span class="ic">⋯</span> More</div>
+    </div>
+    <div class="sp-title">Spaces</div>
+    <div id="spaceList"></div>
+    <div class="add-space">+ Add Space</div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="tabs">
+        <div class="tab active">📋 Table</div>
+        <div class="tab">▦ Board</div>
+        <div class="tab">📅 Calendar</div>
+        <div class="tab add">+ Add</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="search-box">🔍<input id="searchInput" placeholder="Search tasks…"></div>
+      <button class="icon-btn">⚙ Customize</button>
+      <div class="avatar" title="travalateadsteam@gmail.com"></div>
+    </div>
+
+    <div class="daybar">
+      <div class="day-nav">
+        <button id="prevDay" title="Previous day">‹</button>
+        <button id="nextDay" title="Next day">›</button>
+      </div>
+      <div class="day-label" id="dayLabel"></div>
+      <button class="btn-chip" id="todayBtn">Today</button>
+      <input type="date" id="datePicker" class="btn-chip" style="cursor:pointer">
+      <button class="btn-chip" id="carryOverBtn">↻ Carry over open tasks</button>
+      <div class="spacer"></div>
+      <button class="btn-chip primary" id="addTaskTop">+ Add Task</button>
+    </div>
+
+    <div class="toolbar">
+      <button class="icon-btn">⊞ Group by: Status</button>
+      <button class="icon-btn" id="collapseAllSub">▤ Subtasks: Collapse all</button>
+      <div class="divider"></div>
+      <select class="filter-select" id="priFilter">
+        <option value="">▽ Filter: Priority</option>
+        <option value="urgent">Urgent only</option>
+        <option value="high">High only</option>
+        <option value="normal">Normal only</option>
+        <option value="low">Low only</option>
+      </select>
+      <div class="divider"></div>
+      <button class="icon-btn">👤 Me mode</button>
+      <button class="icon-btn">🧑‍🤝‍🧑 Assignees</button>
+      <label class="icon-btn"><input type="checkbox" id="showClosed" checked style="margin-right:4px">Show closed</label>
+      <button class="icon-btn">Hide</button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="sheet">
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th class="task-col">Task</th>
+            <th class="pri-col">⚑ Priority</th>
+            <th class="tags-col">🏷 Tags</th>
+            <th class="labels-col">◫ Labels</th>
+            <th class="sub-col">☑ Subtasks</th>
+            <th class="del-col"></th>
+          </tr>
+        </thead>
+        <tbody id="sheetBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   DAILY TASK SHEET TRACKER
+   Standalone, localStorage-backed. Tasks live in
+   per-day "sheets" (YYYY-MM-DD -> task[]), so each
+   day gets its own tracker, with a one-click way to
+   carry unfinished tasks forward into today.
+══════════════════════════════════════════════ */
+
+const STORAGE_KEY = 'dailyTaskSheet_v1';
+const SPACES = [
+  { name: 'Daily Tasks', letter: 'D', color: '#3b82f6', active: true },
+  { name: 'Product',     letter: 'P', color: '#ef4444' },
+  { name: 'Engineering', letter: 'E', color: '#eab308' },
+  { name: 'Design',      letter: 'D', color: '#0ea5e9' },
+  { name: 'Finance',     letter: 'F', color: '#8b5cf6' },
+  { name: 'HR',          letter: 'H', color: '#f97316' },
+];
+const STATUS_GROUPS = [
+  { key: 'todo',     label: 'To Do',       dot: '#94a3b8' },
+  { key: 'progress', label: 'In Progress', dot: '#3b82f6' },
+  { key: 'complete', label: 'Complete',    dot: '#16a34a' },
+];
+const PRIORITIES = {
+  urgent: { label: 'Urgent', color: '#ef4444' },
+  high:   { label: 'High',   color: '#eab308' },
+  normal: { label: 'Normal', color: '#3b82f6' },
+  low:    { label: 'Low',    color: '#94a3b8' },
+};
+const CHIP_PALETTE = [
+  { bg: '#fce7f3', fg: '#be185d' }, { bg: '#dcfce7', fg: '#15803d' },
+  { bg: '#ede9fe', fg: '#6d28d9' }, { bg: '#fee2e2', fg: '#b91c1c' },
+  { bg: '#dbeafe', fg: '#1d4ed8' }, { bg: '#fef9c3', fg: '#854d0e' },
+  { bg: '#e0f2fe', fg: '#0369a1' }, { bg: '#ffedd5', fg: '#c2410c' },
+];
+
+let data = loadData();
+let currentDate = todayStr();
+let collapsedGroups = new Set();
+let expandedSubtasks = new Set();
+let searchQuery = '';
+let priFilter = '';
+let showClosed = true;
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function uid() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { sheets: {} };
+}
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+function getSheet(dateStr) {
+  if (!data.sheets[dateStr]) data.sheets[dateStr] = [];
+  return data.sheets[dateStr];
+}
+
+function chipColor(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return CHIP_PALETTE[h % CHIP_PALETTE.length];
+}
+
+function shiftDate(dateStr, days) {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate() + days);
+  return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+}
+function formatDayLabel(dateStr) {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  const label = dt.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+  const t = todayStr();
+  let rel = '';
+  if (dateStr === t) rel = 'Today';
+  else if (dateStr === shiftDate(t, -1)) rel = 'Yesterday';
+  else if (dateStr === shiftDate(t, 1)) rel = 'Tomorrow';
+  return { label, rel };
+}
+
+/* ── Sidebar ── */
+function renderSpaces() {
+  const wrap = document.getElementById('spaceList');
+  wrap.innerHTML = SPACES.map(sp => `
+    <div class="space-item ${sp.active ? 'active' : ''}" data-name="${sp.name}">
+      <div class="sq" style="background:${sp.color}">${sp.letter}</div>
+      ${sp.name}
+    </div>`).join('');
+}
+
+/* ── Main render ── */
+function render() {
+  const sheet = getSheet(currentDate);
+  const { label, rel } = formatDayLabel(currentDate);
+  document.getElementById('dayLabel').innerHTML = label + (rel ? `<span class="rel">${rel}</span>` : '');
+  document.getElementById('datePicker').value = currentDate;
+
+  const openCount = sheet.filter(t => t.status !== 'complete').length;
+  document.getElementById('inboxBadge').textContent = openCount;
+  document.getElementById('inboxBadge').style.display = openCount ? 'inline-block' : 'none';
+
+  const q = searchQuery.trim().toLowerCase();
+  const body = document.getElementById('sheetBody');
+
+  if (sheet.length === 0) {
+    body.innerHTML = `<tr><td colspan="7"><div class="empty-day">No tasks on this day yet. Click <strong>+ Add Task</strong> above, or carry over open tasks from a previous day.</div></td></tr>`;
+    return;
+  }
+
+  let html = '';
+  let rowNum = 0;
+  STATUS_GROUPS.forEach(group => {
+    if (group.key === 'complete' && !showClosed) return;
+    let tasks = sheet.filter(t => t.status === group.key);
+    if (q) tasks = tasks.filter(t => t.name.toLowerCase().includes(q));
+    if (priFilter) tasks = tasks.filter(t => t.priority === priFilter);
+    if (!tasks.length && (q || priFilter)) return;
+
+    const collapsed = collapsedGroups.has(group.key);
+    html += `
+      <tr class="group-row"><td colspan="7">
+        <div class="group-header ${collapsed ? 'collapsed' : ''}" data-group="${group.key}">
+          <span class="chev">▾</span>
+          <span class="dot" style="background:${group.dot}"></span>
+          ${group.label} <span class="cnt">${tasks.length}</span>
+          <span class="add-in-group" data-add-group="${group.key}">+ Add task</span>
+        </div>
+      </td></tr>`;
+
+    if (!collapsed) {
+      tasks.forEach(task => {
+        rowNum++;
+        html += renderTaskRow(task, rowNum);
+        if (expandedSubtasks.has(task.id)) {
+          html += renderSubtaskPanel(task);
+        }
+      });
+    }
+  });
+
+  if (!html) html = `<tr><td colspan="7"><div class="empty-day">No tasks match your search/filter.</div></td></tr>`;
+  body.innerHTML = html;
+  attachRowHandlers();
+}
+
+function renderTaskRow(task, rowNum) {
+  const done = task.status === 'complete';
+  const pri = task.priority ? PRIORITIES[task.priority] : null;
+  const priHtml = pri
+    ? `<span class="flag" style="color:${pri.color}">⚑</span> ${pri.label}`
+    : `<span class="pri-none">–</span>`;
+
+  const tagsHtml = (task.tags || []).map(t => {
+    const c = chipColor(t);
+    return `<span class="chip" style="background:${c.bg};color:${c.fg}">${escapeHtml(t)}<span class="x" data-rm-tag="${escapeHtml(t)}" data-task="${task.id}">✕</span></span>`;
+  }).join('') + `<button class="chip-add" data-add-tag="${task.id}">+</button>`;
+
+  const labelsHtml = (task.labels || []).map(l => {
+    const c = chipColor(l);
+    return `<span class="chip" style="background:${c.bg};color:${c.fg}">${escapeHtml(l)}<span class="x" data-rm-label="${escapeHtml(l)}" data-task="${task.id}">✕</span></span>`;
+  }).join('') + `<button class="chip-add" data-add-label="${task.id}">+</button>`;
+
+  const subs = task.subtasks || [];
+  const subDone = subs.filter(s => s.done).length;
+  const subHtml = subs.length
+    ? `<span class="bullet">●</span> ${escapeHtml(subs[0].text)}${subs.length > 1 ? ` <span class="sub-count">+${subs.length - 1} more</span>` : ''} <span class="sub-count">(${subDone}/${subs.length})</span>`
+    : `<span class="sub-none">+ Add subtasks</span>`;
+
+  return `
+  <tr class="task-row ${done ? 'done' : ''}" data-task="${task.id}">
+    <td class="numcell">
+      <span class="rownum">${rowNum}</span>
+      <button class="trash-btn" data-del="${task.id}" title="Delete task">🗑</button>
+    </td>
+    <td>
+      <div class="task-cell">
+        <div class="chk ${done ? 'checked' : ''}" data-toggle="${task.id}">${done ? '✓' : ''}</div>
+        <div class="task-name" contenteditable="true" data-edit-name="${task.id}">${escapeHtml(task.name)}</div>
+      </div>
+    </td>
+    <td><span class="pri-pill" data-pri="${task.id}">${priHtml}</span></td>
+    <td><div class="chip-cell">${tagsHtml}</div></td>
+    <td><div class="chip-cell">${labelsHtml}</div></td>
+    <td class="sub-cell" data-toggle-sub="${task.id}"><div class="sub-preview">${subHtml}</div></td>
+    <td></td>
+  </tr>`;
+}
+
+function renderSubtaskPanel(task) {
+  const subs = task.subtasks || [];
+  const items = subs.map(s => `
+    <div class="subtask-item ${s.done ? 'done' : ''}">
+      <div class="chk ${s.done ? 'checked' : ''}" data-sub-toggle="${task.id}" data-sub-id="${s.id}">${s.done ? '✓' : ''}</div>
+      <span class="stx" contenteditable="true" data-sub-edit="${task.id}" data-sub-id="${s.id}">${escapeHtml(s.text)}</span>
+      <span class="rm" data-sub-del="${task.id}" data-sub-id="${s.id}">✕</span>
+    </div>`).join('');
+  return `
+  <tr class="subtask-panel" data-panel="${task.id}"><td colspan="7">
+    <div class="subtask-list">${items}</div>
+    <div class="add-subtask">
+      <input placeholder="+ New subtask, press Enter" data-new-sub="${task.id}">
+    </div>
+  </td></tr>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ── Mutations ── */
+function addTask(status) {
+  const sheet = getSheet(currentDate);
+  const task = { id: uid(), name: 'New task', status: status || 'todo', priority: null, tags: [], labels: [], subtasks: [] };
+  sheet.push(task);
+  saveData();
+  render();
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`[data-edit-name="${task.id}"]`);
+    if (el) { el.focus(); document.execCommand('selectAll', false, null); }
+  });
+}
+
+function deleteTask(id) {
+  const sheet = getSheet(currentDate);
+  const idx = sheet.findIndex(t => t.id === id);
+  if (idx >= 0) sheet.splice(idx, 1);
+  saveData();
+  render();
+}
+
+function toggleComplete(id) {
+  const task = getSheet(currentDate).find(t => t.id === id);
+  if (!task) return;
+  task.status = task.status === 'complete' ? 'todo' : 'complete';
+  saveData();
+  render();
+}
+
+function carryOverOpenTasks() {
+  const dates = Object.keys(data.sheets).filter(d => d < currentDate && data.sheets[d].length);
+  if (!dates.length) { alert('No previous day with tasks was found.'); return; }
+  dates.sort();
+  const sourceDate = dates[dates.length - 1];
+  const openTasks = data.sheets[sourceDate].filter(t => t.status !== 'complete');
+  if (!openTasks.length) { alert('No open (incomplete) tasks found on ' + sourceDate + '.'); return; }
+  const sheet = getSheet(currentDate);
+  const existingNames = new Set(sheet.map(t => t.name));
+  let added = 0;
+  openTasks.forEach(t => {
+    if (existingNames.has(t.name)) return;
+    sheet.push({ id: uid(), name: t.name, status: 'todo', priority: t.priority, tags: [...(t.tags||[])], labels: [...(t.labels||[])], subtasks: (t.subtasks||[]).map(s => ({ id: uid(), text: s.text, done: false })) });
+    added++;
+  });
+  saveData();
+  render();
+  if (!added) alert('Those open tasks are already on this sheet.');
+}
+
+/* ── Priority menu ── */
+function openPriorityMenu(anchorEl, taskId) {
+  closePriorityMenu();
+  const menu = document.createElement('div');
+  menu.className = 'pri-menu';
+  menu.id = 'activePriMenu';
+  const opts = Object.keys(PRIORITIES).map(k => {
+    const p = PRIORITIES[k];
+    return `<div class="opt" data-set-pri="${k}"><span style="color:${p.color}">⚑</span> ${p.label}</div>`;
+  }).join('') + `<div class="opt" data-set-pri="">– Clear</div>`;
+  menu.innerHTML = opts;
+  document.body.appendChild(menu);
+  const r = anchorEl.getBoundingClientRect();
+  menu.style.top = (r.bottom + 4) + 'px';
+  menu.style.left = r.left + 'px';
+  menu.querySelectorAll('[data-set-pri]').forEach(opt => {
+    opt.addEventListener('click', e => {
+      e.stopPropagation();
+      const val = opt.getAttribute('data-set-pri');
+      const task = getSheet(currentDate).find(t => t.id === taskId);
+      if (task) { task.priority = val || null; saveData(); render(); }
+      closePriorityMenu();
+    });
+  });
+}
+function closePriorityMenu() {
+  const m = document.getElementById('activePriMenu');
+  if (m) m.remove();
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.pri-menu') && !e.target.closest('[data-pri]')) closePriorityMenu();
+});
+
+/* ── Row event delegation ── */
+function attachRowHandlers() {
+  const body = document.getElementById('sheetBody');
+
+  body.querySelectorAll('.group-header').forEach(h => {
+    h.addEventListener('click', e => {
+      if (e.target.closest('[data-add-group]')) return;
+      const key = h.getAttribute('data-group');
+      if (collapsedGroups.has(key)) collapsedGroups.delete(key); else collapsedGroups.add(key);
+      render();
+    });
+  });
+  body.querySelectorAll('[data-add-group]').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); addTask(el.getAttribute('data-add-group')); });
+  });
+
+  body.querySelectorAll('[data-toggle]').forEach(el => {
+    el.addEventListener('click', () => toggleComplete(el.getAttribute('data-toggle')));
+  });
+  body.querySelectorAll('[data-del]').forEach(el => {
+    el.addEventListener('click', () => { if (confirm('Delete this task?')) deleteTask(el.getAttribute('data-del')); });
+  });
+
+  body.querySelectorAll('[data-edit-name]').forEach(el => {
+    el.addEventListener('blur', () => {
+      const id = el.getAttribute('data-edit-name');
+      const task = getSheet(currentDate).find(t => t.id === id);
+      const val = el.textContent.trim() || 'Untitled task';
+      if (task && task.name !== val) { task.name = val; saveData(); }
+      else render();
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    });
+  });
+
+  body.querySelectorAll('[data-pri]').forEach(el => {
+    el.addEventListener('click', () => openPriorityMenu(el, el.getAttribute('data-pri')));
+  });
+
+  body.querySelectorAll('[data-add-tag]').forEach(el => attachChipAdd(el, 'tags'));
+  body.querySelectorAll('[data-add-label]').forEach(el => attachChipAdd(el, 'labels'));
+  body.querySelectorAll('[data-rm-tag]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      const task = getSheet(currentDate).find(t => t.id === el.getAttribute('data-task'));
+      if (task) { task.tags = (task.tags||[]).filter(t => t !== el.getAttribute('data-rm-tag')); saveData(); render(); }
+    });
+  });
+  body.querySelectorAll('[data-rm-label]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      const task = getSheet(currentDate).find(t => t.id === el.getAttribute('data-task'));
+      if (task) { task.labels = (task.labels||[]).filter(l => l !== el.getAttribute('data-rm-label')); saveData(); render(); }
+    });
+  });
+
+  body.querySelectorAll('[data-toggle-sub]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-toggle-sub');
+      if (expandedSubtasks.has(id)) expandedSubtasks.delete(id); else expandedSubtasks.add(id);
+      render();
+    });
+  });
+  body.querySelectorAll('[data-sub-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const task = getSheet(currentDate).find(t => t.id === el.getAttribute('data-sub-toggle'));
+      const sub = task && task.subtasks.find(s => s.id === el.getAttribute('data-sub-id'));
+      if (sub) { sub.done = !sub.done; saveData(); render(); }
+    });
+  });
+  body.querySelectorAll('[data-sub-edit]').forEach(el => {
+    el.addEventListener('blur', () => {
+      const task = getSheet(currentDate).find(t => t.id === el.getAttribute('data-sub-edit'));
+      const sub = task && task.subtasks.find(s => s.id === el.getAttribute('data-sub-id'));
+      const val = el.textContent.trim();
+      if (sub && val && sub.text !== val) { sub.text = val; saveData(); }
+      else render();
+    });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+  });
+  body.querySelectorAll('[data-sub-del]').forEach(el => {
+    el.addEventListener('click', () => {
+      const task = getSheet(currentDate).find(t => t.id === el.getAttribute('data-sub-del'));
+      if (task) { task.subtasks = task.subtasks.filter(s => s.id !== el.getAttribute('data-sub-id')); saveData(); render(); }
+    });
+  });
+  body.querySelectorAll('[data-new-sub]').forEach(el => {
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && el.value.trim()) {
+        const task = getSheet(currentDate).find(t => t.id === el.getAttribute('data-new-sub'));
+        if (task) {
+          task.subtasks = task.subtasks || [];
+          task.subtasks.push({ id: uid(), text: el.value.trim(), done: false });
+          saveData();
+          render();
+        }
+      }
+    });
+  });
+}
+
+function attachChipAdd(btnEl, field) {
+  btnEl.addEventListener('click', e => {
+    e.stopPropagation();
+    const taskId = btnEl.getAttribute(field === 'tags' ? 'data-add-tag' : 'data-add-label');
+    const input = document.createElement('input');
+    input.className = 'chip-input';
+    input.placeholder = field === 'tags' ? 'tag…' : 'label…';
+    btnEl.replaceWith(input);
+    input.focus();
+    const commit = () => {
+      const val = input.value.trim();
+      const task = getSheet(currentDate).find(t => t.id === taskId);
+      if (task && val) {
+        task[field] = task[field] || [];
+        if (!task[field].includes(val)) task[field].push(val);
+        saveData();
+      }
+      render();
+    };
+    input.addEventListener('keydown', e2 => { if (e2.key === 'Enter') commit(); if (e2.key === 'Escape') render(); });
+    input.addEventListener('blur', commit);
+  });
+}
+
+/* ── Toolbar / daybar wiring ── */
+document.getElementById('prevDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, -1); render(); });
+document.getElementById('nextDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, 1); render(); });
+document.getElementById('todayBtn').addEventListener('click', () => { currentDate = todayStr(); render(); });
+document.getElementById('datePicker').addEventListener('change', e => { if (e.target.value) { currentDate = e.target.value; render(); } });
+document.getElementById('carryOverBtn').addEventListener('click', carryOverOpenTasks);
+document.getElementById('addTaskTop').addEventListener('click', () => addTask('todo'));
+document.getElementById('searchInput').addEventListener('input', e => { searchQuery = e.target.value; render(); });
+document.getElementById('priFilter').addEventListener('change', e => { priFilter = e.target.value; render(); });
+document.getElementById('showClosed').addEventListener('change', e => { showClosed = e.target.checked; render(); });
+document.getElementById('collapseAllSub').addEventListener('click', () => { expandedSubtasks.clear(); render(); });
+
+renderSpaces();
+render();
+</script>
+</body>
+</html>
