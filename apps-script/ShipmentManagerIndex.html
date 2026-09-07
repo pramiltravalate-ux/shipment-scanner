@@ -6196,6 +6196,21 @@ function onQtyInput(qtyEl, boxIdx) {
 function removeItem(id, boxIdx) {
   const el = document.getElementById(id);
   if (el) {
+    // Same "must keep at least one item" guard removeEditItem already
+    // has in the Edit Shipment modal. Without this, removing every item
+    // one-by-one left an empty-but-still-present box card sitting in the
+    // DOM — collectBoxes() silently dropped it at submit time, but the
+    // OTHER boxes kept their original numbers, producing a gap in the
+    // saved shipment's box numbers (e.g. 1..11, 13 — no 12) even though
+    // nothing on screen looked wrong. Removing the whole box (which DOES
+    // renumber everything else) is now the only way to get rid of the
+    // last item in it.
+    const container = document.getElementById('items-' + boxIdx);
+    const rowCount = container ? container.querySelectorAll('.item-row').length : 1;
+    if (rowCount <= 1) {
+      alert('A box must have at least one item. Remove the whole box instead, or add another item first.');
+      return;
+    }
     // Remove the row's status line (sibling inserted after the row)
     const parts = id.split('-'); // item-boxIdx-itemIdx
     const iIdx = parts[2];
@@ -7089,9 +7104,7 @@ function submitForm() {
 
 function collectBoxes() {
   const boxes = [];
-  let vNum = 0;
   document.querySelectorAll('.box-card').forEach(boxEl => {
-    vNum++;
     const boxNum = boxEl.id.replace('box-', '');
     const items = [];
     const container = document.getElementById('items-' + boxNum);
@@ -7107,8 +7120,16 @@ function collectBoxes() {
       const wpu = parseFloat((document.getElementById('wpu-' + bIdx + '-' + iIdx) || {}).value) || 0;
       if (qty > 0) items.push({ sku, upc, qty, weightPerUnit: wpu });
     });
-    if (items.length) boxes.push({ boxNumber: vNum, items });
+    // boxNumber is assigned AFTER filtering (below), not from this box
+    // card's own DOM position — a box that ends up with zero valid items
+    // (every item removed one-by-one, without removing the box card
+    // itself) is dropped right here, and if its number were kept as-is
+    // for the boxes around it, the saved shipment would end up with a
+    // gap (e.g. 1..11, 13 — no 12), even though every VISIBLE box looks
+    // fine. See the same fix in saveEditedShipment's newBoxes below.
+    if (items.length) boxes.push({ items });
   });
+  boxes.forEach((b, idx) => { b.boxNumber = idx + 1; });
   return boxes;
 }
 
@@ -9355,6 +9376,15 @@ function saveEditedShipment() {
     });
     if (newItems.length) newBoxes.push({ boxNumber: box.boxNumber, items: newItems });
   });
+  // Renumber sequentially AFTER dropping empty boxes, not before — a box
+  // emptied by removing its items one-by-one (rather than clicking that
+  // box's own "Remove" button, which already renumbers everything else —
+  // see removeEditBox) still sat in editBoxesState under its ORIGINAL
+  // boxNumber right up to this point. Keeping that stale number here
+  // would leave a gap in the saved shipment (e.g. boxes 1..11, 13 — no
+  // 12) even though nothing on screen looked wrong. Same fix as
+  // collectBoxes() uses for the New Shipment form.
+  newBoxes.forEach((b, idx) => { b.boxNumber = idx + 1; });
 
   if (!newBoxes.length) {
     alert('Please keep at least one box with at least one valid SKU and quantity.');
