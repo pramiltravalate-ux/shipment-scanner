@@ -45,7 +45,8 @@ const ALL_MODULES = [
   { id: "RO_EDIT",              label: "Edit RO" },           // secondary — nested under Shipments
   { id: "SHIPMENT_DELETE",      label: "Delete Shipment" },   // secondary — nested under Shipments
   { id: "WAREHOUSES",           label: "Warehouses" },
-  { id: "INVENTORY_SNAPSHOT",   label: "Blinkit Shipment Planning" }
+  { id: "INVENTORY_SNAPSHOT",   label: "Blinkit Shipment Planning" },
+  { id: "EXTENDED_SESSION_TIMEOUT", label: "Extended Logout Timing (Admin-style)" }
 ];
 const ALL_MODULE_IDS = ALL_MODULES.map(m => m.id);
 

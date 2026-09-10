@@ -1968,7 +1968,8 @@ const MODULE_DEFS = [
   { id: 'SHIPMENT_DELETE',      label: 'Delete Shipment',        parent: 'SHIPMENTS_VIEW' },
   { id: 'WAREHOUSES',           label: 'Warehouses' },
   { id: 'INVENTORY_SNAPSHOT',   label: 'Blinkit Shipment Planning' },
-  { id: 'INVENTORY_LIVE_SNAPSHOT', label: 'Inventory Snapshot (Live)' }
+  { id: 'INVENTORY_LIVE_SNAPSHOT', label: 'Inventory Snapshot (Live)' },
+  { id: 'EXTENDED_SESSION_TIMEOUT', label: 'Extended Logout Timing (Admin-style)' }
 ];
 
 /** Returns true if the currently logged-in user has access to `moduleId`.
@@ -1992,24 +1993,26 @@ const INDIAN_STATES = [
 ];
 
 /* ==============================================
-   AUTO-LOGOUT ON IDLE (5 minutes for employees, 2 days for admins)
+   AUTO-LOGOUT ON IDLE (5 minutes regular, 2 days extended)
    ------------------------------------------------------------
    - Any mouse/keyboard/touch/scroll activity resets the timer.
    - Warning appears 30 seconds before whichever timeout applies, so a
      logout never happens with zero notice.
    - At the timeout (or if the warning's countdown runs out), the
      person is logged out.
-   - Admins get a much longer leash (2 days, effectively "not really
-     timed out" for a normal workday) since they're the ones actually
-     doing long stretches of Snapshot/Shipment work and repeatedly
-     re-entering a PIN every 5 minutes was pure friction with no real
-     security benefit for them specifically.
+   - Which timeout applies is driven by the EXTENDED_SESSION_TIMEOUT
+     module (see MODULE_DEFS / Edit Employee), not hardcoded to role.
+     Admins get it automatically  -  hasModule_() always returns true
+     for admins  -  and any other employee can be granted the same
+     longer leash (2 days, effectively "not really timed out" for a
+     normal workday) individually from the Edit Employee modal.
+     Regular timing (5 minutes) stays the default for everyone else.
 ============================================== */
-const IDLE_LOGOUT_MS_EMPLOYEE = 5 * 60 * 1000;             // 5 minutes
-const IDLE_LOGOUT_MS_ADMIN    = 2 * 24 * 60 * 60 * 1000;   // 2 days
+const IDLE_LOGOUT_MS_EMPLOYEE = 5 * 60 * 1000;             // 5 minutes - regular
+const IDLE_LOGOUT_MS_ADMIN    = 2 * 24 * 60 * 60 * 1000;   // 2 days - extended
 const IDLE_WARNING_LEAD_MS    = 30 * 1000;                 // warn 30s before logout either way
 function currentIdleLogoutMs_() {
-  return (currentUser && currentUser.role === 'admin') ? IDLE_LOGOUT_MS_ADMIN : IDLE_LOGOUT_MS_EMPLOYEE;
+  return hasModule_('EXTENDED_SESSION_TIMEOUT') ? IDLE_LOGOUT_MS_ADMIN : IDLE_LOGOUT_MS_EMPLOYEE;
 }
 let idleWarnTimer = null, idleLogoutTimer = null, idleCountdownInterval = null;
 
