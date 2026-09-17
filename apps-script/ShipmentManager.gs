@@ -877,6 +877,22 @@ function getInventoryStockForSku(sku) {
 // up in that single result instead of asking for it individually.
 // Returns { success, stocks: { <sku>: { stock, unmapped? , error? } } } —
 // same shape as before, so no client-side change was needed.
+//
+// CACHED (see getCachedInventoryStockSnapshot_ below): every open
+// Blinkit Shipment Planning tab — including the pre-login public
+// warehouse-floor view — polls this once every SNAPSHOT_INV_STOCK_
+// REFRESH_MS (2 min) for as long as it stays open. The whole web app
+// runs as one "Execute as: Me" identity, so ALL of those polls, from
+// every browser/device, count against the SAME shared simultaneous-
+// executions quota. Before this cache, every single poll made its own
+// live cross-project UrlFetchApp round trip to the Inventory web app;
+// with enough tabs left open (which is the normal, expected way this
+// page gets used — packing stations, warehouse floor screens), those
+// overlap heavily and each stays "in flight" for the network round
+// trip, which is what pushed the account towards its simultaneous-
+// execution ceiling. Caching the snapshot for a short window means at
+// most one real network call happens per cache window, no matter how
+// many tabs are polling — everyone else gets served instantly.
 function getSnapshotInventoryStock(skuList) {
   try {
     if (!INVENTORY_WEBAPP_URL || INVENTORY_WEBAPP_URL.indexOf("PASTE_YOUR") === 0) {
@@ -902,7 +918,7 @@ function getSnapshotInventoryStock(skuList) {
 
     if (!needsLookup.length) return { success: true, stocks: stocks };
 
-    const snap = callInventoryWebApp_({ action: "getStockSnapshot" });
+    const snap = getCachedInventoryStockSnapshot_();
     if (!snap || !snap.success) {
       const errMsg = (snap && (snap.error || snap.message)) || "Could not reach Inventory.";
       needsLookup.forEach(function (item) { stocks[item.raw] = { stock: null, error: errMsg }; });
@@ -989,6 +1005,44 @@ function callInventoryWebApp_(body) {
   } catch (err) {
     return { success: false, error: "Could not reach Inventory: " + err.message };
   }
+}
+
+// Kept comfortably under SNAPSHOT_INV_STOCK_REFRESH_MS (2 min, in
+// ShipmentManagerIndex.html) so a normal poll cycle almost always hits
+// a warm cache, while a cache miss is never more than this many
+// seconds stale for the NEXT poller who happens to trigger the real
+// fetch.
+const INVENTORY_STOCK_SNAPSHOT_CACHE_TTL_SECONDS = 100;
+const INVENTORY_STOCK_SNAPSHOT_CACHE_KEY_ = "inv_stock_snapshot_v1";
+
+/** Shared-cache wrapper around callInventoryWebApp_({action:"getStockSnapshot"}) —
+ *  see the comment on getSnapshotInventoryStock above for why this
+ *  exists. CacheService's script cache is shared across every
+ *  concurrent execution of this script (any user, any tab), which is
+ *  exactly what's needed here: the first poller in a cache window pays
+ *  for the real network call, everyone else within that window reads
+ *  the same cached JSON back near-instantly. Falls back to a live call
+ *  if the cached value is missing, expired, or fails to parse. */
+function getCachedInventoryStockSnapshot_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(INVENTORY_STOCK_SNAPSHOT_CACHE_KEY_);
+    if (cached) {
+      try { return JSON.parse(cached); } catch (parseErr) { /* fall through to a live fetch */ }
+    }
+  } catch (err) { /* CacheService unavailable — fall through to a live fetch */ }
+
+  const snap = callInventoryWebApp_({ action: "getStockSnapshot" });
+  if (snap && snap.success) {
+    try {
+      const json = JSON.stringify(snap);
+      // CacheService's 100KB/value limit — stay well under it; if it's
+      // ever exceeded, simply don't cache rather than error, same
+      // convention as the open-PO cache below.
+      if (json.length < 90000) CacheService.getScriptCache().put(INVENTORY_STOCK_SNAPSHOT_CACHE_KEY_, json, INVENTORY_STOCK_SNAPSHOT_CACHE_TTL_SECONDS);
+    } catch (err) { /* non-fatal — just means this result isn't cached */ }
+  }
+  return snap;
 }
 
 /** Public: live company-wide current-stock-per-SKU pull straight from

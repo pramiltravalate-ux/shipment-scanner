@@ -2615,8 +2615,36 @@ function stopTabAutoRefresh_() {
 // signal that clicking a different app tab and back is, so it shouldn't
 // force a full reload. Actual tab clicks (showTab) still always force a
 // fresh reload, unchanged.
+// Also pauses/resumes the two background polling timers (tab
+// auto-refresh + the Blinkit Shipment Planning "INV" column's stock
+// poll) on top of the refresh-on-return behavior above. The whole web
+// app runs as one "Execute as: Me" identity, so every open tab or
+// device — including the pre-login public warehouse-floor view —
+// counts against the SAME shared Apps Script simultaneous-executions
+// quota, whether or not anyone's actually looking at it right now.
+// Pausing while backgrounded (and immediately catching back up the
+// instant it's visible again, so nothing the viewer actually sees goes
+// stale) cuts that baseline load from every tab left open-but-ignored
+// in the background, without changing behavior for a tab that's
+// genuinely being watched (e.g. a warehouse screen showing this page
+// full-time never goes 'hidden' just because it isn't focused).
 document.addEventListener('visibilitychange', function () {
-  if (document.visibilityState === 'visible' && currentUser) refreshCurrentTab_(false);
+  if (document.visibilityState !== 'visible') {
+    stopTabAutoRefresh_();
+    stopSnapshotInvStockAutoRefresh_();
+    return;
+  }
+  if (currentUser) {
+    refreshCurrentTab_(false);
+    startTabAutoRefresh_();
+    if (currentTabName_ === 'snapshot') startSnapshotInvStockAutoRefresh_('snapshotMatrixContainer');
+    return;
+  }
+  const publicView = document.getElementById('snapshotPublicView');
+  if (publicView && !publicView.classList.contains('hidden')) {
+    loadSnapshotInventoryStock_('snapshotPublicMatrixContainer');
+    startSnapshotInvStockAutoRefresh_('snapshotPublicMatrixContainer');
+  }
 });
 
 /** The Admin tab (employee list + RO Invoice seller settings) used to
