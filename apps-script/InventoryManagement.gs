@@ -710,6 +710,51 @@ function updateStockRegister(srSh, entryDate, type, employee, items) {
   });
 }
 
+/** Appends an audit-trail note to one SKU's cell for one date WITHOUT
+ *  touching that cell's stored value or writing a Transactions row.
+ *  Used only for a combo SKU's own row (see syncShipmentToInventory):
+ *  a combo is never independently stocked — updateStockRegister always
+ *  recalculates its row as MIN(component stocks) whenever a component
+ *  changes — so there's nothing to actually deduct there, but the
+ *  business still wants to SEE "this combo was shipped" right in its
+ *  own cell's history, not just infer it from its components' notes.
+ *  Deliberately a separate, minimal function rather than routing
+ *  through processInventoryEntry(): that function's OWN combo-
+ *  expansion would otherwise intercept a combo SKU here and expand it
+ *  into its components YET AGAIN (double-deducting them), since it has
+ *  no way to know this particular line is meant to land on the combo's
+ *  own row rather than be treated as a fresh combo sale to expand. */
+function appendStockRegisterNoteOnly_(sku, entryDate, employee, qty, comment) {
+  const srSh = getActiveStockSheet();
+  const dataRange = srSh.getDataRange();
+  const data = dataRange.getValues();
+  const notes = dataRange.getNotes();
+  const numCols = data[0].length;
+
+  const dateColMap = {};
+  for (let c = 1; c < numCols; c++) {
+    const h = data[0][c];
+    if (!h) continue;
+    const key = h instanceof Date ? formatDDMON(h) : String(h).trim().toUpperCase();
+    dateColMap[key] = c;
+  }
+  const targetCol = dateColMap[formatDDMON(entryDate).toUpperCase()];
+  if (targetCol === undefined) return; // same date-column rule as updateStockRegister — silently skip; this is a cosmetic note only, never worth failing the whole sync over
+
+  let rowIdx;
+  const skuKey = String(sku).trim().toUpperCase();
+  for (let r = 1; r < data.length; r++) {
+    if (String(data[r][0] || "").trim().toUpperCase() === skuKey) { rowIdx = r; break; }
+  }
+  if (rowIdx === undefined) return;
+
+  const ts = payload_timestamp();
+  const qtyNote = "-" + qty + " (Out)";
+  const newNote = ts + " | " + employee + " | " + qtyNote + (comment ? " | " + comment : "");
+  const existing = notes[rowIdx][targetCol] || "";
+  srSh.getRange(rowIdx + 1, targetCol + 1).setNote(existing ? existing + "\n" + newNote : newNote);
+}
+
 // ─────────────────────────────────────────────────────────────
 //  WEEKLY REPORTS  —  Sat-Fri window, sent Saturday morning
 //  Two reports:
@@ -2796,14 +2841,25 @@ const SHIPMENT_SYNC = {
   SHARED_SECRET: "Tr4v4l4t9e-2056-xaya9pL",
 };
 
-/** Columns: SHIPMENT_ID | SKU | QTY | UPDATED_TS */
+/** Columns: SHIPMENT_ID | SKU | QTY | UPDATED_TS | SOURCE
+ *  SOURCE is blank for a line directly on that SKU, or the combo SKU's
+ *  own (uppercased) name when this row is the component-portion of a
+ *  combo shipment  -  e.g. a "TR-BELT" row with SOURCE "TR-BELT-WALLET-
+ *  COMBO" is the belt-component deduction from shipping that combo,
+ *  tracked as its own ledger line so it can be diffed/edited
+ *  independently of any PLAIN TR-Belt quantity in the SAME shipment
+ *  (see syncShipmentToInventory). Appended as a 5th column rather than
+ *  inserted, so every pre-existing row (written before this column
+ *  existed) keeps its original SHIPMENT_ID/SKU/QTY/UPDATED_TS exactly
+ *  as-is and just reads back with SOURCE="" (correct  -  every such row
+ *  really was an unattributed total at the time it was written). */
 function getOrCreateShipmentSyncSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(SHIPMENT_SYNC.SHEET);
   if (!sh) {
     sh = ss.insertSheet(SHIPMENT_SYNC.SHEET);
-    sh.getRange(1, 1, 1, 4).setValues([["SHIPMENT_ID", "SKU", "QTY", "UPDATED_TS"]]);
-    sh.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#1a73e8").setFontColor("#FFFFFF");
+    sh.getRange(1, 1, 1, 5).setValues([["SHIPMENT_ID", "SKU", "QTY", "UPDATED_TS", "SOURCE"]]);
+    sh.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#1a73e8").setFontColor("#FFFFFF");
     sh.setFrozenRows(1);
     sh.hideSheet();
   }
@@ -2811,25 +2867,30 @@ function getOrCreateShipmentSyncSheet_() {
 }
 
 /** Reads the current ledger rows for one shipment ID.
- *  Returns { sku: qty, ... } using UPPERCASE sku keys. */
+ *  Returns { "SKU\u0001SOURCE": qty, ... }  -  both uppercased, SOURCE ""
+ *  for a direct line  -  see the column comment above. */
 function getLedgerForShipment_(shipmentId) {
   const sh = getOrCreateShipmentSyncSheet_();
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return {};
-  const data = sh.getRange(2, 1, lastRow - 1, 3).getValues();
+  const data = sh.getRange(2, 1, lastRow - 1, 5).getValues();
   const map = {};
   data.forEach(r => {
     if (String(r[0]) === String(shipmentId)) {
       const sku = String(r[1] || "").trim().toUpperCase();
-      if (sku) map[sku] = (map[sku] || 0) + (Number(r[2]) || 0);
+      const source = String(r[4] || "").trim().toUpperCase();
+      if (!sku) return;
+      const key = sku + "\u0001" + source;
+      map[key] = (map[key] || 0) + (Number(r[2]) || 0);
     }
   });
   return map;
 }
 
 /** Replaces all ledger rows for a shipment ID with a fresh set.
+ *  skuSourceQtyMap is keyed "SKU\u0001SOURCE" (see getLedgerForShipment_).
  *  (Simplest correct approach: delete old rows for this ID, append new ones.) */
-function rewriteLedgerForShipment_(shipmentId, skuQtyMap) {
+function rewriteLedgerForShipment_(shipmentId, skuSourceQtyMap) {
   const sh = getOrCreateShipmentSyncSheet_();
   const lastRow = sh.getLastRow();
 
@@ -2844,12 +2905,17 @@ function rewriteLedgerForShipment_(shipmentId, skuQtyMap) {
   }
 
   const ts = new Date();
-  const newRows = Object.keys(skuQtyMap)
-    .filter(sku => skuQtyMap[sku] !== 0)
-    .map(sku => [shipmentId, sku, skuQtyMap[sku], ts]);
+  const newRows = Object.keys(skuSourceQtyMap)
+    .filter(key => skuSourceQtyMap[key] !== 0)
+    .map(key => {
+      const sep = key.indexOf("\u0001");
+      const sku = sep === -1 ? key : key.slice(0, sep);
+      const source = sep === -1 ? "" : key.slice(sep + 1);
+      return [shipmentId, sku, skuSourceQtyMap[key], ts, source];
+    });
 
   if (newRows.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, newRows.length, 4).setValues(newRows);
+    sh.getRange(sh.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
   }
 }
 
@@ -2883,73 +2949,108 @@ function syncShipmentToInventory(shipmentId, desiredSkuQtyMap, entryDate, employ
     const canonicalCase = {};
     masterSkuList.forEach(s => { canonicalCase[s.trim().toUpperCase()] = s.trim(); });
 
-    // ── Expand any combo SKU into its component SKUs FIRST ──────
-    // A combo SKU (e.g. "TR-BELT-WALLET-COMBO") is a valid Master_SKU
-    // entry, so it would otherwise pass the masterSkuSet check below —
-    // but processInventoryEntry() rejects combo SKUs outright on Inward
-    // entries (combos are Outward-only by design; Inward stock must
-    // always be added back to the REAL components, not the combo name
-    // itself). Without this expansion, reversing a shipment containing
-    // a combo SKU (e.g. on delete) would always fail here, since a
-    // reversal is exactly the kind of Inward entry that rule blocks.
-    // Expanding here — for BOTH directions, not just Inward — also
-    // keeps this consistent with how Inventory's own Transactions log
-    // already records combo entries against their component SKUs, not
-    // the combo name, and keeps the diff/ledger logic below operating
-    // on real components throughout instead of mixing combo names in.
+    // ── Expand any combo SKU into its component SKUs, keeping each
+    // combo's contribution to a component tracked SEPARATELY from any
+    // plain/direct quantity on that same component (and from any other
+    // combo sharing it) — both so each gets its own itemized note
+    // ("-100 (Out) | ..." for a direct line, "-40 (Out) | ... (For
+    // Combo)" for the combo-attributed portion) and so the ledger can
+    // diff each source's own delta correctly on a later edit, instead
+    // of one opaque merged total. The combo SKU's OWN row ALSO gets a
+    // line (source ""  -  see addDesired below): updateStockRegister
+    // always recalculates every combo row as MIN(component stocks)
+    // regardless of what's written here, so this never affects its
+    // actual stock figure — it exists purely so the combo's own row
+    // gets a visible note too, for traceability. A combo SKU is a
+    // valid Master_SKU entry (so it'd otherwise pass the masterSkuSet
+    // check below), but processInventoryEntry() rejects combo SKUs
+    // outright on Inward entries (combos are Outward-only by design) —
+    // that's exactly why real stock-bearing Inward reversals always go
+    // through the real components here, never the combo name itself.
     const allCombosForSync = loadCombos();
-    const expandedQtyMap = {};
+    const desired = {}; // "SKU\u0001SOURCE" -> qty, see getLedgerForShipment_
+    const addDesired = (sku, source, qty) => {
+      const key = String(sku).trim().toUpperCase() + "\u0001" + String(source || "").trim().toUpperCase();
+      if (!key) return;
+      desired[key] = (desired[key] || 0) + qty;
+    };
     Object.keys(desiredSkuQtyMap || {}).forEach(sku => {
       const qty = Number(desiredSkuQtyMap[sku]) || 0;
       if (isComboSKU(sku, allCombosForSync)) {
+        addDesired(sku, "", qty); // the combo's own row — note only
         getComboComponents(sku, allCombosForSync).forEach(compSku => {
-          expandedQtyMap[compSku] = (expandedQtyMap[compSku] || 0) + qty;
+          addDesired(compSku, sku, qty);
         });
       } else {
-        expandedQtyMap[sku] = (expandedQtyMap[sku] || 0) + qty;
+        addDesired(sku, "", qty);
       }
-    });
-
-    const desired = {};
-    Object.keys(expandedQtyMap).forEach(sku => {
-      const key = String(sku).trim().toUpperCase();
-      if (!key) return;
-      desired[key] = (desired[key] || 0) + (Number(expandedQtyMap[sku]) || 0);
     });
 
     const existing = getLedgerForShipment_(shipmentId);
 
-    // Diff: for every SKU touched (in either set), compute the delta
-    // between what's desired now and what we already applied before.
-    const allSkus = new Set([...Object.keys(desired), ...Object.keys(existing)]);
-    const deltas = []; // { sku, qty } — qty can be negative (means add back / reduce outward)
-    allSkus.forEach(sku => {
-      const want = desired[sku] || 0;
-      const have = existing[sku] || 0;
+    // Diff: for every (sku, source) pair touched (in either set),
+    // compute the delta between what's desired now and what we already
+    // applied before.
+    const allKeys = new Set([...Object.keys(desired), ...Object.keys(existing)]);
+    const deltas = []; // { sku, source, qty } — qty can be negative (means add back / reduce outward)
+    allKeys.forEach(key => {
+      const want = desired[key] || 0;
+      const have = existing[key] || 0;
       const delta = want - have; // positive => need to deduct MORE outward; negative => need to give back
-      if (delta !== 0) deltas.push({ sku, qty: delta });
+      if (delta === 0) return;
+      const sep = key.indexOf("\u0001");
+      deltas.push({ sku: key.slice(0, sep), source: key.slice(sep + 1), qty: delta });
     });
 
     const applied = [];
     const skipped = [];
     const noteComment = comment || ("Shipment " + shipmentId);
 
+    // A combo's own "self" line (source "") is note-only and Outward-
+    // only, same rule as everywhere else in this file — there's no real
+    // stock figure on that row to give back, and its ORIGINAL note
+    // stays in history as a permanent record, so a negative delta there
+    // (combo quantity reduced, or the shipment deleted) is simply
+    // skipped rather than attempted as an Inward entry (which
+    // processInventoryEntry would reject for a combo SKU anyway). The
+    // real component rows still reverse normally below, same as always.
+    // It's ALSO kept out of the normal processInventoryEntry() call
+    // below entirely (see comboSelfOutward/appendStockRegisterNoteOnly_)
+    // rather than just being "a combo SKU in the items list" — that
+    // function has its OWN combo-expansion built in for the manual
+    // entry form, which would otherwise catch a combo SKU here and
+    // expand it into its components all over again, double-deducting
+    // them on top of the real per-component deltas already computed
+    // above.
+    const isComboSelfLine = d => d.source === "" && isComboSKU(d.sku, allCombosForSync);
+
     if (deltas.length) {
-      // Split into two processInventoryEntry calls: positive deltas are
-      // additional Outward deductions, negative deltas are Inward
-      // reversals (giving stock back) of the same magnitude. Both use
-      // the SAME comment text — updateStockRegister() already prefixes
-      // the qty/sign/type (e.g. "-100 (Out)"), so the comment itself
-      // should just be "PLATFORM - CITY  (PO NUMBER)" either way.
-      const outwardItems = deltas.filter(d => d.qty > 0).map(d => ({ sku: d.sku, qty: d.qty, comment: noteComment }));
-      const inwardItems  = deltas.filter(d => d.qty < 0).map(d => ({ sku: d.sku, qty: -d.qty, comment: noteComment }));
+      const outwardItems = [];
+      const inwardItems = [];
+      const comboSelfOutward = [];
+      deltas.forEach(d => {
+        // A component line attributed to a combo gets its comment
+        // tagged "(For Combo)" so it reads as its own itemized entry
+        // distinct from any plain/direct line on the same SKU in the
+        // same shipment — the combo's own self line stays untagged.
+        const lineComment = d.source ? noteComment + " (For Combo)" : noteComment;
+        if (d.qty > 0) {
+          if (isComboSelfLine(d)) comboSelfOutward.push({ sku: d.sku, qty: d.qty, comment: lineComment });
+          else outwardItems.push({ sku: d.sku, qty: d.qty, comment: lineComment });
+        } else if (!isComboSelfLine(d)) {
+          inwardItems.push({ sku: d.sku, qty: -d.qty, comment: lineComment });
+        }
+      });
 
       const validOutward = outwardItems.filter(i => masterSkuSet.has(i.sku))
         .map(i => ({ ...i, sku: canonicalCase[i.sku] || i.sku }));
       const validInward  = inwardItems.filter(i => masterSkuSet.has(i.sku))
         .map(i => ({ ...i, sku: canonicalCase[i.sku] || i.sku }));
+      const validComboSelf = comboSelfOutward.filter(i => masterSkuSet.has(i.sku))
+        .map(i => ({ ...i, sku: canonicalCase[i.sku] || i.sku }));
       outwardItems.filter(i => !masterSkuSet.has(i.sku)).forEach(i => skipped.push(i.sku));
       inwardItems.filter(i => !masterSkuSet.has(i.sku)).forEach(i => skipped.push(i.sku));
+      comboSelfOutward.filter(i => !masterSkuSet.has(i.sku)).forEach(i => skipped.push(i.sku));
 
       if (validOutward.length) {
         const res = processInventoryEntry({
@@ -2971,14 +3072,20 @@ function syncShipmentToInventory(shipmentId, desiredSkuQtyMap, entryDate, employ
         if (!res.success) return { success: false, error: "Inward (reversal) sync failed: " + res.error };
         validInward.forEach(i => applied.push({ sku: i.sku, qty: i.qty, direction: "in" }));
       }
+      validComboSelf.forEach(i => {
+        appendStockRegisterNoteOnly_(i.sku, new Date(entryDate + "T00:00:00"), employeeName || "Shipment Manager", i.qty, i.comment);
+        applied.push({ sku: i.sku, qty: i.qty, direction: "out" });
+      });
     }
 
     // Ledger now reflects the new desired state exactly (only for SKUs
     // that were actually valid Master_SKU entries — unmapped/invalid
     // SKUs are never recorded so they get retried on the next sync).
     const newLedgerState = {};
-    Object.keys(desired).forEach(sku => {
-      if (masterSkuSet.has(sku)) newLedgerState[sku] = desired[sku];
+    Object.keys(desired).forEach(key => {
+      const sep = key.indexOf("\u0001");
+      const sku = key.slice(0, sep);
+      if (masterSkuSet.has(sku)) newLedgerState[key] = desired[key];
     });
     rewriteLedgerForShipment_(shipmentId, newLedgerState);
 
