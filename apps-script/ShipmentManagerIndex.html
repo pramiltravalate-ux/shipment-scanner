@@ -362,14 +362,23 @@ input::placeholder{color:#b0bec5;font-style:italic}
 .data-table th{background:#1a1a2e;color:#fff;padding:9px 12px;text-align:left}
 .data-table td{padding:9px 12px;border-bottom:1px solid #f1f5f9}
 .data-table tr:hover td{background:#f8fafc}
-/* SKU Master's header row stays visible while scrolling down its (often
-   long) list  -  52px matches .topbar's own height, which is itself
-   sticky at top:0, so the header sits directly below it instead of
-   underneath/behind it. z-index above plain body cells but still under
-   the topbar (z-index:300) and any modal. Combines with .sticky-actions-col
-   on the trailing "Actions" header cell (also present on that <th>) so
-   that one corner cell sticks to both the top AND the right edge. */
-#skuMasterThead th{position:sticky;top:52px;z-index:8;background:#1a1a2e}
+/* SKU Master's header row stays visible while scrolling its (often
+   long) list. This used to be position:sticky;top:52px anchored to the
+   page scroll, inside a div that only had overflow-x:auto  -  but per
+   spec, overflow-x:auto on its own forces overflow-y to compute as
+   'auto' too, which silently makes that div a (vertical) scroll
+   container even though it was never given a bounded height and so
+   never actually scrolled internally  -  position:sticky then computed
+   its stuck offset against THAT container's (never-moving) scrollport
+   while the 52px offset assumed it was sticking to the page, so the
+   header ended up overlapping/covering the first couple of data rows
+   instead of sitting flush above them (exact same bug already diagnosed
+   and fixed once before for .snapshot-matrix below). Fix: make
+   .sku-master-scrollbox a deliberate, bounded scroll container (see
+   below) and anchor the header to ITS OWN top (0) instead of a
+   page-relative offset. */
+.sku-master-scrollbox{overflow:auto;max-height:65vh;border:1px solid #e2e8f0;border-radius:8px}
+#skuMasterThead th{position:sticky;top:0;z-index:8;background:#1a1a2e}
 /* The grid's own scroll container. overflow-x:auto on its own forces
    overflow-y to compute as 'auto' too (per spec: if one axis is
    non-visible the other can't stay 'visible')  -  so this div was ALWAYS
@@ -1345,14 +1354,47 @@ input.input-error,select.input-error,.platform-card.input-error,#invoiceModalWra
             <option value="zepto">Zepto</option>
             <option value="amazon">Amazon</option>
           </select>
-          <button class="btn btn-success btn-sm" onclick="addSkuRowPrompt_()">+ Add SKU Row</button>
+          <button class="btn btn-success btn-sm" onclick="openSkuFormModal_()">+ Add SKU</button>
           <span id="skuLoadingHint" style="font-size:12px;color:#64748b"></span>
         </div>
-        <div style="overflow-x:auto">
+        <div class="sku-master-scrollbox">
           <table class="data-table" id="skuMasterTable">
             <thead id="skuMasterThead"></thead>
             <tbody id="skuMasterTbody"><tr><td style="color:#64748b;text-align:center;padding:30px" colspan="20">Loading…</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Add/Edit SKU  -  see openSkuFormModal_/saveSkuForm_. Common fields
+           (SKU, Description, MRP, Tax, etc.) always show; a SKU's platform
+           checkboxes (Blinkit/Swiggy/Zepto/Amazon, any combination) reveal
+           only that platform's own fields (UPC/Item ID/Landing Price), so a
+           SKU that's only ever listed on Blinkit doesn't force you to look
+           at or fill in Zepto/Swiggy/Amazon columns it has no use for. -->
+      <div id="skuFormModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10250;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeSkuFormModal_()">
+        <div style="background:#fff;border-radius:14px;width:min(720px,96vw);max-height:92vh;box-shadow:0 20px 60px rgba(0,0,0,.4);display:flex;flex-direction:column">
+          <div style="flex-shrink:0;background:linear-gradient(135deg,#1a1a2e,#0f3460);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:700;font-size:16px" id="skuFormTitle">+ Add SKU</span>
+            <button onclick="closeSkuFormModal_()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:14px">✕</button>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:18px 22px">
+            <div id="skuFormError" style="display:none;background:#fee2e2;color:#b91c1c;padding:8px 10px;border-radius:7px;font-size:12.5px;margin-bottom:12px"></div>
+            <div class="form-group" style="margin-bottom:16px">
+              <label>Platforms (select all that this SKU is listed on)</label>
+              <div id="skuFormPlatforms" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px"></div>
+            </div>
+            <div style="font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;margin-bottom:6px">Product Details</div>
+            <div id="skuFormCommonFields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-bottom:16px"></div>
+            <div id="skuFormPlatformFields"></div>
+            <div id="skuFormOtherWrap" style="display:none">
+              <div style="font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;margin:4px 0 6px">Other Fields</div>
+              <div id="skuFormOtherFields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px"></div>
+            </div>
+          </div>
+          <div style="flex-shrink:0;padding:14px 22px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-secondary" onclick="closeSkuFormModal_()">Cancel</button>
+            <button class="btn btn-primary" id="skuFormSaveBtn" onclick="saveSkuForm_()">💾 Save SKU</button>
+          </div>
         </div>
       </div>
     </div>
@@ -8367,7 +8409,7 @@ function getBdStyles() {
 ============================================== */
 /** Looks up the CURRENT UPC for a SKU on a given platform, straight from
  *  skuData (kept in sync with SKU_MASTER  -  refreshed after every SKU
- *  Master edit, see saveSkuCell_). Used wherever a UPC needs to reflect
+ *  Master edit, see saveSkuForm_). Used wherever a UPC needs to reflect
  *  today's SKU_MASTER value rather than whatever was snapshotted onto a
  *  box item back when the shipment was first entered (Box Details,
  *  Labels, the Edit Shipment modal)  -  falls back to that snapshotted
@@ -9769,19 +9811,13 @@ function renderSkuTable_() {
 
   tbody.innerHTML = filtered.map(row =>
     `<tr id="sku-row-${row.rowIndex}">` +
-    row.cells.map((cell, ci) =>
-      `<td style="padding:4px 6px;min-width:80px;max-width:200px">
-         <input type="text" value="${cell.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"
-           data-sku-col="${ci}"
-           style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:3px 5px;font-size:12px;background:transparent"
-           onchange="saveSkuCell_(${row.rowIndex},${ci},this.value)"
-           onblur="saveSkuCell_(${row.rowIndex},${ci},this.value)">
-       </td>`
-    ).join('') +
+    row.cells.map(cell => {
+      const esc = (cell || '').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+      return `<td style="padding:7px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc}">${esc || '<span style="color:#cbd5e1">—</span>'}</td>`;
+    }).join('') +
     `<td class="sticky-actions-col" style="padding:4px 6px;text-align:center;white-space:nowrap">
-       <button class="btn btn-secondary btn-sm" id="sku-update-btn-${row.rowIndex}" style="padding:3px 8px;font-size:11px;margin-right:4px"
-         title="Save every field in this row and push the change live everywhere (New Shipment Entry, Box Details, Labels, Tally Excel, etc.) right away"
-         onclick="updateSkuRowNow_(${row.rowIndex})">🔄 Update</button>
+       <button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:11px;margin-right:4px"
+         onclick="openSkuFormModal_(${row.rowIndex})">✏️ Edit</button>
        ${hasModule_('SKU_MASTER_DELETE') ? `<button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:11px"
          onclick="deleteSkuRow_(${row.rowIndex}, '${(row.cells[1]||row.cells[0]||'this SKU').replace(/'/g,"\\'")}')">🗑️</button>` : ''}
      </td></tr>`
@@ -9815,85 +9851,186 @@ function deleteSkuRow_(rowIndex, skuLabel) {
   );
 }
 
-function saveSkuCell_(rowIndex, colIndex, value) {
-  google.script.run
-    .withSuccessHandler(res => {
-      if (!res.success) showSkuAlert_('Could not save: ' + res.message, 'error');
-      else {
-        // Update local cache
-        const row = skuMasterData_.rows.find(r => r.rowIndex === rowIndex);
-        if (row) row.cells[colIndex] = value;
-        // Reload skuData so the shipment entry form stays in sync
-        google.script.run.withSuccessHandler(d => { skuData = d; skuCandidatesCache_ = {}; }).getSkuData();
-      }
-    })
-    .withFailureHandler(err => showSkuAlert_('Server error: '+err.message,'error'))
-    .updateSkuCell(rowIndex, colIndex, value, currentUser.name, currentUser.role);
+// -- SKU FORM (Add/Edit popup) -----------------------------------
+// Groups every SKU_MASTER column into "always shown" (common product
+// details) vs "only relevant to a specific platform" (its own
+// UPC/Item ID/Landing Price), keyed by a normalized version of the
+// header text (uppercased, non-alphanumerics collapsed to "_") so
+// this still lines up correctly even if a header's exact
+// spacing/case ever drifts (e.g. "Amazon SKU" vs "AMAZON_SKU"). Any
+// header that doesn't match any of these (a custom column added
+// straight in the sheet) still shows, just under "Other Fields", so
+// the form can never silently hide a column that exists in the sheet.
+function skuFieldKey_(header) {
+  return (header || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+const SKU_COMMON_FIELD_KEYS_ = [
+  'INVENTORY_SKU','SKU','DESCRIPTION','WEIGHT_PER_UNIT','MRP','HSN','TAX',
+  'CASE_PACK_SIZE','MFG_DATE','PRODUCT_TYPE','COLOR','COUNTRY','PACK_QTY'
+];
+const SKU_PLATFORM_FIELD_GROUPS_ = {
+  amazon:  { label: 'Amazon',  keys: ['AMAZON_SKU','AMAZON'] },
+  blinkit: { label: 'Blinkit', keys: ['BLINKIT','BLINKIT_ITEM_ID','BLINKIT_LANDING_PRICE'] },
+  swiggy:  { label: 'Swiggy',  keys: ['SWIGGY','SWIGGY_ITEM_ID','SWIGGY_LANDING_PRICE'] },
+  zepto:   { label: 'Zepto',   keys: ['ZEPTO','ZEPTO_ITEM_ID','ZEPTO_LANDING_PRICE'] }
+};
+const SKU_FIELD_LABELS_ = {
+  INVENTORY_SKU: 'Inventory SKU', SKU: 'SKU', DESCRIPTION: 'Description',
+  WEIGHT_PER_UNIT: 'Weight per Unit (kg)', MRP: 'MRP', HSN: 'HSN Code', TAX: 'Tax (%)',
+  CASE_PACK_SIZE: 'Case Pack Size', MFG_DATE: 'MFG Date', PRODUCT_TYPE: 'Product Type',
+  COLOR: 'Color', COUNTRY: 'Country of Origin', PACK_QTY: 'Pack Qty',
+  AMAZON_SKU: 'Amazon SKU', AMAZON: 'Amazon UPC',
+  BLINKIT: 'Blinkit UPC', BLINKIT_ITEM_ID: 'Blinkit Item ID', BLINKIT_LANDING_PRICE: 'Blinkit Landing Price',
+  SWIGGY: 'Swiggy UPC', SWIGGY_ITEM_ID: 'Swiggy Item ID', SWIGGY_LANDING_PRICE: 'Swiggy Landing Price',
+  ZEPTO: 'Zepto UPC', ZEPTO_ITEM_ID: 'Zepto Item ID', ZEPTO_LANDING_PRICE: 'Zepto Landing Price'
+};
+const SKU_NUMERIC_FIELD_KEYS_ = [
+  'WEIGHT_PER_UNIT','MRP','TAX','CASE_PACK_SIZE','PACK_QTY',
+  'BLINKIT_LANDING_PRICE','ZEPTO_LANDING_PRICE','SWIGGY_LANDING_PRICE'
+];
+
+let skuFormRowIndex_ = null; // null = Add mode; a sheet row index = Edit mode
+
+function skuFormFieldInputHtml_(header, value) {
+  const key = skuFieldKey_(header);
+  const esc = (value || '').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const type = SKU_NUMERIC_FIELD_KEYS_.includes(key) ? 'number' : 'text';
+  const step = type === 'number' ? ' step="any"' : '';
+  return `<div>
+    <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:3px">${SKU_FIELD_LABELS_[key] || header}</label>
+    <input type="${type}"${step} value="${esc}" data-sku-form-header="${header.toString().replace(/"/g,'&quot;')}"
+      style="width:100%;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
+  </div>`;
 }
 
-/** The "🔄 Update" button next to each SKU Master row  -  an explicit,
- *  visible alternative to the silent per-field save-on-blur above.
- *  Collects every field currently shown for the row (including any
- *  edit still sitting in a field that hasn't blurred yet), writes them
- *  all in one batch call, shows "Updating…" on the button while that's
- *  in flight, then refreshes skuData  -  the same client-side cache Box
- *  Details, Labels, Tally Excel, and the New Shipment form all read
- *  live from  -  so the change is visible everywhere immediately, with
- *  no page reload and no need to re-touch any already-submitted
- *  shipment. */
-function updateSkuRowNow_(rowIndex) {
-  const rowEl = document.getElementById('sku-row-' + rowIndex);
-  const btn = document.getElementById('sku-update-btn-' + rowIndex);
-  if (!rowEl) return;
-  const cells = Array.from(rowEl.querySelectorAll('input[data-sku-col]'))
-    .sort((a, b) => Number(a.dataset.skuCol) - Number(b.dataset.skuCol))
-    .map(inp => inp.value);
-  const origLabel = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Updating…'; }
-  google.script.run
-    .withSuccessHandler(res => {
-      if (!res.success) {
-        if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
-        showSkuAlert_('Could not update: ' + res.message, 'error');
-        return;
-      }
-      const row = skuMasterData_.rows.find(r => r.rowIndex === rowIndex);
-      if (row) row.cells = cells;
-      google.script.run
-        .withSuccessHandler(d => {
-          skuData = d; skuCandidatesCache_ = {};
-          if (btn) { btn.disabled = false; btn.innerHTML = '✓ Updated'; setTimeout(() => { btn.innerHTML = origLabel; }, 1500); }
-          showSkuAlert_('SKU updated  -  the change is live everywhere now.', 'success');
-        })
-        .withFailureHandler(err => {
-          // The row itself saved fine (res.success above); only the
-          // follow-up skuData refresh failed  -  a page action or reload
-          // will pick it up, so this is a soft warning, not an error.
-          if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
-          showSkuAlert_('Saved, but could not refresh live data: ' + err.message, 'error');
-        })
-        .getSkuData();
-    })
-    .withFailureHandler(err => {
-      if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
-      showSkuAlert_('Server error: ' + err.message, 'error');
-    })
-    .updateSkuRow(rowIndex, cells, currentUser.name, currentUser.role);
-}
-
-function addSkuRowPrompt_() {
+/** rowIndex omitted/undefined → Add mode (blank form, nothing written
+ *  to the sheet until Save). A sheet row index → Edit mode, pre-filled
+ *  from skuMasterData_, with any platform that already has a value in
+ *  one of its fields pre-checked so its section opens visible  -  every
+ *  platform can still be checked/unchecked by hand either way. */
+function openSkuFormModal_(rowIndex) {
   if (!skuMasterData_ || !skuMasterData_.headers.length) return;
-  const emptyCells = skuMasterData_.headers.map(() => '');
-  google.script.run
-    .withSuccessHandler(res => {
-      if (res.success) {
-        skuMasterData_.rows.push({ rowIndex: res.rowIndex, cells: [...emptyCells] });
-        renderSkuTable_();
-        showSkuAlert_('New blank SKU row added at the bottom. Fill in the fields.', 'success');
-      } else showSkuAlert_('Could not add row: '+res.message,'error');
-    })
-    .withFailureHandler(err => showSkuAlert_('Server error: '+err.message,'error'))
-    .addSkuRow(emptyCells, currentUser.name, currentUser.role);
+  skuFormRowIndex_ = (rowIndex === undefined || rowIndex === null) ? null : rowIndex;
+  const headers = skuMasterData_.headers;
+  const row = skuFormRowIndex_ ? skuMasterData_.rows.find(r => r.rowIndex === skuFormRowIndex_) : null;
+  const valueFor = h => row ? (row.cells[headers.indexOf(h)] || '') : '';
+
+  const skuHeader = headers.find(h => skuFieldKey_(h) === 'SKU');
+  document.getElementById('skuFormTitle').textContent = row
+    ? ('✏️ Edit SKU' + (skuHeader && valueFor(skuHeader) ? '  -  ' + valueFor(skuHeader) : ''))
+    : '+ Add SKU';
+  document.getElementById('skuFormError').style.display = 'none';
+
+  const platformKeysFlat = Object.values(SKU_PLATFORM_FIELD_GROUPS_).flatMap(g => g.keys);
+  const commonHeaders = headers.filter(h => SKU_COMMON_FIELD_KEYS_.includes(skuFieldKey_(h)));
+  const otherHeaders = headers.filter(h => !SKU_COMMON_FIELD_KEYS_.includes(skuFieldKey_(h)) && !platformKeysFlat.includes(skuFieldKey_(h)));
+
+  document.getElementById('skuFormCommonFields').innerHTML =
+    commonHeaders.map(h => skuFormFieldInputHtml_(h, valueFor(h))).join('');
+
+  document.getElementById('skuFormOtherWrap').style.display = otherHeaders.length ? '' : 'none';
+  document.getElementById('skuFormOtherFields').innerHTML =
+    otherHeaders.map(h => skuFormFieldInputHtml_(h, valueFor(h))).join('');
+
+  document.getElementById('skuFormPlatforms').innerHTML = Object.keys(SKU_PLATFORM_FIELD_GROUPS_).map(platKey => {
+    const group = SKU_PLATFORM_FIELD_GROUPS_[platKey];
+    const groupHeaders = headers.filter(h => group.keys.includes(skuFieldKey_(h)));
+    const hasValue = groupHeaders.some(h => valueFor(h).toString().trim() !== '');
+    return `<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:5px 10px">
+      <input type="checkbox" data-sku-form-platform="${platKey}" ${hasValue ? 'checked' : ''} onchange="toggleSkuFormPlatformSection_('${platKey}')"> ${group.label}
+    </label>`;
+  }).join('');
+
+  document.getElementById('skuFormPlatformFields').innerHTML = Object.keys(SKU_PLATFORM_FIELD_GROUPS_).map(platKey => {
+    const group = SKU_PLATFORM_FIELD_GROUPS_[platKey];
+    const groupHeaders = headers.filter(h => group.keys.includes(skuFieldKey_(h)));
+    if (!groupHeaders.length) return '';
+    return `<div data-sku-form-platform-section="${platKey}" style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;margin-bottom:6px">${group.label} Fields</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px">
+        ${groupHeaders.map(h => skuFormFieldInputHtml_(h, valueFor(h))).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  Object.keys(SKU_PLATFORM_FIELD_GROUPS_).forEach(platKey => toggleSkuFormPlatformSection_(platKey));
+
+  document.getElementById('skuFormModal').style.display = 'flex';
+}
+
+function toggleSkuFormPlatformSection_(platKey) {
+  const cb = document.querySelector('[data-sku-form-platform="' + platKey + '"]');
+  const section = document.querySelector('[data-sku-form-platform-section="' + platKey + '"]');
+  if (section) section.style.display = (cb && cb.checked) ? '' : 'none';
+}
+
+function closeSkuFormModal_() {
+  document.getElementById('skuFormModal').style.display = 'none';
+}
+
+/** Collects every field currently in the form  -  common + every
+ *  platform's fields (whether or not that platform's checkbox is
+ *  currently checked/visible; unchecking a platform only hides its
+ *  section, it never discards whatever's already typed into it, so
+ *  toggling back and forth doesn't lose data) + any "Other Fields"  -
+ *  in the SAME column order as skuMasterData_.headers, and writes the
+ *  whole row in one call: addSkuRow for a brand new SKU, updateSkuRow
+ *  when editing an existing one. */
+function saveSkuForm_() {
+  if (!skuMasterData_) return;
+  const headers = skuMasterData_.headers;
+  const byHeader = {};
+  document.querySelectorAll('#skuFormModal [data-sku-form-header]').forEach(inp => {
+    byHeader[inp.dataset.skuFormHeader] = inp.value;
+  });
+  const cells = headers.map(h => byHeader[h] !== undefined ? byHeader[h] : '');
+
+  const skuHeaderIdx = headers.findIndex(h => skuFieldKey_(h) === 'SKU');
+  const errEl = document.getElementById('skuFormError');
+  if (skuHeaderIdx !== -1 && !cells[skuHeaderIdx].toString().trim()) {
+    errEl.textContent = 'SKU is required.';
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+
+  const btn = document.getElementById('skuFormSaveBtn');
+  const origLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving…';
+
+  const onDone = (res, isNew) => {
+    if (!res.success) {
+      btn.disabled = false; btn.innerHTML = origLabel;
+      errEl.textContent = res.message || 'Could not save.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (isNew) {
+      skuMasterData_.rows.push({ rowIndex: res.rowIndex, cells });
+    } else {
+      const row = skuMasterData_.rows.find(r => r.rowIndex === skuFormRowIndex_);
+      if (row) row.cells = cells;
+    }
+    renderSkuTable_();
+    google.script.run.withSuccessHandler(d => { skuData = d; skuCandidatesCache_ = {}; }).getSkuData();
+    btn.disabled = false; btn.innerHTML = origLabel;
+    closeSkuFormModal_();
+    showSkuAlert_(isNew ? 'SKU added.' : 'SKU updated  -  the change is live everywhere now.', 'success');
+  };
+  const onFail = err => {
+    btn.disabled = false; btn.innerHTML = origLabel;
+    errEl.textContent = 'Server error: ' + err.message;
+    errEl.style.display = 'block';
+  };
+
+  if (skuFormRowIndex_) {
+    google.script.run.withSuccessHandler(res => onDone(res, false)).withFailureHandler(onFail)
+      .updateSkuRow(skuFormRowIndex_, cells, currentUser.name, currentUser.role);
+  } else {
+    google.script.run.withSuccessHandler(res => onDone(res, true)).withFailureHandler(onFail)
+      .addSkuRow(cells, currentUser.name, currentUser.role);
+  }
 }
 
 function showSkuAlert_(msg, type) {

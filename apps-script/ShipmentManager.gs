@@ -369,29 +369,15 @@ function getSkuMasterFull() {
   return { headers, rows };
 }
 
-function updateSkuCell(rowIndex, colIndex, value, requesterName, requesterRole) {
-  try {
-    if (!employeeHasModule_(requesterName, requesterRole, "SKU_MASTER")) {
-      return { success: false, message: "You do not have permission to edit SKU Master." };
-    }
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(SHEET_SKU);
-    if (!sheet) return { success: false, message: "SKU_MASTER sheet not found." };
-    sheet.getRange(rowIndex, colIndex + 1).setValue(value);
-    return { success: true };
-  } catch (err) { return { success: false, message: err.message }; }
-}
-
 /** Writes an entire SKU_MASTER row in one batch call — backs the
- *  "Update" button next to each row in the SKU Master editor (see
- *  updateSkuRowNow_ in the HTML), so editing several fields (Landing
- *  Price, UPC, etc.) commits them all in one explicit action/round-trip
- *  with visible "Updating…" feedback, instead of relying on a silent
- *  per-field save on blur. Every place that reads a SKU's data —
- *  RO Invoice/Tally Excel, Box Details, Labels, the New Shipment form —
- *  already looks SKU_MASTER up fresh (or via the client's skuData,
- *  refreshed right after this call succeeds — see updateSkuRowNow_), so
- *  writing here is all it takes for the change to be live everywhere. */
+ *  Add/Edit SKU popup form (see saveSkuForm_ in the HTML), so editing
+ *  several fields (Landing Price, UPC, etc.) commits them all in one
+ *  explicit action/round-trip with visible "Saving…" feedback. Every
+ *  place that reads a SKU's data — RO Invoice/Tally Excel, Box
+ *  Details, Labels, the New Shipment form — already looks SKU_MASTER
+ *  up fresh (or via the client's skuData, refreshed right after this
+ *  call succeeds — see saveSkuForm_), so writing here is all it takes
+ *  for the change to be live everywhere. */
 function updateSkuRow(rowIndex, cells, requesterName, requesterRole) {
   try {
     if (!employeeHasModule_(requesterName, requesterRole, "SKU_MASTER")) {
