@@ -378,6 +378,13 @@ input::placeholder{color:#b0bec5;font-style:italic}
    below) and anchor the header to ITS OWN top (0) instead of a
    page-relative offset. */
 .sku-master-scrollbox{overflow:auto;max-height:65vh;border:1px solid #e2e8f0;border-radius:8px}
+/* PO upload's drag-and-drop zone (see initPoFileDropzone_) — a styled
+   wrapper around the real (hidden) file input; clicking it forwards to
+   the input's own picker, and .dragover is toggled on drag enter/leave
+   purely for the highlight, same idea as Blinkit's own Upload Invoice
+   popup on their Seller Panel. */
+.po-file-dropzone{border:2px dashed #cbd5e1;border-radius:8px;padding:20px 14px;text-align:center;cursor:pointer;font-size:12.5px;color:#64748b;background:#f8fafc;transition:border-color .15s,background .15s}
+.po-file-dropzone.dragover{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
 #skuMasterThead th{position:sticky;top:0;z-index:8;background:#1a1a2e}
 /* The grid's own scroll container. overflow-x:auto on its own forces
    overflow-y to compute as 'auto' too (per spec: if one axis is
@@ -1493,7 +1500,10 @@ input.input-error,select.input-error,.platform-card.input-error,#invoiceModalWra
       <div id="poUploadStep1">
         <div class="form-group">
           <label>PO PDF File *</label>
-          <input type="file" id="poFileInput" accept="application/pdf">
+          <div id="poFileDropzone" class="po-file-dropzone" onclick="document.getElementById('poFileInput').click()">
+            <input type="file" id="poFileInput" accept="application/pdf" style="display:none" onchange="onPoFileInputChange_()">
+            <div id="poFileDropzoneText">📄 Drag &amp; drop the PO PDF here, or <span style="color:#2563eb;text-decoration:underline">click to browse</span></div>
+          </div>
           <div style="font-size:11px;color:#64748b;margin-top:4px">Select the Blinkit RO PDF downloaded from Seller Hub.</div>
         </div>
         <div class="form-group">
@@ -10249,6 +10259,8 @@ function openPoUploadModal() {
   document.getElementById('poUploadStep2').style.display = 'none';
   document.getElementById('poRawTextWrap').style.display = 'none';
   document.getElementById('poFileInput').value = '';
+  resetPoFileDropzoneText_();
+  initPoFileDropzone_();
   document.getElementById('poParseBtn').disabled = false;
   document.getElementById('poParseBtn').textContent = 'Parse PDF →';
   // Dummy Order is Blinkit-only — hidden and reset to unchecked for
@@ -10322,6 +10334,47 @@ function onPoWarehouseSelectChange_() {
 function closePoUploadModal() {
   document.getElementById('poUploadModal').style.display = 'none';
   parsedPoData_ = null;
+}
+
+const PO_FILE_DROPZONE_DEFAULT_TEXT_ = '📄 Drag &amp; drop the PO PDF here, or <span style="color:#2563eb;text-decoration:underline">click to browse</span>';
+function resetPoFileDropzoneText_() {
+  const textEl = document.getElementById('poFileDropzoneText');
+  if (textEl) textEl.innerHTML = PO_FILE_DROPZONE_DEFAULT_TEXT_;
+}
+function onPoFileInputChange_() {
+  const file = document.getElementById('poFileInput').files[0];
+  const textEl = document.getElementById('poFileDropzoneText');
+  if (!textEl) return;
+  if (file) textEl.textContent = '📄 ' + file.name;
+  else resetPoFileDropzoneText_();
+}
+/** Wires up drag-and-drop on the PO upload dropzone, same idea as
+ *  Blinkit's own Upload Invoice popup on their Seller Panel  -  dropping
+ *  a file here just populates the real (hidden) #poFileInput via
+ *  DataTransfer, so parsePoPdf_() below needs no changes at all; it
+ *  still just reads poFileInput.files[0], same as a normal click-to-
+ *  browse pick. Idempotent (checked via a dataset flag) since
+ *  openPoUploadModal() calls this on every open  -  the listeners only
+ *  need to be bound once, ever, for the lifetime of the page. */
+function initPoFileDropzone_() {
+  const zone = document.getElementById('poFileDropzone');
+  const input = document.getElementById('poFileInput');
+  if (!zone || !input || zone.dataset.dndBound) return;
+  zone.dataset.dndBound = '1';
+  ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, e => {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.add('dragover');
+  }));
+  ['dragleave', 'dragend', 'drop'].forEach(evt => zone.addEventListener(evt, e => {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('dragover');
+  }));
+  zone.addEventListener('drop', e => {
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    input.files = files;
+    onPoFileInputChange_();
+  });
 }
 
 /** Step 1: extract all text from the PDF using PDF.js (browser-side),
