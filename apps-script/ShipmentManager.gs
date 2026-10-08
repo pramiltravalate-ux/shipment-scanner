@@ -5046,17 +5046,40 @@ function parseZeptoRows_(text) {
     seen.add(itemCode);
     rows.push({ itemCode, qty });
   }
-  if (rows.length) { rows.sort((a,b)=>a.itemCode.localeCompare(b.itemCode)); return rows; }
-  return parseZeptoRowsCrossLine_(text);
+
+  // BUG HISTORY (continued from preprocessZeptoRowLines_'s own history
+  // above): a real Zepto PO had its LAST item row's MRP/Unit Base
+  // Cost/IGST Rate/IGST Amount cells land on lines entirely BEFORE that
+  // row's own Sr/Material Code line, leaving only Quantity + a single
+  // Taxable Value decimal next to the EAN on the row's own line — too
+  // few consecutive decimals for the strict \d+\.\d{2} x3 anchor above
+  // to recognize, so that row was silently dropped even though every
+  // OTHER row on the same PO parsed fine. Rather than chase every way
+  // these cells can scatter, always ALSO run the looser EAN-
+  // immediately-before-Quantity fallback below (it doesn't require any
+  // decimals at all, just the barcode) and fold in anything it finds
+  // that the strict pass missed — never replacing the strict pass's
+  // own results, which stay authoritative wherever both agree an item
+  // exists, just recovering whatever rows the strict pass alone drops.
+  parseZeptoRowsCrossLine_(text).forEach(r => {
+    if (seen.has(r.itemCode) || r.qty <= 0) return;
+    seen.add(r.itemCode);
+    rows.push(r);
+  });
+
+  rows.sort((a,b)=>a.itemCode.localeCompare(b.itemCode));
+  return rows;
 }
 
 
-/** Original cross-line strategy — kept as a fallback for whatever
- *  layout it was first built against. Anchors on the EAN barcode
- *  immediately followed by Quantity, then separately recovers Material
- *  Code as the first standalone 6-10 digit integer right after each
- *  row's Sr number and right before the free-text description begins,
- *  zipping the two together by nearest-preceding-index. */
+/** Looser cross-line strategy, run as a supplementary pass alongside
+ *  the strict per-line one above (see parseZeptoRows_) rather than only
+ *  as a last resort when that pass finds nothing at all. Anchors on the
+ *  EAN barcode immediately followed by Quantity, then separately
+ *  recovers Material Code as the first standalone 6-10 digit integer
+ *  right after each row's Sr number and right before the free-text
+ *  description begins, zipping the two together by nearest-preceding-
+ *  index. */
 function parseZeptoRowsCrossLine_(text) {
   const eanQtyRe = /742177\d{6}\s+(\d{1,6})(?=\s|$)/g;
   const qtyMatches = [];
