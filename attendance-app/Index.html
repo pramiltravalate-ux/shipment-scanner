@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <style>
+    :root {
+      --bg: #f3f5fa; --card: #ffffff; --text: #1b2333; --muted: #6b7486; --line: #e3e7ef;
+      --brand: #2f5fe3; --brand-soft: #e8eefc;
+      --green: #1f9d55; --green-soft: #e3f6eb; --amber: #c27c0e; --amber-soft: #fdf1dc;
+      --red: #d63a3a; --red-soft: #fde6e6; --blue: #2b78c5; --blue-soft: #e2effb;
+      --gray: #8a93a5; --gray-soft: #eef0f4; --purple: #7b4cc2; --purple-soft: #efe7fb;
+      --teal: #128a86; --teal-soft: #dff4f3;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif; }
+    button { font: inherit; cursor: pointer; border: 0; }
+    input { font: inherit; }
+    .hidden { display: none !important; }
+    .wrap { max-width: 520px; margin: 0 auto; padding: 16px 16px 96px; }
+
+    /* Header */
+    .top { background: var(--brand); color: #fff; padding: 16px 16px 56px; }
+    .top .wrap { padding: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .top h1 { font-size: 18px; margin: 0; }
+    .top small { opacity: .85; }
+    .top .logout { background: rgba(255,255,255,.18); color: #fff; padding: 8px 12px; border-radius: 10px; font-size: 13px; }
+    .pull { margin-top: -44px; }
+
+    .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 14px;
+      box-shadow: 0 1px 3px rgba(20,30,60,.07); }
+    .card h2 { font-size: 16px; margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    .center { text-align: center; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+    /* Login */
+    .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .login .card { width: 100%; max-width: 380px; padding: 28px 22px; }
+    .login h1 { margin: 0 0 4px; font-size: 22px; text-align: center; }
+    .field { margin-top: 14px; }
+    .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    .field input { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 17px; }
+    .field input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+
+    .btn { display: block; width: 100%; padding: 15px; border-radius: 14px; font-weight: 600; font-size: 16px;
+      background: var(--brand); color: #fff; margin-top: 16px; }
+    .btn:disabled { opacity: .55; }
+    .btn.green { background: var(--green); }
+    .btn.red { background: var(--red); }
+    .btn.ghost { background: var(--brand-soft); color: var(--brand); }
+    .btn.small { display: inline-block; width: auto; padding: 9px 14px; font-size: 14px; margin: 0; border-radius: 10px; }
+    .big-btn { width: 100%; padding: 22px; border-radius: 18px; font-size: 20px; font-weight: 700; color: #fff; margin-top: 6px; }
+
+    .clock { font-size: 40px; font-weight: 700; letter-spacing: 1px; text-align: center; margin: 4px 0; }
+    .msg { padding: 12px 14px; border-radius: 12px; margin-top: 12px; font-size: 14px; }
+    .msg.err { background: var(--red-soft); color: var(--red); }
+    .msg.ok { background: var(--green-soft); color: var(--green); }
+    .msg.info { background: var(--blue-soft); color: var(--blue); }
+
+    .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .kv div { background: var(--bg); border-radius: 12px; padding: 10px; text-align: center; }
+    .kv b { display: block; font-size: 18px; }
+    .kv span { font-size: 12px; color: var(--muted); }
+
+    .chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .s-PRESENT { background: var(--green-soft); color: var(--green); }
+    .s-WORKING { background: var(--blue-soft); color: var(--blue); }
+    .s-HALF_DAY { background: var(--amber-soft); color: var(--amber); }
+    .s-ABSENT { background: var(--red-soft); color: var(--red); }
+    .s-LEAVE { background: var(--blue-soft); color: var(--blue); }
+    .s-WEEK_OFF, .s-NOT_MARKED, .s-NOT_JOINED, .s-UPCOMING { background: var(--gray-soft); color: var(--gray); }
+    .s-HOLIDAY { background: var(--purple-soft); color: var(--purple); }
+    .s-OFF_WORK { background: var(--teal-soft); color: var(--teal); }
+    .s-LATE { background: var(--amber-soft); color: var(--amber); }
+
+    /* Check-in flow */
+    .flow-step { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+    .flow-step:first-child { border-top: 0; }
+    .flow-step .dot { width: 26px; height: 26px; border-radius: 50%; background: var(--gray-soft); color: var(--gray);
+      display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex: none; }
+    .flow-step.done .dot { background: var(--green); color: #fff; }
+    .flow-step.fail .dot { background: var(--red); color: #fff; }
+    .selfie-preview { width: 100%; max-height: 320px; object-fit: cover; border-radius: 14px; margin-top: 10px; }
+    .spinner { width: 18px; height: 18px; border: 3px solid var(--brand-soft); border-top-color: var(--brand);
+      border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Month */
+    .month-nav { display: flex; align-items: center; justify-content: space-between; }
+    .month-nav button { background: var(--brand-soft); color: var(--brand); width: 40px; height: 40px; border-radius: 12px; font-size: 18px; font-weight: 700; }
+    .month-nav h2 { margin: 0; font-size: 17px; }
+    .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 12px; }
+    .cal .h { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
+    .cal .d { aspect-ratio: 1 / 1; border-radius: 10px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; font-size: 14px; font-weight: 600; position: relative; padding: 0; }
+    .cal .d small { font-size: 9px; font-weight: 600; }
+    .cal .d.today { outline: 2px solid var(--brand); }
+    .cal .d .late-dot { position: absolute; top: 4px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .pay-line { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px dashed var(--line); }
+    .pay-line:first-child { border-top: 0; }
+    .pay-line.total { font-size: 18px; font-weight: 700; border-top: 2px solid var(--line); margin-top: 4px; padding-top: 12px; }
+
+    /* Lists */
+    .list-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+    .list-item:first-child { border-top: 0; }
+    .list-item .name { font-weight: 600; }
+    .list-item .sub { font-size: 12px; color: var(--muted); }
+    .list-item .right { text-align: right; flex: none; }
+    .link { background: none; color: var(--brand); padding: 0; font-size: 13px; font-weight: 600; }
+
+    .tabs { display: flex; background: var(--card); border-radius: 14px; padding: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(20,30,60,.07); }
+    .tabs button { flex: 1; padding: 10px; border-radius: 10px; background: none; color: var(--muted); font-weight: 600; }
+    .tabs button.on { background: var(--brand); color: #fff; }
+
+    /* Bottom nav */
+    .nav { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--line);
+      display: flex; justify-content: center; padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
+    .nav .in { display: flex; width: 100%; max-width: 520px; }
+    .nav button { flex: 1; background: none; padding: 10px 4px 12px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .nav button .ic { display: block; font-size: 22px; line-height: 1.2; }
+    .nav button.on { color: var(--brand); }
+
+    /* Modal */
+    .modal { position: fixed; inset: 0; background: rgba(15,20,35,.55); display: flex; align-items: flex-end;
+      justify-content: center; z-index: 10; }
+    .modal .sheet { background: #fff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 20px 16px 28px;
+      max-height: 88vh; overflow: auto; }
+    .modal img { width: 100%; border-radius: 14px; }
+
+    .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: #1b2333; color: #fff;
+      padding: 12px 18px; border-radius: 12px; font-size: 14px; z-index: 20; max-width: 90%; text-align: center; }
+  </style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView" class="login hidden">
+  <div class="card">
+    <h1><?= company ?></h1>
+    <p class="center muted" style="margin:0 0 8px">Employee Attendance</p>
+    <form id="loginForm" autocomplete="on">
+      <div class="field">
+        <label for="empId">Employee ID</label>
+        <input id="empId" autocapitalize="characters" autocomplete="username" placeholder="e.g. E001" required>
+      </div>
+      <div class="field">
+        <label for="pin">PIN</label>
+        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" required>
+      </div>
+      <button class="btn" id="loginBtn" type="submit">Login</button>
+      <div id="loginMsg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appView" class="hidden">
+  <div class="top">
+    <div class="wrap">
+      <div>
+        <h1 id="hdrName">–</h1>
+        <small id="hdrSub"></small>
+      </div>
+      <button class="logout" onclick="doLogout()">Logout</button>
+    </div>
+  </div>
+  <div class="wrap pull" id="content"></div>
+
+  <div class="nav">
+    <div class="in">
+      <button data-tab="home" onclick="go('home')"><span class="ic">⏱</span>Attendance</button>
+      <button data-tab="month" onclick="go('month')"><span class="ic">📅</span>My Month</button>
+      <button data-tab="admin" id="navAdmin" class="hidden" onclick="go('admin')"><span class="ic">🛠</span>Admin</button>
+    </div>
+  </div>
+</div>
+
+<div id="loadingView" class="login"><div class="spinner"></div></div>
+
+<input type="file" id="selfieInput" accept="image/*" capture="user" class="hidden">
+<div id="modal" class="modal hidden" onclick="if (event.target === this) closeModal()"><div class="sheet" id="modalBody"></div></div>
+
+<script>
+  /* ---------------- State & helpers ---------------- */
+  var S = { token: null, profile: null, home: null, tab: 'home', flow: null, month: null, admin: { tab: 'today', ym: null } };
+
+  var STATUS = {
+    PRESENT: 'Present', WORKING: 'Working', HALF_DAY: 'Half Day', ABSENT: 'Absent', LEAVE: 'Leave',
+    WEEK_OFF: 'Week Off', HOLIDAY: 'Holiday', OFF_WORK: 'Worked on Off-day', NOT_MARKED: 'Not Marked',
+    NOT_JOINED: 'Not Joined', UPCOMING: ''
+  };
+  var SHORT = { PRESENT: 'P', WORKING: 'IN', HALF_DAY: '½', ABSENT: 'A', LEAVE: 'L', WEEK_OFF: 'WO',
+    HOLIDAY: 'H', OFF_WORK: 'OW', NOT_MARKED: '', NOT_JOINED: '–', UPCOMING: '' };
+
+  function $(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function chip(status, extra) {
+    if (!STATUS[status]) return '';
+    return '<span class="chip s-' + status + '">' + STATUS[status] + '</span>' + (extra || '');
+  }
+  function lateChip(late) { return late ? ' <span class="chip s-LATE">Late</span>' : ''; }
+  function money(n, cur) {
+    return (cur || '') + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function num(n) { return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+  function hrs(n) { n = Number(n || 0); var h = Math.floor(n), m = Math.round((n - h) * 60); return h + 'h ' + (m < 10 ? '0' : '') + m + 'm'; }
+  function store(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function toast(t) {
+    var el = document.createElement('div'); el.className = 'toast'; el.textContent = t;
+    document.body.appendChild(el); setTimeout(function () { el.remove(); }, 3200);
+  }
+  function ymNow() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); }
+  function ymShift(ym, delta) {
+    var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + delta;
+    var d = new Date(y, m, 1); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+
+  /** google.script.run as a Promise. Handles expired sessions centrally. */
+  function api(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function (err) {
+          var msg = (err && err.message) || String(err);
+          if (msg.indexOf('SESSION_EXPIRED') >= 0) { toast('Session expired. Please login again.'); showLogin(); }
+          reject(new Error(msg.replace(/^Exception:\s*/, '')));
+        })[fn].apply(null, args);
+    });
+  }
+
+  /* ---------------- Login ---------------- */
+  function showLogin() {
+    S.token = null; store('att_token', null);
+    $('appView').classList.add('hidden'); $('loadingView').classList.add('hidden');
+    $('loginView').classList.remove('hidden');
+    $('empId').value = load('att_emp') || '';
+    $('pin').value = '';
+  }
+
+  $('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var id = $('empId').value.trim(), pin = $('pin').value.trim();
+    $('loginBtn').disabled = true; $('loginMsg').innerHTML = '';
+    api('login', id, pin).then(function (r) {
+      S.token = r.token; S.profile = r.profile;
+      store('att_token', r.token); store('att_emp', id.toUpperCase());
+      startApp();
+    }).catch(function (err) {
+      $('loginMsg').innerHTML = '<div class="msg err">' + esc(err.message) + '</div>';
+    }).then(function () { $('loginBtn').disabled = false; });
+  });
+
+  function doLogout() {
+    if (!confirm('Logout?')) return;
+    api('logout', S.token).catch(function () {});
+    showLogin();
+  }
+
+  function startApp() {
+    $('loginView').classList.add('hidden'); $('loadingView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    go('home');
+  }
+
+  /* ---------------- Navigation ---------------- */
+  function go(tab) {
+    S.tab = tab;
+    Array.prototype.forEach.call(document.querySelectorAll('.nav button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-tab') === tab);
+    });
+    window.scrollTo(0, 0);
+    if (tab === 'home') loadHome();
+    if (tab === 'month') loadMonth(S.month || ymNow());
+    if (tab === 'admin') renderAdmin();
+  }
+
+  function setLoading(msg) {
+    $('content').innerHTML = '<div class="card center"><div class="spinner"></div> <span class="muted">' + esc(msg || 'Loading…') + '</span></div>';
+  }
+  function setError(err, retry) {
+    $('content').innerHTML = '<div class="card"><div class="msg err">' + esc(err.message || err) + '</div>' +
+      (retry ? '<button class="btn ghost" onclick="' + retry + '">Try again</button>' : '') + '</div>';
+  }
+
+  /* ---------------- Home / check-in ---------------- */
+  var clockTimer = null;
+
+  function loadHome() {
+    setLoading();
+    api('getHome', S.token).then(function (h) {
+      S.home = h; S.profile = h.profile;
+      $('hdrName').textContent = h.profile.name;
+      $('hdrSub').textContent = h.profile.id + ' · ' + h.company;
+      $('navAdmin').classList.toggle('hidden', h.profile.role !== 'ADMIN');
+      renderHome();
+    }).catch(function (e) { setError(e, "loadHome()"); });
+  }
+
+  function renderHome() {
+    var h = S.home, r = h.record, d = h.day;
+    var state = !r ? 'in' : (!r.out ? 'out' : 'done');
+    var html = '<div class="card center">' +
+      '<div class="muted">' + esc(h.todayLabel) + '</div>' +
+      '<div class="clock" id="clock">--:--</div>' +
+      '<div>' + (h.offType ? chip(h.offType) + ' ' : '') + 'Shift starts ' + esc(h.shiftStart) + '</div>' +
+      '</div>';
+
+    html += '<div class="card"><div class="row"><h2 style="margin:0">Today</h2><div>' + chip(d.status) + lateChip(d.late) + '</div></div>';
+    html += '<div class="kv" style="margin-top:12px">' +
+      '<div><b>' + esc(r && r.in || '--:--') + '</b><span>Check-in</span></div>' +
+      '<div><b>' + esc(r && r.out || '--:--') + '</b><span>Check-out</span></div>' +
+      '<div><b>' + (d.worked ? hrs(d.worked) : '–') + '</b><span>Worked' + (d.ot ? ' · OT ' + hrs(d.ot) : '') + '</span></div>' +
+      '</div>';
+
+    if (state === 'in') html += '<button class="big-btn" style="background:var(--green)" onclick="startFlow(\'in\')">CHECK IN</button>';
+    if (state === 'out') html += '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT</button>';
+    if (state === 'done') html += '<div class="msg ok center">✓ Attendance complete for today</div>';
+    html += '</div><div id="flow"></div>';
+
+    html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">📍 You must be within <b>' +
+      esc(h.office.radius) + ' m</b> of the office to mark attendance. Keep GPS / Location ON and allow location access when asked.' +
+      (h.selfieRequired ? ' A selfie is required at check-in.' : '') + '</p></div>';
+
+    $('content').innerHTML = html;
+    tickClock();
+    clearInterval(clockTimer); clockTimer = setInterval(tickClock, 1000);
+  }
+
+  function tickClock() {
+    var el = $('clock'); if (!el) return;
+    var d = new Date();
+    el.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+  }
+
+  /** Step 1: get GPS. Step 2 (check-in): selfie. Step 3: submit. */
+  function startFlow(mode) {
+    S.flow = { mode: mode, pos: null, selfie: null, busy: false, error: null, locating: true };
+    renderFlow();
+    $('flow').scrollIntoView({ behavior: 'smooth' });
+    getBestPosition(S.home.office.maxAccuracy).then(function (p) {
+      S.flow.locating = false;
+      S.flow.pos = p;
+      p.distance = distance(p.lat, p.lng, S.home.office.lat, S.home.office.lng);
+      if (S.home.office.lat == null || S.home.office.lng == null) S.flow.error = 'Office location is not set yet. Please contact admin.';
+      else if (p.accuracy > S.home.office.maxAccuracy) S.flow.error = 'GPS signal is weak (±' + Math.round(p.accuracy) + ' m). Move near a window or open area and try again.';
+      else if (p.distance > S.home.office.radius) S.flow.error = 'You are ' + Math.round(p.distance) + ' m from the office. You must be within ' + S.home.office.radius + ' m.';
+      renderFlow();
+    }).catch(function (err) {
+      S.flow.locating = false;
+      S.flow.error = err.message;
+      renderFlow();
+    });
+  }
+
+  function renderFlow() {
+    var f = S.flow, el = $('flow'); if (!el || !f) return;
+    var needSelfie = f.mode === 'in' && S.home.selfieRequired;
+    var locOk = f.pos && !f.error;
+    var html = '<div class="card"><h2>' + (f.mode === 'in' ? 'Check In' : 'Check Out') + '</h2>';
+
+    // Step 1 - location
+    html += '<div class="flow-step ' + (locOk ? 'done' : (f.error ? 'fail' : '')) + '"><div class="dot">' + (locOk ? '✓' : (f.error ? '!' : '1')) + '</div><div style="flex:1">' +
+      '<b>Location</b><br>';
+    if (f.locating) html += '<span class="spinner"></span> <span class="muted">Getting your location… keep this screen open</span>';
+    else if (f.pos) html += '<span class="muted">' + Math.round(f.pos.distance) + ' m from office · accuracy ±' + Math.round(f.pos.accuracy) + ' m</span>';
+    if (f.error) html += '<div class="msg err">' + esc(f.error) + '</div><button class="btn ghost" onclick="startFlow(\'' + f.mode + '\')">Retry location</button>';
+    html += '</div></div>';
+
+    // Step 2 - selfie
+    if (needSelfie) {
+      html += '<div class="flow-step ' + (f.selfie ? 'done' : '') + '"><div class="dot">' + (f.selfie ? '✓' : '2') + '</div><div style="flex:1"><b>Selfie</b><br>';
+      if (f.selfie) html += '<img class="selfie-preview" src="' + f.selfie + '"><button class="btn ghost" onclick="takeSelfie()">Retake</button>';
+      else if (locOk) html += '<button class="btn" onclick="takeSelfie()">📷 Take Selfie</button>';
+      else html += '<span class="muted">After location is verified</span>';
+      html += '</div></div>';
+    }
+
+    // Step 3 - submit
+    var ready = locOk && (!needSelfie || f.selfie);
+    html += '<button class="btn ' + (f.mode === 'in' ? 'green' : 'red') + '" ' + (ready && !f.busy ? '' : 'disabled') + ' onclick="submitFlow()">' +
+      (f.busy ? '<span class="spinner"></span> Saving…' : (f.mode === 'in' ? 'Confirm Check-In' : 'Confirm Check-Out')) + '</button>';
+    html += '<button class="btn ghost" onclick="cancelFlow()" ' + (f.busy ? 'disabled' : '') + '>Cancel</button></div>';
+    el.innerHTML = html;
+  }
+
+  function cancelFlow() { S.flow = null; $('flow').innerHTML = ''; }
+
+  function takeSelfie() { $('selfieInput').value = ''; $('selfieInput').click(); }
+
+  $('selfieInput').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    if (!file || !S.flow) return;
+    compressImage(file, 640, 0.72).then(function (dataUrl) {
+      S.flow.selfie = dataUrl; renderFlow();
+    }).catch(function () { toast('Could not read the photo. Please try again.'); });
+  });
+
+  function submitFlow() {
+    var f = S.flow; if (!f || f.busy) return;
+    f.busy = true; renderFlow();
+    var p = f.pos;
+    var call = f.mode === 'in'
+      ? api('checkIn', S.token, p.lat, p.lng, p.accuracy, f.selfie)
+      : api('checkOut', S.token, p.lat, p.lng, p.accuracy);
+    call.then(function (r) {
+      S.flow = null;
+      toast(f.mode === 'in'
+        ? 'Checked in at ' + r.time + (r.late ? ' (Late)' : '')
+        : 'Checked out at ' + r.time + ' · Worked ' + hrs(r.worked) + (r.ot ? ' · OT ' + hrs(r.ot) : ''));
+      loadHome();
+    }).catch(function (err) {
+      f.busy = false; f.error = err.message; renderFlow();
+    });
+  }
+
+  /** Watches GPS for up to 15 s and returns the most accurate reading. */
+  function getBestPosition(targetAcc) {
+    return new Promise(function (resolve, reject) {
+      if (!navigator.geolocation) return reject(new Error('This browser does not support location.'));
+      var best = null, done = false, watchId;
+      function finish() {
+        if (done) return; done = true;
+        navigator.geolocation.clearWatch(watchId); clearTimeout(timer);
+        best ? resolve(best) : reject(new Error('Could not get your location. Turn on GPS and try again.'));
+      }
+      var timer = setTimeout(finish, 15000);
+      watchId = navigator.geolocation.watchPosition(function (pos) {
+        var c = pos.coords;
+        if (!best || c.accuracy < best.accuracy) best = { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy };
+        if (c.accuracy <= Math.min(targetAcc, 20)) finish();
+      }, function (err) {
+        if (done) return;
+        if (err.code === 1) { done = true; clearTimeout(timer); navigator.geolocation.clearWatch(watchId);
+          reject(new Error('Location permission denied. Allow location for this site in your browser settings and try again.')); }
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+    });
+  }
+
+  function distance(lat1, lng1, lat2, lng2) {
+    var R = 6371000, toRad = function (x) { return x * Math.PI / 180; };
+    var dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+    var a = Math.pow(Math.sin(dLat / 2), 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.pow(Math.sin(dLng / 2), 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  function compressImage(file, maxSize, quality) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = function () {
+        var img = new Image();
+        img.onerror = reject;
+        img.onload = function () {
+          var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+          var c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* ---------------- My Month ---------------- */
+  function loadMonth(ym) {
+    S.month = ym;
+    setLoading();
+    api('getMyMonth', S.token, ym).then(function (m) {
+      $('content').innerHTML = monthHtml(m, 'loadMonth');
+      S.lastMonth = m;
+    }).catch(function (e) { setError(e, "loadMonth('" + ym + "')"); });
+  }
+
+  /** Shared by employee view and admin employee detail. navFn is called with the new 'yyyy-MM'. */
+  function monthHtml(m, navFn, navArg) {
+    var t = m.totals, p = m.pay, cur = m.currency;
+    var call = function (ym) { return navFn + '(' + (navArg ? "'" + navArg + "'," : '') + "'" + ym + "')"; };
+    var html = '<div class="card"><div class="month-nav">' +
+      '<button onclick="' + call(ymShift(m.ym, -1)) + '">‹</button>' +
+      '<h2>' + esc(m.label) + '</h2>' +
+      '<button onclick="' + call(ymShift(m.ym, 1)) + '">›</button></div>';
+    if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span></p>';
+
+    // Calendar
+    html += '<div class="cal">';
+    ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (d) { html += '<div class="h">' + d + '</div>'; });
+    for (var i = 0; i < m.days[0].dow; i++) html += '<div></div>';
+    var now = new Date(), todayStr = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+    m.days.forEach(function (d, i) {
+      html += '<button class="d s-' + d.status + (d.date === todayStr ? ' today' : '') + '" onclick="showDay(' + i + ')">' +
+        d.day + '<small>' + (SHORT[d.status] || '') + '</small>' + (d.late ? '<span class="late-dot"></span>' : '') + '</button>';
+    });
+    html += '</div><div class="legend">' +
+      ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE', 'WEEK_OFF', 'HOLIDAY', 'OFF_WORK'].map(function (s) { return chip(s); }).join('') +
+      '<span class="chip s-LATE">● Late</span></div></div>';
+
+    // Attendance summary
+    html += '<div class="card"><h2>Attendance</h2><div class="kv">' +
+      '<div><b>' + t.present + '</b><span>Present</span></div>' +
+      '<div><b>' + t.halfDay + '</b><span>Half Days</span></div>' +
+      '<div><b>' + t.absent + '</b><span>Absent</span></div>' +
+      '<div><b>' + t.late + '</b><span>Late Marks</span></div>' +
+      '<div><b>' + (t.leave + t.weekOff + t.holiday) + '</b><span>Leave / Off</span></div>' +
+      '<div><b>' + hrs(t.otHours) + '</b><span>Overtime</span></div>' +
+      '</div></div>';
+
+    // Salary
+    html += '<div class="card"><h2>Salary ' + (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '') + '</h2>' +
+      '<div class="pay-line"><span>Monthly salary</span><b>' + money(p.salary, cur) + '</b></div>' +
+      '<div class="pay-line"><span class="muted">Per day (' + t.daysInMonth + ' days) / per hour</span><span class="muted">' + money(p.perDay, cur) + ' / ' + money(p.hourly, cur) + '</span></div>' +
+      '<div class="pay-line"><span>Deduction <span class="muted">(' + num(t.deductDays) + ' days' + (t.lateCutDays ? ', incl. ' + num(t.lateCutDays) + ' for late marks' : '') + ')</span></span><b style="color:var(--red)">− ' + money(p.deduction, cur) + '</b></div>' +
+      '<div class="pay-line"><span>OT pay <span class="muted">(' + hrs(t.otHours) + ' × ' + m.rules.otMultiplier + '×)</span></span><b style="color:var(--green)">+ ' + money(p.otPay, cur) + '</b></div>' +
+      '<div class="pay-line total"><span>Net salary</span><span>' + money(p.net, cur) + '</span></div>' +
+      (m.inProgress ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>' : '') +
+      '</div>';
+
+    // Day list
+    var worked = m.days.filter(function (d) { return d.in; });
+    if (worked.length) {
+      html += '<div class="card"><h2>Daily log</h2>';
+      worked.slice().reverse().forEach(function (d) {
+        html += '<div class="list-item"><div><div class="name">' + esc(d.date.slice(8)) + ' ' + esc(m.label.split(' ')[0].slice(0, 3)) + '</div>' +
+          '<div class="sub">' + esc(d.in) + ' → ' + esc(d.out || '—') + ' · ' + hrs(d.worked) + (d.ot ? ' · OT ' + hrs(d.ot) : '') + '</div></div>' +
+          '<div class="right">' + chip(d.status) + lateChip(d.late) + '</div></div>';
+      });
+      html += '</div>';
+    }
+    S.viewMonth = m;
+    return html;
+  }
+
+  function showDay(i) {
+    var d = S.viewMonth.days[i];
+    var html = '<h2 style="margin-top:0">' + esc(d.date) + '</h2><p>' + (chip(d.status) || '<span class="muted">No record</span>') + lateChip(d.late) + '</p>';
+    if (d.holidayName) html += '<p>🎉 ' + esc(d.holidayName) + '</p>';
+    if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
+      (d.ot ? '<p>Overtime: <b>' + hrs(d.ot) + '</b></p>' : '');
+    if (d.note) html += '<div class="msg info">Note: ' + esc(d.note) + '</div>';
+    html += '<button class="btn ghost" onclick="closeModal()">Close</button>';
+    openModal(html);
+  }
+
+  /* ---------------- Admin ---------------- */
+  function renderAdmin() {
+    var a = S.admin;
+    var html = '<div class="tabs"><button class="' + (a.tab === 'today' ? 'on' : '') + '" onclick="adminTab(\'today\')">Today</button>' +
+      '<button class="' + (a.tab === 'payroll' ? 'on' : '') + '" onclick="adminTab(\'payroll\')">Monthly / Payroll</button></div><div id="adminBody"></div>';
+    $('content').innerHTML = html;
+    if (a.tab === 'today') loadAdminToday(); else loadAdminMonth(a.ym || ymNow());
+  }
+  function adminTab(t) { S.admin.tab = t; renderAdmin(); }
+
+  function adminBody(html) { var el = $('adminBody'); if (el) el.innerHTML = html; }
+  function adminLoading() { adminBody('<div class="card center"><div class="spinner"></div></div>'); }
+
+  function loadAdminToday() {
+    adminLoading();
+    api('adminToday', S.token).then(function (r) {
+      var c = r.counts;
+      var html = '<div class="card"><div class="row"><h2 style="margin:0">' + esc(r.date) + '</h2>' + (r.offType ? chip(r.offType) : '') +
+        '<button class="btn small ghost" onclick="loadAdminToday()">↻</button></div>' +
+        '<div class="kv" style="margin-top:12px">' +
+        '<div><b>' + c.in + '/' + c.total + '</b><span>Checked in</span></div>' +
+        '<div><b>' + c.late + '</b><span>Late</span></div>' +
+        '<div><b>' + c.notMarked + '</b><span>Not marked</span></div></div></div>';
+      html += '<div class="card"><h2>Employees</h2>';
+      S.adminToday = r.list;
+      r.list.forEach(function (e, i) {
+        html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
+          '<div class="sub">' + (e.in ? esc(e.in) + ' → ' + esc(e.out || '—') + (e.distance !== '' ? ' · ' + esc(e.distance) + ' m' : '') : 'No check-in yet') + '</div>' +
+          (e.hasSelfie ? '<button class="link" onclick="viewSelfie(' + i + ')">View selfie</button>' : '') +
+          '</div><div class="right">' + chip(e.status) + lateChip(e.late) + '</div></div>';
+      });
+      html += '</div>';
+      adminBody(html);
+    }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+  }
+
+  function viewSelfie(i) {
+    var e = S.adminToday[i], row = e.row, name = e.name;
+    openModal('<h2 style="margin-top:0">' + esc(name) + '</h2><div class="center"><div class="spinner"></div></div>');
+    api('adminGetSelfie', S.token, row).then(function (src) {
+      openModal('<h2 style="margin-top:0">' + esc(name) + '</h2><img src="' + src + '"><button class="btn ghost" onclick="closeModal()">Close</button>');
+    }).catch(function (e) {
+      openModal('<div class="msg err">' + esc(e.message) + '</div><button class="btn ghost" onclick="closeModal()">Close</button>');
+    });
+  }
+
+  function loadAdminMonth(ym) {
+    S.admin.ym = ym;
+    adminLoading();
+    api('adminMonth', S.token, ym).then(function (r) {
+      var cur = r.currency, total = 0;
+      var html = '<div class="card"><div class="month-nav">' +
+        '<button onclick="loadAdminMonth(\'' + ymShift(ym, -1) + '\')">‹</button><h2>' + esc(r.label) + '</h2>' +
+        '<button onclick="loadAdminMonth(\'' + ymShift(ym, 1) + '\')">›</button></div>' +
+        '<button class="btn" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export payroll to Sheet</button><div id="exportMsg"></div></div>';
+      html += '<div class="card"><h2>Employees</h2>';
+      r.rows.forEach(function (e) {
+        total += e.net;
+        html += '<div class="list-item" onclick="openEmployee(\'' + esc(e.id) + '\',\'' + ym + '\')" style="cursor:pointer">' +
+          '<div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
+          '<div class="sub">P ' + e.present + ' · ½ ' + e.halfDay + ' · A ' + e.absent + ' · Late ' + e.late + ' · OT ' + hrs(e.otHours) + '</div></div>' +
+          '<div class="right"><b>' + money(e.net, cur) + '</b><div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div></div></div>';
+      });
+      html += '<div class="pay-line total"><span>Total payroll</span><span>' + money(total, cur) + '</span></div></div>';
+      adminBody(html);
+    }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+  }
+
+  function openEmployee(id, ym) {
+    adminLoading();
+    api('adminEmployeeMonth', S.token, id, ym).then(function (m) {
+      adminBody('<button class="btn small ghost" style="margin-bottom:12px" onclick="loadAdminMonth(\'' + S.admin.ym + '\')">‹ Back to all</button>' +
+        monthHtml(m, 'openEmployee', id));
+    }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+  }
+
+  function exportPayroll(ym) {
+    $('exportBtn').disabled = true;
+    api('adminExportPayroll', S.token, ym).then(function (r) {
+      $('exportMsg').innerHTML = '<div class="msg ok">Saved to tab "' + esc(r.sheet) + '". <a href="' + esc(r.url) + '" target="_blank">Open sheet</a></div>';
+    }).catch(function (e) {
+      $('exportMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+    }).then(function () { var b = $('exportBtn'); if (b) b.disabled = false; });
+  }
+
+  /* ---------------- Modal ---------------- */
+  function openModal(html) { $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); }
+  function closeModal() { $('modal').classList.add('hidden'); }
+
+  /* ---------------- Boot ---------------- */
+  (function boot() {
+    S.token = load('att_token');
+    if (S.token) startApp(); else showLogin();
+  })();
+</script>
+</body>
+</html>
