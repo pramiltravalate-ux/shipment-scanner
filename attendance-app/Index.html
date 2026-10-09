@@ -119,6 +119,12 @@
     .cal.f-ABSENT .d:not(.m-ABSENT), .cal.f-HALF_DAY .d:not(.m-HALF_DAY),
     .cal.f-OT .d:not(.m-OT), .cal.f-LATE .d:not(.m-LATE) { opacity: .18; }
     .cal.f-OT .d.m-OT { background: var(--ot-soft); color: var(--ot); }
+    .cal.f-MISSED .d:not(.m-MISSED) { opacity: .18; }
+    .cal .d.m-MISSED { outline: 2px solid var(--red); outline-offset: -2px; }
+    .cal .d .miss-mark { position: absolute; bottom: 2px; left: 4px; font-size: 10px; font-weight: 800; color: var(--red); }
+    .fchip.fc-MISSED.on { background: var(--red); }
+    .alert { background: var(--red-soft); border: 2px solid var(--red); }
+    .alert h2 { color: var(--red); }
     .cal.f-LATE .d.m-LATE { background: var(--orange-soft); color: var(--orange); }
     .filters { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; }
     .fchip { padding: 7px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--gray-soft); color: var(--muted); flex: none; }
@@ -229,7 +235,7 @@
       <button data-tab="home" onclick="go('home')"><span class="ic">⏱</span>Attendance</button>
       <button data-tab="month" onclick="go('month')"><span class="ic">📅</span>My Month</button>
       <button data-tab="requests" onclick="go('requests')"><span class="ic">📝</span>Requests<span id="reqBadge" class="badge hidden"></span></button>
-      <button data-tab="admin" id="navAdmin" class="hidden" onclick="go('admin')"><span class="ic">🛠</span><span id="navAdminLabel">Admin</span></button>
+      <button data-tab="admin" id="navAdmin" class="hidden" onclick="go('admin')"><span class="ic">🛠</span><span id="navAdminLabel">Admin</span><span id="adminBadge" class="badge hidden"></span></button>
     </div>
   </div>
 </div>
@@ -254,7 +260,7 @@
     HOLIDAY: 'H', OFF_WORK: 'OW', NOT_MARKED: '', NOT_JOINED: '–', UPCOMING: '' };
   var FLAGS = {
     WEAK_GPS: 'Weak GPS', WEAK_GPS_OUT: 'Weak GPS at check-out', REPEAT_GPS: 'Same GPS as another day',
-    SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie'
+    SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie', NO_CHECKOUT: 'Did not check out'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -398,6 +404,8 @@
       $('navAdminLabel').textContent = h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
       $('reqBadge').textContent = h.pendingRequests;
       $('reqBadge').classList.toggle('hidden', !h.pendingRequests);
+      $('adminBadge').textContent = h.adminMissed ? '!' : '';
+      $('adminBadge').classList.toggle('hidden', !h.adminMissed);
       renderHome();
     }).catch(function (e) { setError(e, "loadHome()"); });
   }
@@ -425,7 +433,19 @@
     var state = prev && !checkedIn ? 'outPrev' : !checkedIn ? 'in' : (!r.out ? 'out' : 'done');
     if (!phoneTimeOk() && state !== 'done') state = 'badtime';
 
-    var html = '<div class="card center">' +
+    var html = '';
+    if (h.missedCheckouts && h.missedCheckouts.length) {
+      html += '<div class="card alert"><h2>⚠ You did not check out</h2>' + h.missedCheckouts.map(function (x) {
+        return '<div>' + esc(fmtDate(x.date)) + ' · checked in ' + esc(x.in) + '</div>';
+      }).join('') + '<p class="small" style="margin:8px 0 0">You were checked out automatically at midnight. ' +
+        (h.missedCheckouts.length > 1 ? 'These days are' : 'This day is') + ' marked until an admin fixes ' + (h.missedCheckouts.length > 1 ? 'them' : 'it') +
+        '. Send a correction with your real check-out time.</p>' +
+        '<button class="btn red" onclick="go(\'requests\')">Send correction</button></div>';
+    }
+    if (h.adminMissed) {
+      html += '<div class="card"><div class="row"><span>⚠ <b>' + h.adminMissed + '</b> missed check-out(s) to clear.</span><button class="link" onclick="S.admin.tab=\'today\';go(\'admin\')">Open</button></div></div>';
+    }
+    html += '<div class="card center">' +
       '<div class="muted">' + esc(h.todayLabel) + '</div>' +
       '<div class="clock" id="clock">--:--</div>' +
       '<div>' + (h.offType ? chip(h.offType) + ' ' : '') + 'Shift starts ' + esc(h.shiftStart) + '</div>' +
@@ -460,6 +480,11 @@
     tickClock();
     clearInterval(clockTimer); clockTimer = setInterval(tickClock, 1000);
   }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { clearInterval(clockTimer); clockTimer = null; }
+    else if ($('clock') && !clockTimer) { tickClock(); clockTimer = setInterval(tickClock, 1000); }
+  });
 
   function tickClock() {
     var el = $('clock'); if (!el) return;
@@ -660,7 +685,7 @@
       (m.canEdit ? '<p class="center muted small" style="margin:4px 0 0">Tap any day to add or change its entry</p>' : '');
 
     var f = S.calFilter || 'ALL';
-    html += '<div class="filters">' + [['ALL', 'All'], ['ABSENT', 'Absent'], ['HALF_DAY', 'Half Day'], ['OT', 'OT'], ['LATE', 'Late']]
+    html += '<div class="filters">' + [['ALL', 'All'], ['ABSENT', 'Absent'], ['HALF_DAY', 'Half Day'], ['OT', 'OT'], ['LATE', 'Late']].concat(t.missedCheckouts ? [['MISSED', 'No check-out']] : [])
       .map(function (x) { return '<button class="fchip fc-' + x[0] + (f === x[0] ? ' on' : '') + '" onclick="setCalFilter(\'' + x[0] + '\')">' + x[1] + '</button>'; }).join('') + '</div>';
 
     html += '<div class="cal f-' + f + '" id="cal">';
@@ -668,17 +693,19 @@
     for (var i = 0; i < m.days[0].dow; i++) html += '<div></div>';
     var todayStr = todayLocal();
     m.days.forEach(function (d, i) {
-      var cls = 'd s-' + d.status + ' m-' + d.status + (d.otMin ? ' m-OT' : '') + (d.late ? ' m-LATE' : '') + (d.date === todayStr ? ' today' : '');
+      var cls = 'd s-' + d.status + ' m-' + d.status + (d.otMin ? ' m-OT' : '') + (d.late ? ' m-LATE' : '') + (d.autoOut ? ' m-MISSED' : '') + (d.date === todayStr ? ' today' : '');
       html += '<button class="' + cls + '" onclick="showDay(' + i + ')">' + d.day +
         '<small>' + (SHORT[d.status] || '') + '</small>' +
         (d.otMin || d.otPending ? '<span class="ot-dot"' + (d.otPending ? ' style="opacity:.4"' : '') + '></span>' : '') +
-        (d.late ? '<span class="late-dot"></span>' : '') + (navArg && d.flags ? '<span class="flag-dot"></span>' : '') + '</button>';
+        (d.late ? '<span class="late-dot"></span>' : '') + (navArg && d.flags && !d.autoOut ? '<span class="flag-dot"></span>' : '') + (d.autoOut ? '<span class="miss-mark">!</span>' : '') + '</button>';
     });
     html += '</div><div class="legend">' +
       ['PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'WEEK_OFF', 'HOLIDAY', 'OFF_WORK'].map(function (s) { return chip(s); }).join('') +
-      '<span class="chip s-OT">● OT</span><span class="chip s-LATE">● Late</span></div></div>';
+      '<span class="chip s-OT">● OT</span><span class="chip s-LATE">● Late</span>' + (t.missedCheckouts ? '<span class="chip s-FLAG">! No check-out</span>' : '') + '</div></div>';
 
     // Attendance summary
+    if (t.missedCheckouts) html += '<div class="card alert"><b style="color:var(--red)">⚠ ' + t.missedCheckouts + ' day(s) without check-out</b>' +
+      '<p class="small" style="margin:6px 0 0">Auto-closed at midnight and counted as ' + esc(STATUS[m.rules.noCheckoutStatus] || 'Half Day') + ' until an admin clears ' + (t.missedCheckouts > 1 ? 'them' : 'it') + '. They have a red outline in the calendar.</p></div>';
     html += '<div class="card"><h2>Attendance</h2><div class="kv">' +
       '<div><b>' + t.present + '</b><span>Present</span></div>' +
       '<div class="k-red"><b>' + (t.absent + t.notJoined) + '</b><span>Absent (Leaves)</span></div>' +
@@ -732,7 +759,7 @@
       html += '<div class="card"><h2>Daily log</h2>';
       worked.slice().reverse().forEach(function (d) {
         html += '<div class="list-item"><div><div class="name">' + esc(fmtDate(d.date)) + '</div>' +
-          '<div class="sub">' + esc(d.in) + ' → ' + esc(d.out || '—') + (d.overnight ? ' (+1 day)' : '') + ' · ' + hrs(d.worked) +
+          '<div class="sub">' + esc(d.in) + ' → ' + (d.autoOut ? '<b style="color:var(--red)">no check-out</b>' : esc(d.out || '—')) + (d.overnight ? ' (+1 day)' : '') + ' · ' + hrs(d.worked) +
           (d.otMin ? ' · <span style="color:var(--ot)">OT ' + mins(d.otMin) + '</span>' : '') +
           (d.otPending ? ' · <span style="color:var(--amber)">OT ' + mins(d.otPending) + ' pending</span>' : '') +
           (d.lateMin ? ' · <span style="color:var(--orange)">Late ' + mins(d.lateMin) + '</span>' : '') +
@@ -763,6 +790,8 @@
     if (d.holidayName) html += '<p>🎉 ' + esc(d.holidayName) + '</p>';
     if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + (d.overnight ? '<small> +1</small>' : '') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
       '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>Late</span></div><div class="k-orange"><b>' + mins(d.earlyMin) + '</b><span>Early</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>OT</span></div></div>';
+    if (d.autoOut) html += '<div class="msg err">⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it.' +
+      (S.viewMonthAdmin ? '' : ' Send a correction from Requests.') + '</div>';
     if (d.otPending) html += '<div class="msg warn">OT ' + mins(d.otPending) + ' waiting for approval</div>';
     if (d.otRejected) html += '<div class="msg err">OT was not approved for this day</div>';
     if (S.viewMonthAdmin && d.flags) html += '<p>' + flagChips(d.flags) + '</p>';
@@ -898,9 +927,13 @@
   /* ---------- Today ---------- */
   function loadAdminToday() {
     adminLoading();
-    api('adminToday', S.token).then(function (r) {
+    api('adminToday', S.token).then(renderAdminToday).catch(adminErr);
+  }
+
+  function renderAdminToday(r) {
       var c = r.counts;
-      var html = '<div class="card"><div class="row"><h2 style="margin:0">' + esc(fmtDate(r.date)) + '</h2>' + (r.offType ? chip(r.offType) : '') +
+      var html = missedCard(r);
+      html += '<div class="card"><div class="row"><h2 style="margin:0">' + esc(fmtDate(r.date)) + '</h2>' + (r.offType ? chip(r.offType) : '') +
         '<button class="btn small ghost" onclick="loadAdminToday()">↻</button></div>' +
         '<div class="kv" style="margin-top:12px">' +
         '<div><b>' + c.in + '/' + c.total + '</b><span>Checked in</span></div>' +
@@ -918,7 +951,35 @@
       });
       html += '</div><p class="muted small center">⚠ flags: weak GPS, the exact same GPS point as another day or another person (typical of fake-GPS apps), or a missing selfie.</p>';
       adminBody(html);
-    }).catch(adminErr);
+  }
+
+  /** Missed check-outs stay on top until an admin clears each one. */
+  function missedCard(r) {
+    if (!r.missed || !r.missed.length) return '';
+    S.missed = r.missed;
+    var html = '<div class="card alert"><h2>⚠ Missed check-outs (' + r.missed.length + ')</h2>' +
+      '<p class="small" style="margin:-6px 0 6px">Auto-closed at midnight. Enter the real check-out time, or clear the day as it is.</p>';
+    r.missed.forEach(function (x, i) {
+      html += '<div class="list-item" style="display:block;border-color:rgba(214,58,58,.25)"><div class="row"><div><div class="name">' + esc(x.name) + ' <span class="muted" style="font-weight:400">' + esc(x.empId) + '</span></div>' +
+        '<div class="sub">' + esc(fmtDate(x.date)) + ' · checked in ' + esc(x.in) + ' · no check-out</div></div></div>' +
+        (r.canClear && x.canEdit
+          ? '<div class="row" style="margin-top:8px;gap:8px"><input id="mo-' + i + '" class="inp" type="time" style="flex:1">' +
+            '<button class="btn small" onclick="clearMissed(' + i + ',true,this)">Save time</button>' +
+            '<button class="btn small ghost" onclick="clearMissed(' + i + ',false,this)">Clear as is</button></div>'
+          : '<div class="sub">You can view this but not clear it.</div>') + '</div>';
+    });
+    return html + '</div>';
+  }
+
+  function clearMissed(i, withTime, btn) {
+    var x = S.missed[i], t = withTime ? $('mo-' + i).value : '';
+    if (withTime && !t) return toast('Enter the check-out time');
+    if (!withTime && !confirm('Clear ' + x.name + ' · ' + fmtDate(x.date) + ' without a check-out time? The day stays counted as it is now.')) return;
+    btn.disabled = true;
+    api('adminClearMissed', S.token, x.empId, x.date, t, '').then(function (r) {
+      toast('Cleared'); renderAdminToday(r);
+      if (S.home) { S.home.adminMissed = r.missed.length; $('adminBadge').classList.toggle('hidden', !r.missed.length); }
+    }).catch(function (e) { btn.disabled = false; toast(e.message); });
   }
 
   function viewSelfie(i) {
@@ -956,7 +1017,8 @@
       html += '<div class="list-item" onclick="openEmployee(\'' + esc(e.id) + '\',\'' + ym + '\')" style="cursor:pointer">' +
         '<div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
         '<div class="sub">P ' + e.present + ' · ½ ' + e.halfDay + ' · A ' + (e.absent + e.notJoined) + ' · Late ' + e.late + ' · OT ' + mins(e.otMin) + (e.pf ? ' · <span class="chip s-PF">PF</span>' : '') + '</div>' +
-        (e.advance ? '<div class="sub">Advance − ' + money(e.advance, cur) + '</div>' : '') + '</div>' +
+        (e.advance ? '<div class="sub">Advance − ' + money(e.advance, cur) + '</div>' : '') +
+        (e.missedCheckouts ? '<div class="sub" style="color:var(--red)">⚠ ' + e.missedCheckouts + ' missed check-out(s)</div>' : '') + '</div>' +
         '<div class="right"><b>' + money(e.net, cur) + '</b>' + (e.pf
           ? '<div class="sub">🏦 ' + money(e.bank, cur) + ' · 💵 ' + money(e.cash, cur) + '</div><div class="sub">PF ' + money(e.pfEmployee, cur) + ' + ' + money(e.pfEmployer, cur) + '</div>'
           : '<div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div>') + '</div></div>';

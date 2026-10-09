@@ -46,12 +46,12 @@ const EMP_HEADERS = ['Emp ID', 'Name', 'PIN', 'Monthly Salary', 'Role', 'Active'
 
 const ATT_HEADERS = ['Date', 'Emp ID', 'Name', 'Check In', 'Check Out', 'Worked Hrs', 'Status', 'Late',
   'OT Hrs', 'In Lat', 'In Lng', 'In Distance (m)', 'In Accuracy (m)', 'Out Lat', 'Out Lng',
-  'Out Distance (m)', 'Selfie', 'Override Status', 'Admin Note', 'Out Accuracy (m)', 'OT Approved', 'Flags'];
+  'Out Distance (m)', 'Selfie', 'Override Status', 'Admin Note', 'Out Accuracy (m)', 'OT Approved', 'Flags', 'Review'];
 
 const COL = {
   DATE: 0, EMP: 1, NAME: 2, IN: 3, OUT: 4, WORKED: 5, STATUS: 6, LATE: 7, OT: 8,
   IN_LAT: 9, IN_LNG: 10, IN_DIST: 11, IN_ACC: 12, OUT_LAT: 13, OUT_LNG: 14, OUT_DIST: 15,
-  SELFIE: 16, OVERRIDE: 17, NOTE: 18, OUT_ACC: 19, OT_APPROVED: 20, FLAGS: 21,
+  SELFIE: 16, OVERRIDE: 17, NOTE: 18, OUT_ACC: 19, OT_APPROVED: 20, FLAGS: 21, REVIEW: 22,
 };
 
 const REQ_HEADERS = ['ID', 'Created', 'Emp ID', 'Name', 'Type', 'From', 'To', 'In', 'Out', 'Leave Type',
@@ -78,7 +78,7 @@ const DEFAULT_SETTINGS = [
   ['Standard Hours', 9, 'Hours per day. Time worked beyond this is OT. Shift end = Shift Start + this'],
   ['Full Day Min Hours', 8, 'Worked hours needed for a full day'],
   ['Half Day Min Hours', 4, 'At least this (but below Full Day) = Half Day. Less = Absent'],
-  ['No Check-Out Counts As', 'HALF_DAY', 'PRESENT / HALF_DAY / ABSENT — when an employee forgets to check out'],
+  ['No Check-Out Counts As', 'HALF_DAY', 'PRESENT / HALF_DAY / ABSENT — a day auto-checked-out at midnight, until an admin fixes it'],
   ['Allow Overnight Shift', 'No', 'Yes = check-out after midnight closes the previous day\'s entry'],
   ['Max Shift Hours', 16, 'With overnight shifts, an open entry older than this cannot be checked out'],
   ['Salary Days Basis', 30, 'Per day = Monthly Salary ÷ this. Per hour = per day ÷ Standard Hours. (0 = days in that month)'],
@@ -191,6 +191,7 @@ function setup() {
 
   forget_('settings');
   getSelfieFolder_(getSettings_());
+  installAutoCheckoutTrigger_();
 
   try {
     SpreadsheetApp.getUi().alert('Setup complete.\n\n1. Fill Office Latitude / Longitude in Settings.\n' +
@@ -271,6 +272,7 @@ function writePin_(emp, pin) {
 
 function getHome(token) {
   const emp = auth_(token);
+  sweepOpenEntries_();
   const s = getSettings_();
   const today = todayStr_();
   const holidays = getHolidays_();
@@ -299,6 +301,9 @@ function getHome(token) {
     server: serverClock_(),
     clockTolerance: s.clockTolerance,
     pendingRequests: readRequests_().filter(r => r.empId === emp.id && r.status === 'PENDING').length,
+    missedCheckouts: readAttendance_().filter(r => r.empId === emp.id && r.review === 'PENDING')
+      .map(r => ({ date: r.date, in: r.in })),
+    adminMissed: adminMissedCount_(emp),
   };
 }
 
@@ -404,7 +409,7 @@ function openOvernight_(emp, s) {
   const today = todayStr_();
   const y = addDays_(today, -1);
   const rec = byDate_(readAttendance_(), emp.id)[y];
-  if (!rec || !rec.in || rec.out) return null;
+  if (!rec || !rec.in || rec.out || rec.review) return null;
   const nowMin = toMinutes_(Utilities.formatDate(new Date(), tz_(), 'HH:mm'));
   return nowMin + 1440 - toMinutes_(rec.in) <= s.maxShiftHours * 60 ? rec : null;
 }
@@ -523,6 +528,7 @@ function cancelRequest(token, id) {
 
 function adminToday(token) {
   const ctx = authAdmin_(token, 'viewToday');
+  sweepOpenEntries_();
   const s = getSettings_();
   const today = todayStr_();
   const offType = offType_(today, s, getHolidays_());
@@ -549,7 +555,10 @@ function adminToday(token) {
   });
   list.sort((a, b) => (b.flags.length ? 1 : 0) - (a.flags.length ? 1 : 0) ||
     (a.in ? 0 : 1) - (b.in ? 0 : 1) || a.name.localeCompare(b.name));
-  return { date: today, offType: offType, counts: counts, list: list };
+  return {
+    date: today, offType: offType, counts: counts, list: list,
+    missed: missedFor_(ctx), canClear: !!(ctx.perms.editAttendance || ctx.perms.approveRequests),
+  };
 }
 
 function adminMonth(token, ym) {
@@ -987,6 +996,132 @@ function adminSetAdvanceStatus(token, id, status) {
   return adminAdvances(token);
 }
 
+/* ------------------- Missed check-outs (auto at midnight) ---------- */
+
+/**
+ * Time-driven trigger (installed by setup, runs every hour). After midnight it closes every entry that
+ * was checked in but never checked out, marks it for review and flags it. Only an admin can clear it.
+ */
+function autoCheckout() {
+  sweepOpenEntries_(true);
+}
+
+/** Closes forgotten check-outs. Also called when the app is opened, in case the trigger is missing. */
+function sweepOpenEntries_(waitForLock) {
+  const s = getSettings_();
+  const today = todayStr_();
+  const nowMin = toMinutes_(Utilities.formatDate(new Date(), tz_(), 'HH:mm'));
+  const yesterday = addDays_(today, -1);
+  const stillOpen = r => {
+    if (!r.in || r.out || r.review || r.date >= today) return false;
+    // Night shift still running: give it until Max Shift Hours before auto-closing.
+    if (s.overnight && r.date === yesterday && nowMin + 1440 - toMinutes_(r.in) <= s.maxShiftHours * 60) return false;
+    return true;
+  };
+  if (!readAttendance_().some(stillOpen)) return 0;
+
+  const lock = LockService.getScriptLock();
+  if (waitForLock) lock.waitLock(30000);
+  else if (!lock.tryLock(5000)) return 0;
+  try {
+    forget_('att');
+    const holidays = getHolidays_();
+    const sh = sheet_(SHEET.ATTENDANCE);
+    let n = 0;
+    readAttendance_().filter(stillOpen).forEach(r => {
+      if (isLocked_(r.date.slice(0, 7))) return;
+      const d = evaluateDay_(r, s, offType_(r.date, s, holidays), false);
+      sh.getRange(r.row, COL.STATUS + 1).setValue(d.status);
+      sh.getRange(r.row, COL.FLAGS + 1).setValue((r.flags + ' NO_CHECKOUT').trim());
+      sh.getRange(r.row, COL.REVIEW + 1).setValue('AUTO_CHECKOUT');
+      n++;
+    });
+    if (n) {
+      SpreadsheetApp.flush();
+      forget_('att');
+      audit_({ id: 'SYSTEM', name: 'Auto check-out' }, 'AUTO_CHECKOUT', '', today, n + ' entr' + (n === 1 ? 'y' : 'ies') + ' closed at midnight');
+    }
+    return n;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Missed check-outs waiting for an admin, for the employees this admin manages (oldest first). */
+function missedFor_(ctx) {
+  const names = {};
+  getEmployees_().forEach(e => { names[e.id] = e.name; });
+  return readAttendance_().filter(r => r.review === 'PENDING' && canManage_(ctx, r.empId))
+    .map(r => ({ empId: r.empId, name: names[r.empId] || r.empId, date: r.date, in: r.in,
+      canEdit: canEditEmployee_(ctx, r.empId) }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)));
+}
+
+function adminMissedCount_(emp) {
+  const perms = permsFor_(emp);
+  if (!perms.viewToday) return 0;
+  return missedFor_({ emp: emp, perms: perms }).length;
+}
+
+/**
+ * Clears a missed check-out. With outTime the real check-out time is saved (hours, OT etc. recalculated);
+ * without it the day stays as auto-closed (counted per "No Check-Out Counts As").
+ */
+function adminClearMissed(token, empId, date, outTime, note) {
+  const ctx = authAdmin_(token, ['editAttendance', 'approveRequests']);
+  const emp = managedEmployee_(ctx, empId, true);
+  date = checkEntryDate_(ctx, date);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    forget_('att');
+    const rec = byDate_(readAttendance_(), emp.id)[date];
+    if (!rec || rec.review !== 'PENDING') throw new Error('Nothing to clear for this day.');
+    const sh = sheet_(SHEET.ATTENDANCE);
+    const out = toTimeStr_(outTime);
+    let detail = 'kept as ' + getSettings_().noCheckoutStatus;
+    if (out) {
+      const e = cleanEntry_({ in: rec.in, out: out, override: rec.override });
+      const s = getSettings_();
+      const d = evaluateDay_({ in: e.in, out: e.out, override: e.override, otApproved: rec.otApproved }, s,
+        offType_(date, s, getHolidays_()), false);
+      sh.getRange(rec.row, COL.OUT + 1, 1, 5).setValues([["'" + out, d.worked, d.status, d.late ? 'Yes' : '', d.ot]]);
+      detail = 'check-out set to ' + out + ' → ' + d.status;
+    }
+    note = String(note || '').trim();
+    if (note) sh.getRange(rec.row, COL.NOTE + 1).setValue([rec.note, note].filter(String).join(' · '));
+    sh.getRange(rec.row, COL.REVIEW + 1).setValue(clearedText_(ctx.emp));
+    SpreadsheetApp.flush();
+    forget_('att');
+    audit_(ctx.emp, 'CLEAR_MISSED_CHECKOUT', emp.id, date, 'in ' + rec.in + ', ' + detail + (note ? ' | ' + note : ''));
+  } finally {
+    lock.releaseLock();
+  }
+  return adminToday(token);
+}
+
+function reviewState_(v) {
+  const str = String(v || '').trim().toUpperCase();
+  if (str === 'AUTO_CHECKOUT') return 'PENDING';
+  return str.indexOf('CLEARED') === 0 ? 'CLEARED' : '';
+}
+
+function clearedText_(byEmp) {
+  return 'CLEARED by ' + byEmp.id + ' ' + Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm');
+}
+
+/** (Re)creates the hourly trigger that runs autoCheckout(). */
+function installAutoCheckoutTrigger_() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(t => {
+      if (t.getHandlerFunction() === 'autoCheckout') ScriptApp.deleteTrigger(t);
+    });
+    ScriptApp.newTrigger('autoCheckout').timeBased().everyHours(1).create();
+  } catch (e) {
+    Logger.log('Could not install the auto check-out trigger: ' + e);
+  }
+}
+
 /* -------------------------- Payroll lock --------------------------- */
 
 /** Freezes a finished month: salary, attendance and advance deductions are saved and can no longer change. */
@@ -995,6 +1130,10 @@ function adminLockMonth(token, ym) {
   ym = validYm_(ym);
   if (ym >= todayStr_().slice(0, 7)) throw new Error('Only finished months can be locked.');
   if (isLocked_(ym)) throw new Error(ymLabel_(ym) + ' is already locked.');
+  const missed = readAttendance_().filter(r => r.review === 'PENDING' && r.date.indexOf(ym) === 0);
+  if (missed.length) {
+    throw new Error(missed.length + ' missed check-out(s) in ' + ymLabel_(ym) + ' still need an admin to clear them (Admin → Today).');
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -1297,7 +1436,8 @@ function upsertEntry_(data, emp, date, e, byEmp, overwrite) {
     data.sh.getRange(rec.row, COL.IN + 1, 1, status.length).setValues([status]);
     data.sh.getRange(rec.row, COL.OVERRIDE + 1, 1, 2).setValues([[e.override, note]]);
     if (e.otApproved !== undefined) data.sh.getRange(rec.row, COL.OT_APPROVED + 1).setValue(e.otApproved);
-    return { created: false, before: entryText_(rec) };
+    if (rec.review === 'PENDING') data.sh.getRange(rec.row, COL.REVIEW + 1).setValue(clearedText_(byEmp));
+    return { created: false, before: entryText_(rec) + (rec.review === 'PENDING' ? ' (missed check-out)' : '') };
   }
   if (rec) return { skipped: true }; // created earlier in this same batch
   const row = new Array(ATT_HEADERS.length).fill('');
@@ -1343,6 +1483,7 @@ function buildMonth_(emp, ym) {
     shiftStart: minutesToStr_(s.shiftStartMin), lateGrace: s.lateGrace, standardHours: s.standardHours,
     otMultiplier: s.otMultiplier, latesPerHalfDay: s.latesPerHalfDay, salaryDays: s.salaryDays,
     lateReducesOt: s.lateReducesOt, earlyReducesOt: s.earlyReducesOt, adjustIn: s.adjustIn, otApproval: s.otApproval,
+    noCheckoutStatus: s.noCheckoutStatus,
   };
   return m;
 }
@@ -1386,6 +1527,7 @@ function evaluateDay_(rec, s, offType, isToday) {
   else d.status = 'ABSENT';
 
   // Leave / Absent set by an admin clear the late & early marks; Present / Half Day keep them.
+  if (rec.review === 'PENDING') d.autoOut = true; // forgot to check out; auto-closed at midnight
   const cleared = rec.override === 'LEAVE' || rec.override === 'ABSENT';
   d.late = !cleared && !offType && inMin != null && inMin > s.shiftStartMin + s.lateGrace;
   d.lateMin = d.late ? inMin - s.shiftStartMin : 0;
@@ -1416,7 +1558,7 @@ function monthSummary_(emp, ym, s, attByDate, holidays, advanceTotal) {
   const t = {
     daysInMonth: dim, present: 0, halfDay: 0, absent: 0, leave: 0, weekOff: 0, holiday: 0, offWork: 0,
     notJoined: 0, late: 0, lateMin: 0, earlyMin: 0, workedHours: 0, otMinGross: 0, otMin: 0, otHours: 0,
-    otPendingMin: 0, deductDays: 0, lateCutDays: 0, payableDays: 0,
+    otPendingMin: 0, missedCheckouts: 0, deductDays: 0, lateCutDays: 0, payableDays: 0,
   };
   const days = [];
 
@@ -1437,6 +1579,7 @@ function monthSummary_(emp, ym, s, attByDate, holidays, advanceTotal) {
     if (off === 'HOLIDAY') d.holidayName = holidays[ds];
     if (rec && rec.note) d.note = String(rec.note);
     if (rec && rec.flags) d.flags = rec.flags;
+    if (d.autoOut) t.missedCheckouts++;
     days.push(d);
     if (d.planned) continue; // future leave is shown but not counted yet
 
@@ -1934,6 +2077,7 @@ function readAttendance_() {
         note: String(r[COL.NOTE] || ''),
         otApproved: ota === 'YES' || ota === 'NO' ? ota : '',
         flags: String(r[COL.FLAGS] || '').trim(),
+        review: reviewState_(r[COL.REVIEW]),
       };
     }).filter(a => a.date && a.empId);
   });

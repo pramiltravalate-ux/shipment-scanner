@@ -8,13 +8,14 @@ A mobile-friendly web app that runs on a Google Sheet. It lets employees:
 - **Download a payslip** (PDF or print) for any month.
 - **Send requests:** leave (paid or unpaid) and attendance corrections (forgot to check in or out).
 - **Change their own PIN.**
+- **Use the app only to check in and to check out.** Nothing runs in the background and there is no tracking during the day. Location is checked only at the moment of check-in and check-out.
 - **Keep the phone clock on automatic.** If the phone's time or time zone is wrong, the app blocks check-in/out. Recorded times always come from Google's server, not the phone.
 
 Admins (with the permissions a super admin gives them) get these screens:
 
 | Screen | What it does |
 |---|---|
-| Today | Live attendance with selfies, and **⚠ flags** on suspicious check-ins |
+| Today | **Missed check-outs on top**, live attendance with selfies, and **⚠ flags** on suspicious check-ins |
 | Payroll | Every employee's salary, PF and bank/cash split; **lock the month**; export to the Sheet |
 | Requests | Approve or reject leave, corrections and OT |
 | Entries | Back-dated entries for one day, or bulk-fill many days |
@@ -69,7 +70,7 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
 | Late Grace (min) | 10 | A check-in after 09:40 counts as **Late** |
 | Standard Hours | **9** | Hours beyond this are OT |
 | Full Day / Half Day Min Hours | 8 / 4 | 8 h or more = full day, 4–8 h = **Half Day**, under 4 h = **Absent** |
-| No Check-Out Counts As | HALF_DAY | What happens when someone forgets to check out |
+| No Check-Out Counts As | HALF_DAY | How a day that was auto-checked-out at midnight counts until an admin fixes it |
 | Allow Overnight Shift | No | `Yes` = a check-out after midnight closes the previous day |
 | Max Shift Hours | 16 | Longest shift allowed with overnight on |
 | Salary Days Basis | **30** | Per day = salary ÷ 30, per hour = per day ÷ 9, per minute = per hour ÷ 60 |
@@ -136,6 +137,20 @@ Net        = Gross − advance instalment (− PF Employee for PF employees)
 | **In Cash** = Salary − PF Bank Salary + OT − Leaves − Half Days − Advance | 15,000 − 13,500 = **1,500** |
 
 If the deductions are more than the cash part, the rest comes out of the bank part. (With a ₹2,000 advance instalment: cash 0, bank 11,279.)
+
+### Forgotten check-outs (automatic at midnight)
+`setup` installs an hourly timer (Apps Script trigger) that **checks out automatically after midnight** anyone who checked in but never checked out. Such a day:
+- counts as **No Check-Out Counts As** (Half Day by default), with no OT;
+- shows a **red outline** in the calendar and a red warning at the top of the employee's home screen;
+- stays **at the top of Admin → Today** under *Missed check-outs* until an admin clears it, in one of three ways:
+  - enter the real check-out time (hours, OT and status are recalculated);
+  - choose **Clear as is**;
+  - approve the employee's correction request, or edit that day in **Entries**.
+
+Employees cannot clear it themselves. They can only send a correction request. A month with uncleared missed check-outs **cannot be locked**.
+With *Allow Overnight Shift* = Yes, a night shift is closed automatically only after *Max Shift Hours*.
+
+> The first time `setup` runs, Google asks for permission to "run when you are not present". Allow it, because the midnight check-out needs it. To check, open **Apps Script → Triggers ⏰**: there should be one `autoCheckout` trigger, running every hour.
 
 ### Locking a month
 At month end, check **Admin → Payroll** and tap **🔒 Lock month**. After that:
