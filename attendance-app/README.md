@@ -71,12 +71,12 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
 
 | Emp ID | Name | PIN | Monthly Salary | Role | Active | Join Date | Phone | PF Active | PF Bank Salary | PF Employee | PF Employer |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| E001 | Owner Name | 4821 | 30000 | ADMIN | Yes | 2026-01-01 | | No | | | |
+| E001 | Owner Name | 4821 | 30000 | SUPER_ADMIN | Yes | 2026-01-01 | | No | | | |
 | E002 | Ravi Kumar | 1111 | 15000 | EMPLOYEE | Yes | 2026-03-15 | | Yes | 13500 | 1721 | 1755 |
 
 - Fill the **PF** columns here or, more easily, in the app under **Admin → PF Setup**: a switch plus three boxes per employee. A blank box uses the % defaults in Settings, and a value like `12%` also works.
 
-- Give the **ADMIN** role to anyone who should see the admin dashboard. Admins can also mark their own attendance.
+- Role is `EMPLOYEE`, `ADMIN` or `SUPER_ADMIN` (see section 4). Admins and super admins also mark their own attendance.
 - To remove an employee, set **Active = No**. Their history is kept.
 - **Change the sample PINs** (`1234`, `1111`) before going live.
 
@@ -122,18 +122,42 @@ The bank amount stays fixed, so the PF salary stays the same every month. OT and
 
 > PF and salary are read from the Employees tab every time, so changing them also changes how past months are shown. Click **Export payroll to Sheet** at each month end to keep a fixed record.
 
-## 4. Admin corrections
+## 4. Roles, permissions and back-dated entries
 
-All data is in the **Attendance** tab, so the admin can fix anything there directly:
+### Roles (column **Role** in the Employees tab)
 
-- **Override Status** dropdown: `PRESENT`, `HALF_DAY`, `ABSENT` or `LEAVE`. This replaces the automatic status and removes the late mark for that day.
-- **Paid leave:** add a row with the `Date` (`yyyy-MM-dd`), `Emp ID` and Override Status = `LEAVE`.
-- **Forgot to check out:** type the time in **Check Out** (`18:30`).
-- Use **Admin Note** for remarks. Employees see the note when they tap that day.
+| Role | Can do |
+|---|---|
+| `EMPLOYEE` | Mark their own attendance and see their own month and salary |
+| `ADMIN` | Only what the super admin allows (see below) |
+| `SUPER_ADMIN` | Everything: all employees, any date, plus the **Admins** and **Activity** screens |
 
-The dashboard recalculates everything from this tab, so corrections show up right away.
+Make the owner `SUPER_ADMIN` in the sheet. After that, the super admin promotes or removes admins from the app under **Super Admin → Admins**.
 
----
+### What a super admin can allow each admin
+
+| Permission | Allows |
+|---|---|
+| View Today | Today's live attendance and selfies |
+| View Payroll | Monthly salary, OT and PF screens |
+| Edit Attendance | Add, change and delete entries, including **back-dated** ones |
+| Edit PF | Turn PF on or off and change PF amounts |
+| Export Payroll | Create the payroll tab in the Sheet |
+| Edit Own Entries | Change their own attendance or PF (normally off) |
+
+The super admin also chooses which employees each admin manages: **All employees** or **Only selected**. An admin can never act on employees outside that list.
+
+These settings are saved in the **Admin Permissions** tab. A new admin starts with only *View Today* until the super admin saves their permissions. If no super admin exists at all, admins keep full access, as in the earlier version.
+
+### Back-dated entries (**Admin → Entries**)
+
+- **Fill many days:** pick employees and a date range, then enter check-in and check-out times or a status (Present / Half Day / Absent / Paid Leave). Weekly offs and holidays are skipped, and days that already have an entry are left alone unless you tick *Overwrite*. Use this for the days before the app started.
+- **One day:** pick an employee and a date, then add, edit or delete that day's entry. You can also open their **Calendar** and tap any day.
+- "Auto" status works out Present / Half Day / Late / OT from the times. Choosing a status forces it, which is how you record paid leave.
+- Admins can go back **45 days** (*Admin Back-Date Limit (days)* in Settings). Super admins have no limit. Future dates are never allowed.
+- Every change is recorded in the **Audit Log** tab with who, when and the before/after values. The super admin can also see it under **Activity**.
+
+You can still edit the Attendance tab directly in the sheet. The **Override Status** column works the same as the Status field in the app.
 
 ## 5. Things to know
 

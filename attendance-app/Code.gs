@@ -14,7 +14,24 @@ const SHEET = {
   EMPLOYEES: 'Employees',
   ATTENDANCE: 'Attendance',
   HOLIDAYS: 'Holidays',
+  PERMISSIONS: 'Admin Permissions',
+  AUDIT: 'Audit Log',
 };
+
+const ROLES = ['EMPLOYEE', 'ADMIN', 'SUPER_ADMIN'];
+
+/** What a super admin can allow each admin to do. */
+const PERMISSIONS = [
+  { key: 'viewToday', label: 'View Today', help: "Today's live attendance and selfies" },
+  { key: 'viewPayroll', label: 'View Payroll', help: 'Monthly salary, OT, PF of employees' },
+  { key: 'editAttendance', label: 'Edit Attendance', help: 'Add / change / delete entries, including back-dated ones' },
+  { key: 'editPf', label: 'Edit PF', help: 'Turn PF on/off and change PF amounts' },
+  { key: 'exportPayroll', label: 'Export Payroll', help: 'Create the payroll tab in the Sheet' },
+  { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF (normally off)' },
+];
+const PERM_HEADERS = ['Emp ID', 'Name'].concat(PERMISSIONS.map(p => p.label))
+  .concat(['Allowed Employees', 'Updated By', 'Updated At']);
+const AUDIT_HEADERS = ['Time', 'By', 'Action', 'Emp ID', 'Date', 'Details'];
 
 const EMP_HEADERS = ['Emp ID', 'Name', 'PIN', 'Monthly Salary', 'Role', 'Active', 'Join Date', 'Phone',
   'PF Active', 'PF Bank Salary', 'PF Employee', 'PF Employer'];
@@ -57,6 +74,7 @@ const DEFAULT_SETTINGS = [
   ['Default PF Employee %', 12, 'Used when "PF Employee" is blank — % of PF Bank Salary'],
   ['Default PF Employer %', 13, 'Used when "PF Employer" is blank — % of PF Bank Salary'],
   ['OT & Deductions Paid In', 'CASH', 'CASH / BANK — for PF employees, which part absorbs OT and leave/half-day deductions'],
+  ['Admin Back-Date Limit (days)', 45, 'Admins can add/change entries up to this many days back (super admin: no limit; 0 = no limit)'],
   ['Currency', '₹', ''],
   ['Selfie Folder ID', '', 'Filled automatically'],
 ];
@@ -99,13 +117,13 @@ function setup() {
   sh.getRange('A:A').setNumberFormat('@');
   sh.getRange('C:C').setNumberFormat('@');
   sh.getRange('E2:E').setDataValidation(SpreadsheetApp.newDataValidation()
-    .requireValueInList(['EMPLOYEE', 'ADMIN'], true).build());
+    .requireValueInList(ROLES, true).build());
   const yesNo = SpreadsheetApp.newDataValidation().requireValueInList(['Yes', 'No'], true).build();
   sh.getRange('F2:F').setDataValidation(yesNo);
   const pfCol = headerIndex_(sh)['PF Active'] + 1;
   sh.getRange(2, pfCol, sh.getMaxRows() - 1, 1).setDataValidation(yesNo);
   if (sh.getLastRow() < 2) {
-    sh.appendRow(['E001', 'Admin', '1234', 30000, 'ADMIN', 'Yes', todayStr_(), '', 'No', '', '', '']);
+    sh.appendRow(['E001', 'Owner', '1234', 30000, 'SUPER_ADMIN', 'Yes', todayStr_(), '', 'No', '', '', '']);
     sh.appendRow(['E002', 'Sample Employee', '1111', 15000, 'EMPLOYEE', 'Yes', todayStr_(), '', 'Yes', 13500, 1721, 1755]);
   }
 
@@ -119,6 +137,12 @@ function setup() {
   // Holidays
   sh = getOrCreate_(ss, SHEET.HOLIDAYS, ['Date', 'Holiday Name']);
   sh.getRange('A:A').setNumberFormat('@');
+
+  // Admin permissions + audit log
+  sh = getOrCreate_(ss, SHEET.PERMISSIONS, PERM_HEADERS);
+  ensureHeaders_(sh, PERM_HEADERS);
+  sh.getRange('A:A').setNumberFormat('@');
+  getOrCreate_(ss, SHEET.AUDIT, AUDIT_HEADERS);
 
   delete getSettings_.cache;
   getSelfieFolder_(getSettings_());
@@ -262,9 +286,14 @@ function getMyMonth(token, ym) {
 }
 
 /* ---------------------------- Admin ------------------------------- */
+/*
+ * Every admin call checks a permission (see PERMISSIONS) and the list of employees the admin may
+ * manage. SUPER_ADMIN has every permission for every employee and sets the permissions of ADMINs
+ * from the app (Admin → Admins). They are stored in the "Admin Permissions" tab.
+ */
 
 function adminToday(token) {
-  auth_(token, true);
+  const ctx = authAdmin_(token, 'viewToday');
   const s = getSettings_();
   const today = todayStr_();
   const offType = offType_(today, s, getHolidays_());
@@ -272,7 +301,7 @@ function adminToday(token) {
   readAttendance_().forEach(r => { if (r.date === today && !recs[r.empId]) recs[r.empId] = r; });
 
   const counts = { total: 0, in: 0, late: 0, out: 0, notMarked: 0 };
-  const list = getEmployees_().filter(e => e.active).map(e => {
+  const list = getEmployees_().filter(e => e.active && canManage_(ctx, e.id)).map(e => {
     const r = recs[e.id];
     const d = r ? evaluateDay_(r, s, offType, true) : { status: offType || 'NOT_MARKED' };
     counts.total++;
@@ -291,36 +320,154 @@ function adminToday(token) {
 }
 
 function adminMonth(token, ym) {
-  auth_(token, true);
-  ym = validYm_(ym);
+  const ctx = authAdmin_(token, 'viewPayroll');
+  return payrollRows_(ctx, validYm_(ym));
+}
+
+function payrollRows_(ctx, ym) {
   const s = getSettings_();
   const holidays = getHolidays_();
   const att = readAttendance_().filter(r => r.date.indexOf(ym) === 0);
   const withRecords = {};
   att.forEach(r => { withRecords[r.empId] = true; });
 
-  const rows = getEmployees_().filter(e => e.active || withRecords[e.id]).map(e => {
+  const rows = getEmployees_().filter(e => (e.active || withRecords[e.id]) && canManage_(ctx, e.id)).map(e => {
     const m = monthSummary_(e, ym, s, byDate_(att, e.id), holidays);
     return Object.assign({ id: e.id, name: e.name }, m.totals, m.pay);
   });
   return { ym: ym, label: ymLabel_(ym), currency: s.currency, rows: rows };
 }
 
+/** One employee's calendar. Salary is hidden unless the admin has "View Payroll". */
 function adminEmployeeMonth(token, empId, ym) {
-  auth_(token, true);
-  const emp = findEmployee_(String(empId).toUpperCase());
-  if (!emp) throw new Error('Employee not found.');
-  return buildMonth_(emp, validYm_(ym));
+  const ctx = authAdmin_(token, ['viewPayroll', 'editAttendance']);
+  const emp = managedEmployee_(ctx, empId);
+  const m = buildMonth_(emp, validYm_(ym));
+  if (!ctx.perms.viewPayroll) delete m.pay;
+  m.canEdit = canEditEmployee_(ctx, emp.id);
+  m.minDate = ctx.minDate;
+  return m;
 }
 
-/** Employee list with PF settings for the admin "Employees / PF" screen. */
+/** Employees this admin may pick in the "Entries" screen, plus the allowed date range. */
+function adminEntryOptions(token) {
+  const ctx = authAdmin_(token, 'editAttendance');
+  return {
+    employees: getEmployees_().filter(e => e.active && canEditEmployee_(ctx, e.id))
+      .map(e => ({ id: e.id, name: e.name })),
+    minDate: ctx.minDate,
+    maxDate: todayStr_(),
+    overrides: OVERRIDE_VALUES,
+  };
+}
+
+/** The attendance entry (if any) for one employee on one date. */
+function adminGetEntry(token, empId, date) {
+  const ctx = authAdmin_(token, 'editAttendance');
+  const emp = managedEmployee_(ctx, empId, true);
+  date = checkEntryDate_(ctx, date);
+  const s = getSettings_();
+  const off = offType_(date, s, getHolidays_());
+  const rec = readAttendance_().filter(r => r.empId === emp.id && r.date === date)[0];
+  return {
+    empId: emp.id, name: emp.name, date: date, offType: off,
+    exists: !!rec,
+    in: rec ? rec.in : '', out: rec ? rec.out : '', override: rec ? rec.override : '',
+    note: rec ? String(rec.note || '') : '', hasSelfie: !!(rec && rec.selfie),
+    day: rec ? evaluateDay_(rec, s, off, date === todayStr_()) : null,
+  };
+}
+
+/**
+ * Adds or updates a (back-dated) entry.
+ * entry = { empId, date: 'yyyy-MM-dd', in: 'HH:mm', out: 'HH:mm', override: '' | PRESENT | HALF_DAY | ABSENT | LEAVE, note }
+ */
+function adminSaveEntry(token, entry) {
+  const ctx = authAdmin_(token, 'editAttendance');
+  const emp = managedEmployee_(ctx, entry && entry.empId, true);
+  const date = checkEntryDate_(ctx, entry.date);
+  const e = cleanEntry_(entry);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ctxData = entryContext_();
+    const result = upsertEntry_(ctxData, emp, date, e, ctx.emp, true);
+    flushNewRows_(ctxData);
+    audit_(ctx.emp, result.created ? 'ADD_ENTRY' : 'EDIT_ENTRY', emp.id, date, result.before + ' → ' + entryText_(e));
+    return adminGetEntry(token, emp.id, date);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function adminDeleteEntry(token, empId, date) {
+  const ctx = authAdmin_(token, 'editAttendance');
+  const emp = managedEmployee_(ctx, empId, true);
+  date = checkEntryDate_(ctx, date);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const rec = readAttendance_().filter(r => r.empId === emp.id && r.date === date)[0];
+    if (!rec) throw new Error('No entry for this date.');
+    sheet_(SHEET.ATTENDANCE).deleteRow(rec.row);
+    audit_(ctx.emp, 'DELETE_ENTRY', emp.id, date, entryText_(rec));
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Fills many days at once (e.g. the days before the app went live).
+ * opts = { empIds: [...] , from, to, in, out, override, note, skipOff: true, overwrite: false }
+ */
+function adminBulkEntry(token, opts) {
+  const ctx = authAdmin_(token, 'editAttendance');
+  opts = opts || {};
+  const from = checkEntryDate_(ctx, opts.from);
+  const to = checkEntryDate_(ctx, opts.to);
+  if (to < from) throw new Error('"To" date must be on or after "From" date.');
+  const ids = (opts.empIds || []).map(x => String(x).toUpperCase()).filter((x, i, arr) => arr.indexOf(x) === i);
+  if (!ids.length) throw new Error('Select at least one employee.');
+  const emps = ids.map(id => managedEmployee_(ctx, id, true));
+  const e = cleanEntry_(opts);
+  const s = getSettings_();
+  const holidays = getHolidays_();
+
+  const dates = [];
+  for (let d = from; d <= to; d = addDays_(d, 1)) {
+    if (opts.skipOff !== false && offType_(d, s, holidays)) continue;
+    dates.push(d);
+    if (dates.length > 62) throw new Error('Please fill at most 62 days at a time.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let added = 0, updated = 0, skipped = 0;
+    const data = entryContext_();
+    emps.forEach(emp => dates.forEach(date => {
+      if (emp.joinDate && date < emp.joinDate) { skipped++; return; }
+      const r = upsertEntry_(data, emp, date, e, ctx.emp, !!opts.overwrite);
+      if (r.skipped) skipped++; else if (r.created) added++; else updated++;
+    }));
+    flushNewRows_(data);
+    audit_(ctx.emp, 'BULK_ENTRY', ids.join(','), from + ' to ' + to,
+      entryText_(e) + ' | added ' + added + ', updated ' + updated + ', skipped ' + skipped);
+    return { added: added, updated: updated, skipped: skipped, days: dates.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Employee list with PF settings for the admin "PF Setup" screen. */
 function adminEmployees(token) {
-  auth_(token, true);
+  const ctx = authAdmin_(token, 'editPf');
   const s = getSettings_();
   return {
     currency: s.currency,
     defaults: { bank: s.pfBankPct, employee: s.pfEmployeePct, employer: s.pfEmployerPct },
-    list: getEmployees_().filter(e => e.active).map(e => {
+    list: getEmployees_().filter(e => e.active && canEditEmployee_(ctx, e.id)).map(e => {
       const pf = pfAmounts_(e, s);
       return {
         id: e.id, name: e.name, salary: e.salary, pfActive: e.pf.active,
@@ -333,9 +480,8 @@ function adminEmployees(token) {
 
 /** Turns PF on/off and sets the amounts for one employee. Blank = use % defaults from Settings. */
 function adminSavePf(token, empId, data) {
-  auth_(token, true);
-  const emp = findEmployee_(String(empId).toUpperCase());
-  if (!emp) throw new Error('Employee not found.');
+  const ctx = authAdmin_(token, 'editPf');
+  const emp = managedEmployee_(ctx, empId, true);
   const clean = v => {
     const str = String(v === undefined || v === null ? '' : v).trim();
     if (!str) return '';
@@ -343,21 +489,26 @@ function adminSavePf(token, empId, data) {
     if (isNaN(Number(str)) || Number(str) < 0) throw new Error('Invalid amount: ' + str);
     return Number(str);
   };
+  const vals = [data && data.active ? 'Yes' : 'No', clean(data && data.bankSalary),
+    clean(data && data.employee), clean(data && data.employer)];
   const sh = sheet_(SHEET.EMPLOYEES);
   ensureHeaders_(sh, EMP_HEADERS);
   const h = headerIndex_(sh);
-  sh.getRange(emp.row, h['PF Active'] + 1).setValue(data && data.active ? 'Yes' : 'No');
-  sh.getRange(emp.row, h['PF Bank Salary'] + 1).setValue(clean(data && data.bankSalary));
-  sh.getRange(emp.row, h['PF Employee'] + 1).setValue(clean(data && data.employee));
-  sh.getRange(emp.row, h['PF Employer'] + 1).setValue(clean(data && data.employer));
+  ['PF Active', 'PF Bank Salary', 'PF Employee', 'PF Employer'].forEach((name, i) => {
+    sh.getRange(emp.row, h[name] + 1).setValue(vals[i]);
+  });
   SpreadsheetApp.flush();
+  audit_(ctx.emp, 'EDIT_PF', emp.id, '', 'PF ' + vals[0] + ', bank ' + vals[1] + ', employee ' + vals[2] +
+    ', employer ' + vals[3]);
   return adminEmployees(token);
 }
 
 /** Returns the check-in selfie as a data URL so admins can view it inside the app. */
 function adminGetSelfie(token, row) {
-  auth_(token, true);
-  const url = String(sheet_(SHEET.ATTENDANCE).getRange(Number(row), COL.SELFIE + 1).getValue());
+  const ctx = authAdmin_(token, ['viewToday', 'editAttendance']);
+  const vals = sheet_(SHEET.ATTENDANCE).getRange(Number(row), 1, 1, ATT_HEADERS.length).getValues()[0];
+  if (!canManage_(ctx, String(vals[COL.EMP]).trim().toUpperCase())) throw new Error('Not allowed.');
+  const url = String(vals[COL.SELFIE]);
   const m = /\/d\/([\w-]+)/.exec(url) || /id=([\w-]+)/.exec(url);
   if (!m) throw new Error('No selfie for this entry.');
   const blob = DriveApp.getFileById(m[1]).getBlob();
@@ -366,7 +517,8 @@ function adminGetSelfie(token, row) {
 
 /** Writes a "Payroll yyyy-MM" tab with every employee's salary for the month. */
 function adminExportPayroll(token, ym) {
-  const data = adminMonth(token, ym);
+  const ctx = authAdmin_(token, 'exportPayroll');
+  const data = payrollRows_(ctx, validYm_(ym));
   const ss = SpreadsheetApp.getActive();
   const name = 'Payroll ' + data.ym;
   const sh = ss.getSheetByName(name) || ss.insertSheet(name);
@@ -385,7 +537,232 @@ function adminExportPayroll(token, ym) {
   if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
   sh.setFrozenRows(1);
   sh.autoResizeColumns(1, header.length);
+  audit_(ctx.emp, 'EXPORT_PAYROLL', '', data.ym, rows.length + ' employees');
   return { url: ss.getUrl() + '#gid=' + sh.getSheetId(), sheet: name };
+}
+
+/* ------------------------- Super admin ----------------------------- */
+
+/** All employees with their role and, for admins, their permissions. */
+function superListAdmins(token) {
+  authAdmin_(token, 'superAdmin');
+  const saved = readPermissions_();
+  const emps = getEmployees_().filter(e => e.active);
+  return {
+    permissions: PERMISSIONS,
+    employees: emps.map(e => ({ id: e.id, name: e.name, role: e.role })),
+    admins: emps.filter(e => e.role === 'ADMIN').map(e => ({
+      id: e.id, name: e.name, perms: permsFor_(e, saved), configured: !!saved[e.id],
+    })),
+  };
+}
+
+/** perms = { viewToday: true, ..., employees: 'ALL' | ['E002', ...] } */
+function superSavePermissions(token, empId, perms) {
+  const ctx = authAdmin_(token, 'superAdmin');
+  const emp = findEmployee_(String(empId).toUpperCase());
+  if (!emp || emp.role !== 'ADMIN') throw new Error('This employee is not an admin.');
+  perms = perms || {};
+  const list = perms.employees === 'ALL' ? 'ALL'
+    : (perms.employees || []).map(x => String(x).trim().toUpperCase()).filter(String).join(',');
+  const row = [emp.id, emp.name].concat(PERMISSIONS.map(p => (perms[p.key] ? 'Yes' : 'No')))
+    .concat([list || 'NONE', ctx.emp.id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
+
+  const sh = permSheet_();
+  const ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(r => String(r[0]).trim().toUpperCase()) : [];
+  const i = ids.indexOf(emp.id);
+  const at = i >= 0 ? i + 2 : sh.getLastRow() + 1;
+  sh.getRange(at, 1, 1, row.length).setValues([row]);
+  audit_(ctx.emp, 'SET_PERMISSIONS', emp.id, '', row.slice(2, 2 + PERMISSIONS.length + 1).join(' '));
+  return superListAdmins(token);
+}
+
+/** Makes an employee an ADMIN or turns an admin back into an EMPLOYEE. */
+function superSetRole(token, empId, role) {
+  const ctx = authAdmin_(token, 'superAdmin');
+  role = String(role).toUpperCase();
+  if (['ADMIN', 'EMPLOYEE'].indexOf(role) < 0) throw new Error('Invalid role.');
+  const emp = findEmployee_(String(empId).toUpperCase());
+  if (!emp) throw new Error('Employee not found.');
+  if (emp.role === 'SUPER_ADMIN') throw new Error('Super admins can only be changed in the Employees sheet.');
+  sheet_(SHEET.EMPLOYEES).getRange(emp.row, 5).setValue(role);
+  audit_(ctx.emp, 'SET_ROLE', emp.id, '', emp.role + ' → ' + role);
+  return superListAdmins(token);
+}
+
+/** Last 100 audit-log lines (newest first). */
+function superAuditLog(token) {
+  authAdmin_(token, 'superAdmin');
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.AUDIT);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const n = Math.min(100, sh.getLastRow() - 1);
+  return sh.getRange(sh.getLastRow() - n + 1, 1, n, AUDIT_HEADERS.length).getDisplayValues().reverse()
+    .map(r => ({ at: r[0], by: r[1], action: r[2], emp: r[3], date: r[4], details: r[5] }));
+}
+
+/* ----------------------- Permission helpers ------------------------ */
+
+function authAdmin_(token, need) {
+  const emp = auth_(token);
+  const perms = permsFor_(emp);
+  const needs = [].concat(need);
+  if (!needs.some(k => perms[k])) {
+    throw new Error(emp.role === 'EMPLOYEE' ? 'Admin access only.' : 'You do not have permission for this. Ask the super admin.');
+  }
+  const s = getSettings_();
+  return {
+    emp: emp,
+    perms: perms,
+    minDate: perms.superAdmin || !(s.backDateDays > 0) ? '2000-01-01' : addDays_(todayStr_(), -s.backDateDays),
+  };
+}
+
+/** Effective permissions of an employee. */
+function permsFor_(emp, saved) {
+  const none = { superAdmin: false, employees: [] };
+  PERMISSIONS.forEach(p => { none[p.key] = false; });
+  if (emp.role === 'SUPER_ADMIN') {
+    const all = { superAdmin: true, employees: 'ALL' };
+    PERMISSIONS.forEach(p => { all[p.key] = true; });
+    return all;
+  }
+  if (emp.role !== 'ADMIN') return none;
+
+  saved = saved || readPermissions_();
+  const row = saved[emp.id];
+  if (!row) {
+    // No super admin set up yet → admins keep full access (as before this feature).
+    if (!getEmployees_().some(e => e.role === 'SUPER_ADMIN' && e.active)) {
+      const legacy = { superAdmin: false, employees: 'ALL' };
+      PERMISSIONS.forEach(p => { legacy[p.key] = p.key !== 'editOwn'; });
+      return legacy;
+    }
+    return Object.assign(none, { viewToday: true, employees: 'ALL' }); // safe default
+  }
+  return row;
+}
+
+function readPermissions_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.PERMISSIONS);
+  const map = {};
+  if (!sh || sh.getLastRow() < 2) return map;
+  const values = sh.getDataRange().getValues();
+  const h = headerIndex_(sh, values[0]);
+  values.slice(1).forEach(r => {
+    const id = String(r[0]).trim().toUpperCase();
+    if (!id) return;
+    const p = { superAdmin: false };
+    PERMISSIONS.forEach(x => { p[x.key] = /^(y|yes|true|1)$/i.test(String(r[h[x.label]]).trim()); });
+    const list = String(r[h['Allowed Employees']] || '').trim().toUpperCase();
+    p.employees = list === 'ALL' ? 'ALL' : list.split(/[,\s]+/).filter(x => x && x !== 'NONE');
+    map[id] = p;
+  });
+  return map;
+}
+
+function permSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  return getOrCreate_(ss, SHEET.PERMISSIONS, PERM_HEADERS);
+}
+
+/** May this admin see / work with this employee at all? */
+function canManage_(ctx, empId) {
+  if (ctx.perms.superAdmin) return true;
+  if (empId === ctx.emp.id) return true; // everyone can see their own data
+  const list = ctx.perms.employees;
+  return list === 'ALL' || (list || []).indexOf(empId) >= 0;
+}
+
+/** May this admin change data of this employee? Own entries need the "Edit Own Entries" permission. */
+function canEditEmployee_(ctx, empId) {
+  if (ctx.perms.superAdmin) return true;
+  if (empId === ctx.emp.id) return !!ctx.perms.editOwn;
+  return canManage_(ctx, empId);
+}
+
+function managedEmployee_(ctx, empId, forEdit) {
+  const emp = findEmployee_(String(empId || '').trim().toUpperCase());
+  if (!emp) throw new Error('Employee not found.');
+  const ok = forEdit ? canEditEmployee_(ctx, emp.id) : canManage_(ctx, emp.id);
+  if (!ok) throw new Error('You are not allowed to ' + (forEdit ? 'change' : 'view') + ' ' + emp.name + '.');
+  return emp;
+}
+
+function checkEntryDate_(ctx, date) {
+  const d = toDateStr_(date);
+  if (!d) throw new Error('Choose a valid date.');
+  if (d > todayStr_()) throw new Error('Entries cannot be added for future dates.');
+  if (d < ctx.minDate) throw new Error('You can only change entries from ' + ctx.minDate + ' onwards.');
+  return d;
+}
+
+function cleanEntry_(e) {
+  const out = {
+    in: toTimeStr_(e.in), out: toTimeStr_(e.out),
+    override: OVERRIDE_VALUES.indexOf(String(e.override || '').toUpperCase()) >= 0 ? String(e.override).toUpperCase() : '',
+    note: String(e.note || '').trim().slice(0, 300),
+  };
+  if (out.out && !out.in) throw new Error('Enter the check-in time as well.');
+  if (out.in && out.out && toMinutes_(out.out) <= toMinutes_(out.in)) throw new Error('Check-out must be after check-in.');
+  if (!out.in && !out.override) throw new Error('Enter a check-in time or choose a status (Present / Half Day / Absent / Leave).');
+  return out;
+}
+
+/** Reads attendance once so many entries can be written quickly. */
+function entryContext_() {
+  const map = {};
+  readAttendance_().forEach(r => { if (!map[r.empId + '|' + r.date]) map[r.empId + '|' + r.date] = r; });
+  return { map: map, newRows: [], s: getSettings_(), holidays: getHolidays_(), sh: sheet_(SHEET.ATTENDANCE) };
+}
+
+function flushNewRows_(data) {
+  if (!data.newRows.length) return;
+  data.sh.getRange(data.sh.getLastRow() + 1, 1, data.newRows.length, ATT_HEADERS.length).setValues(data.newRows);
+  data.newRows = [];
+  SpreadsheetApp.flush();
+}
+
+/** Creates or updates the row for emp + date. Location/selfie of an existing row are kept. */
+function upsertEntry_(data, emp, date, e, byEmp, overwrite) {
+  const rec = data.map[emp.id + '|' + date];
+  if (rec && !overwrite) return { skipped: true };
+
+  const calc = evaluateDay_({ in: e.in, out: e.out, override: e.override }, data.s,
+    offType_(date, data.s, data.holidays), date === todayStr_());
+  const note = e.note || ('Entered by ' + byEmp.name);
+  const status = [e.in ? "'" + e.in : '', e.out ? "'" + e.out : '', calc.worked, calc.status, calc.late ? 'Yes' : '', calc.ot];
+
+  if (rec) {
+    data.sh.getRange(rec.row, COL.IN + 1, 1, status.length).setValues([status]);
+    data.sh.getRange(rec.row, COL.OVERRIDE + 1, 1, 2).setValues([[e.override, note]]);
+    return { created: false, before: entryText_(rec) };
+  }
+  const row = new Array(ATT_HEADERS.length).fill('');
+  row[COL.DATE] = "'" + date;
+  row[COL.EMP] = emp.id;
+  row[COL.NAME] = emp.name;
+  status.forEach((v, i) => { row[COL.IN + i] = v; });
+  row[COL.OVERRIDE] = e.override;
+  row[COL.NOTE] = note;
+  data.newRows.push(row);
+  data.map[emp.id + '|' + date] = { row: -1 }; // avoid duplicates within one batch
+  return { created: true, before: '(none)' };
+}
+
+function entryText_(e) {
+  return [e.in ? 'in ' + e.in : '', e.out ? 'out ' + e.out : '', e.override || ''].filter(String).join(' ') || '(empty)';
+}
+
+function audit_(byEmp, action, empId, date, details) {
+  const sh = getOrCreate_(SpreadsheetApp.getActive(), SHEET.AUDIT, AUDIT_HEADERS);
+  sh.appendRow([Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm:ss'), byEmp.id + ' ' + byEmp.name,
+    action, empId, date, details]);
+}
+
+function addDays_(dateStr, n) {
+  const p = dateStr.split('-').map(Number);
+  const d = new Date(p[0], p[1] - 1, p[2] + n);
+  return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
 }
 
 /* ------------------------------------------------------------------ */
@@ -566,17 +943,18 @@ function pfAmounts_(emp, s) {
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-function auth_(token, needAdmin) {
+function auth_(token) {
   const empId = token ? CacheService.getScriptCache().get('tok_' + token) : null;
   if (!empId) throw new Error('SESSION_EXPIRED');
   const emp = findEmployee_(empId);
   if (!emp || !emp.active) throw new Error('SESSION_EXPIRED');
-  if (needAdmin && emp.role !== 'ADMIN') throw new Error('Admin access only.');
   return emp;
 }
 
 function profile_(emp) {
-  return { id: emp.id, name: emp.name, role: emp.role };
+  const p = permsFor_(emp);
+  delete p.employees;
+  return { id: emp.id, name: emp.name, role: emp.role, perms: p };
 }
 
 function serverClock_() {
@@ -696,6 +1074,7 @@ function getSettings_() {
     weeklyOff: weeklyOff,
     offDayOt: yes('Off-Day Work Is OT', true),
     latesPerHalfDay: num('Lates Per Half-Day Cut', 0),
+    backDateDays: num('Admin Back-Date Limit (days)', 45),
     currency: str('Currency', '₹'),
     selfieFolderId: str('Selfie Folder ID', ''),
   };
@@ -727,7 +1106,7 @@ function getEmployees_() {
         name: String(r[1]).trim(),
         pin: String(r[2]).trim(),
         salary: Number(r[3]) || 0,
-        role: String(r[4]).trim().toUpperCase() === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+        role: parseRole_(r[4]),
         active: !/^(n|no|false|0|inactive)$/i.test(String(r[5]).trim()),
         joinDate: toDateStr_(r[6]),
         pf: {
@@ -741,6 +1120,12 @@ function getEmployees_() {
 }
 
 /** { 'Header name': columnIndex (0-based) } */
+function parseRole_(v) {
+  const r = String(v || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (r === 'SUPER_ADMIN' || r === 'SUPERADMIN') return 'SUPER_ADMIN';
+  return r === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE';
+}
+
 function headerIndex_(sh, headerRow) {
   const row = headerRow || sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
   const map = {};

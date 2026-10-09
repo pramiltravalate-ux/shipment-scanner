@@ -148,6 +148,15 @@
     .tabs { display: flex; background: var(--card); border-radius: 14px; padding: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(20,30,60,.07); }
     .tabs button { flex: 1; padding: 10px; border-radius: 10px; background: none; color: var(--muted); font-weight: 600; }
     .tabs button.on { background: var(--brand); color: #fff; }
+    .tabs.scroll { overflow-x: auto; }
+    .tabs.scroll button { flex: 1 0 auto; padding: 10px 14px; white-space: nowrap; }
+    .inp { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font: inherit; font-size: 16px; color: var(--text); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+    .checklist { max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+    .checklist label, label.check { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; }
+    .checklist label + label { border-top: 1px solid var(--line); }
+    label.perm { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+    label.perm input, .checklist input, label.check input { width: 20px; height: 20px; flex: none; margin-top: 1px; }
 
     /* Bottom nav */
     .nav { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--line);
@@ -337,7 +346,8 @@
       S.homeLoadedPhoneEpoch = Math.round((sentAt + S.homeLoadedAt) / 2); // phone time at the moment the server answered
       $('hdrName').textContent = h.profile.name;
       $('hdrSub').textContent = h.profile.id + ' · ' + h.company;
-      $('navAdmin').classList.toggle('hidden', h.profile.role !== 'ADMIN');
+      $('navAdmin').classList.toggle('hidden', h.profile.role === 'EMPLOYEE');
+      $('navAdmin').lastChild.textContent = h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
       renderHome();
     }).catch(function (e) { setError(e, "loadHome()"); });
   }
@@ -559,7 +569,8 @@
       '<button onclick="' + call(ymShift(m.ym, -1)) + '">‹</button>' +
       '<select class="month-select" onchange="' + callSel + '">' + opts + '</select>' +
       '<button onclick="' + call(ymShift(m.ym, 1)) + '">›</button></div>';
-    if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span></p>';
+    if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span></p>' +
+      (m.canEdit ? '<p class="center muted" style="font-size:12px;margin:4px 0 0">Tap any day to add or change its entry</p>' : '');
 
     // Highlight filter
     var f = S.calFilter || 'ALL';
@@ -593,8 +604,8 @@
       (m.rules.lateReducesOt && (t.otMinGross || t.lateMin) ? '<p class="muted" style="font-size:12px;margin:10px 0 0">Net OT = OT ' + mins(t.otMinGross) + ' − Late ' + mins(t.lateMin) + ' = <b>' + mins(t.otMin) + '</b></p>' : '') +
       '</div>';
 
-    // Salary
-    html += '<div class="card"><h2>Salary ' + (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '') +
+    // Salary (hidden for admins without "View Payroll")
+    if (p) html += '<div class="card"><h2>Salary ' + (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '') +
       (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
       payLine('Total Salary', money(p.salary, cur), '', true) +
       '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
@@ -603,16 +614,16 @@
       payLine('Leaves <span class="muted">(' + (t.absent + t.notJoined) + ' days)</span>', '− ' + money(p.leaveDed, cur), 'red') +
       payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
       (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '');
-    if (p.pf) {
+    if (p && p.pf) {
       html += payLine('PF Employee <span class="muted">(bank salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
         payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue') +
         '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
         '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>' +
         '<div class="pay-line total"><span>Take-home</span><span>' + money(p.net, cur) + '</span></div>';
-    } else {
+    } else if (p) {
       html += '<div class="pay-line total"><span>Net Salary</span><span>' + money(p.net, cur) + '</span></div>';
     }
-    html += (m.inProgress ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>' : '') +
+    if (p) html += (m.inProgress ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>' : '') +
       '</div>';
 
     // Day list
@@ -653,21 +664,38 @@
     if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
       '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>Late</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>OT</span></div><div></div></div>';
     if (d.note) html += '<div class="msg info">Note: ' + esc(d.note) + '</div>';
+    var m = S.viewMonth;
+    if (m.canEdit && d.date <= todayLocal() && d.date >= m.minDate) {
+      html += '<button class="btn" onclick="openEntryEditor(\'' + esc(m.employee.id) + '\',\'' + d.date + '\')">✏️ ' + (d.in || d.status === 'LEAVE' ? 'Edit' : 'Add') + ' entry</button>';
+    }
     html += '<button class="btn ghost" onclick="closeModal()">Close</button>';
     openModal(html);
   }
+  function todayLocal() { var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); }
 
   /* ---------------- Admin ---------------- */
+  var ADMIN_TABS = [
+    { key: 'today', label: 'Today', perm: 'viewToday', load: function () { loadAdminToday(); } },
+    { key: 'payroll', label: 'Payroll', perm: 'viewPayroll', load: function () { loadAdminMonth(S.admin.ym || ymNow()); } },
+    { key: 'entries', label: 'Entries', perm: 'editAttendance', load: function () { loadEntries(); } },
+    { key: 'pf', label: 'PF Setup', perm: 'editPf', load: function () { loadAdminPf(); } },
+    { key: 'admins', label: 'Admins', perm: 'superAdmin', load: function () { loadAdmins(); } },
+    { key: 'log', label: 'Activity', perm: 'superAdmin', load: function () { loadAudit(); } }
+  ];
+  function can(perm) { return !!(S.profile && S.profile.perms && S.profile.perms[perm]); }
+
   function renderAdmin() {
     var a = S.admin;
-    var html = '<div class="tabs"><button class="' + (a.tab === 'today' ? 'on' : '') + '" onclick="adminTab(\'today\')">Today</button>' +
-      '<button class="' + (a.tab === 'payroll' ? 'on' : '') + '" onclick="adminTab(\'payroll\')">Payroll</button>' +
-      '<button class="' + (a.tab === 'pf' ? 'on' : '') + '" onclick="adminTab(\'pf\')">PF Setup</button></div><div id="adminBody"></div>';
+    var tabs = ADMIN_TABS.filter(function (t) { return can(t.perm); });
+    if (!tabs.length) { setError('You have no admin permissions yet. Ask the super admin.'); return; }
+    if (!tabs.some(function (t) { return t.key === a.tab; })) a.tab = tabs[0].key;
+    var html = '<div class="tabs scroll">' + tabs.map(function (t) {
+      return '<button class="' + (a.tab === t.key ? 'on' : '') + '" onclick="adminTab(\'' + t.key + '\')">' + t.label + '</button>';
+    }).join('') + '</div><div id="adminBody"></div>';
     $('content').innerHTML = html;
-    if (a.tab === 'today') loadAdminToday();
-    else if (a.tab === 'pf') loadAdminPf();
-    else loadAdminMonth(a.ym || ymNow());
+    tabs.filter(function (t) { return t.key === a.tab; })[0].load();
   }
+  function adminErr(e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message || e) + '</div></div>'); }
   function adminTab(t) { S.admin.tab = t; renderAdmin(); }
 
   function adminBody(html) { var el = $('adminBody'); if (el) el.innerHTML = html; }
@@ -714,7 +742,7 @@
       var html = '<div class="card"><div class="month-nav">' +
         '<button onclick="loadAdminMonth(\'' + ymShift(ym, -1) + '\')">‹</button><h2>' + esc(r.label) + '</h2>' +
         '<button onclick="loadAdminMonth(\'' + ymShift(ym, 1) + '\')">›</button></div>' +
-        '<button class="btn" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export payroll to Sheet</button><div id="exportMsg"></div></div>';
+        (can('exportPayroll') ? '<button class="btn" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export payroll to Sheet</button><div id="exportMsg"></div>' : '') + '</div>';
       html += '<div class="card"><h2>Employees</h2>';
       r.rows.forEach(function (e) {
         total += e.net;
@@ -733,7 +761,8 @@
   function openEmployee(id, ym) {
     adminLoading();
     api('adminEmployeeMonth', S.token, id, ym).then(function (m) {
-      adminBody('<button class="btn small ghost" style="margin-bottom:12px" onclick="loadAdminMonth(\'' + S.admin.ym + '\')">‹ Back to all</button>' +
+      S.reloadAfterEntry = function () { openEmployee(id, ym); };
+      adminBody('<button class="btn small ghost" style="margin-bottom:12px" onclick="renderAdmin()">‹ Back</button>' +
         monthHtml(m, 'openEmployee', id));
     }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
   }
@@ -774,6 +803,178 @@
       active: $('pfOn-' + i).checked, bankSalary: $('pfbank-' + i).value, employee: $('pfemp-' + i).value, employer: $('pfer-' + i).value
     }).then(function (r) { renderAdminPf(r); toast('Saved PF for ' + e.name); })
       .catch(function (err) { btn.disabled = false; toast(err.message); });
+  }
+
+  /* ---------- Entries (back-dated attendance) ---------- */
+  function loadEntries() {
+    adminLoading();
+    api('adminEntryOptions', S.token).then(function (o) {
+      S.entryOpts = o;
+      S.reloadAfterEntry = null;
+      var empOpts = o.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('');
+      var first = todayLocal().slice(0, 8) + '01', yest = addDaysLocal(todayLocal(), -1);
+      if (first < o.minDate) first = o.minDate;
+      if (yest < first) yest = first;
+      var shift = (S.home && S.home.shiftStart) || '09:30';
+      var html = '<div class="card"><h2>One day</h2>' +
+        '<div class="field"><label>Employee</label><select id="enEmp" class="inp">' + empOpts + '</select></div>' +
+        '<div class="field"><label>Date</label><input id="enDate" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + yest + '"></div>' +
+        '<div class="row" style="gap:8px"><button class="btn" style="flex:1" onclick="openEntryEditor($(\'enEmp\').value, $(\'enDate\').value)">Add / Edit entry</button>' +
+        '<button class="btn ghost" style="flex:1" onclick="openEmployee($(\'enEmp\').value, $(\'enDate\').value.slice(0,7))">📅 Calendar</button></div></div>';
+
+      html += '<div class="card"><h2>Fill many days</h2><p class="muted" style="font-size:13px;margin:0">Use this to enter the days before the app started. ' +
+        'Fill everyone as present, then fix absent / late / half days one by one.</p>' +
+        '<div class="field"><label>Employees <button class="link" onclick="checkAll(\'bulkEmp\', true)">All</button> · <button class="link" onclick="checkAll(\'bulkEmp\', false)">None</button></label>' +
+        '<div class="checklist">' + o.employees.map(function (e) {
+          return '<label><input type="checkbox" class="bulkEmp" value="' + esc(e.id) + '" checked> ' + esc(e.name) + ' <span class="muted">' + esc(e.id) + '</span></label>';
+        }).join('') + '</div></div>' +
+        '<div class="grid2"><div class="field"><label>From</label><input id="bkFrom" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + first + '"></div>' +
+        '<div class="field"><label>To</label><input id="bkTo" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + yest + '"></div>' +
+        '<div class="field"><label>Check-in</label><input id="bkIn" class="inp" type="time" value="' + shift + '"></div>' +
+        '<div class="field"><label>Check-out</label><input id="bkOut" class="inp" type="time" value="' + addMinutes(shift, ((S.home && S.home.standardHours) || 9) * 60) + '"></div></div>' +
+        '<div class="field"><label>Status</label>' + statusSelect('bkStatus', '') + '</div>' +
+        '<div class="field"><label>Note</label><input id="bkNote" class="inp" placeholder="e.g. Before app start"></div>' +
+        '<label class="check"><input type="checkbox" id="bkSkip" checked> Skip weekly offs &amp; holidays</label>' +
+        '<label class="check"><input type="checkbox" id="bkOver"> Overwrite days that already have an entry</label>' +
+        '<button class="btn" id="bkBtn" onclick="bulkFill()">Fill days</button><div id="bkMsg"></div></div>';
+      adminBody(html);
+    }).catch(adminErr);
+  }
+
+  function statusSelect(id, val) {
+    var o = [['', 'Auto (from times)'], ['PRESENT', 'Present'], ['HALF_DAY', 'Half Day'], ['ABSENT', 'Absent'], ['LEAVE', 'Paid Leave']];
+    return '<select id="' + id + '" class="inp">' + o.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === val ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>';
+  }
+  function checkAll(cls, on) { Array.prototype.forEach.call(document.querySelectorAll('.' + cls), function (c) { c.checked = on; }); }
+  function checkedValues(cls) { return Array.prototype.filter.call(document.querySelectorAll('.' + cls), function (c) { return c.checked; }).map(function (c) { return c.value; }); }
+  function addMinutes(hhmm, add) { var t = +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5) + add; t = Math.min(t, 23 * 60 + 59); return ('0' + Math.floor(t / 60)).slice(-2) + ':' + ('0' + t % 60).slice(-2); }
+  function addDaysLocal(ds, n) { var p = ds.split('-'); var d = new Date(+p[0], +p[1] - 1, +p[2] + n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+
+  function bulkFill() {
+    var ids = checkedValues('bulkEmp'), from = $('bkFrom').value, to = $('bkTo').value;
+    if (!ids.length) return toast('Select at least one employee');
+    var status = $('bkStatus').value;
+    var what = status ? $('bkStatus').selectedOptions[0].text : $('bkIn').value + '–' + $('bkOut').value;
+    if (!confirm('Fill ' + ids.length + ' employee(s) from ' + from + ' to ' + to + ' as ' + what + '?')) return;
+    $('bkBtn').disabled = true; $('bkMsg').innerHTML = '';
+    api('adminBulkEntry', S.token, {
+      empIds: ids, from: from, to: to, in: status ? '' : $('bkIn').value, out: status ? '' : $('bkOut').value,
+      override: status, note: $('bkNote').value, skipOff: $('bkSkip').checked, overwrite: $('bkOver').checked
+    }).then(function (r) {
+      $('bkMsg').innerHTML = '<div class="msg ok">Done: ' + r.added + ' added, ' + r.updated + ' updated, ' + r.skipped + ' skipped (already had an entry or before joining).</div>';
+    }).catch(function (e) { $('bkMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; })
+      .then(function () { $('bkBtn').disabled = false; });
+  }
+
+  function openEntryEditor(empId, date) {
+    if (!date) return toast('Choose a date');
+    openModal('<div class="center"><div class="spinner"></div></div>');
+    api('adminGetEntry', S.token, empId, date).then(renderEntryEditor)
+      .catch(function (e) { openModal('<div class="msg err">' + esc(e.message) + '</div><button class="btn ghost" onclick="closeModal()">Close</button>'); });
+  }
+
+  function renderEntryEditor(en) {
+    S.entry = en;
+    var html = '<h2 style="margin:0">' + esc(en.name) + ' <span class="muted" style="font-weight:400">' + esc(en.empId) + '</span></h2>' +
+      '<p style="margin:4px 0 0">' + esc(en.date) + ' ' + (en.offType ? chip(en.offType) : '') + ' ' +
+      (en.exists ? (chip(en.day.status) + lateChip(en.day.late)) : '<span class="chip s-NOT_MARKED">No entry yet</span>') + '</p>' +
+      (en.hasSelfie ? '<p class="muted" style="font-size:12px">This day was marked from the app (has selfie & location). Changes keep them.</p>' : '') +
+      '<div class="grid2"><div class="field"><label>Check-in</label><input id="edIn" class="inp" type="time" value="' + esc(en.in) + '"></div>' +
+      '<div class="field"><label>Check-out</label><input id="edOut" class="inp" type="time" value="' + esc(en.out) + '"></div></div>' +
+      '<div class="field"><label>Status</label>' + statusSelect('edStatus', en.override) + '</div>' +
+      '<p class="muted" style="font-size:12px;margin:6px 0 0">"Auto" works out Present / Half Day / Late / OT from the times. Choose a status to force it (e.g. Paid Leave needs no times).</p>' +
+      '<div class="field"><label>Note</label><input id="edNote" class="inp" value="' + esc(en.note) + '" placeholder="Reason (optional)"></div>' +
+      '<button class="btn" id="edSave" onclick="saveEntry()">Save</button>' +
+      (en.exists ? '<button class="btn" style="background:var(--red-soft);color:var(--red)" onclick="deleteEntry()">Delete entry</button>' : '') +
+      '<button class="btn ghost" onclick="closeModal()">Cancel</button><div id="edMsg"></div>';
+    openModal(html);
+  }
+
+  function saveEntry() {
+    var en = S.entry;
+    $('edSave').disabled = true;
+    api('adminSaveEntry', S.token, { empId: en.empId, date: en.date, in: $('edIn').value, out: $('edOut').value, override: $('edStatus').value, note: $('edNote').value })
+      .then(function () { closeModal(); toast('Saved ' + en.name + ' · ' + en.date); if (S.reloadAfterEntry) S.reloadAfterEntry(); })
+      .catch(function (e) { $('edSave').disabled = false; $('edMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
+  }
+
+  function deleteEntry() {
+    var en = S.entry;
+    if (!confirm('Delete the entry of ' + en.name + ' for ' + en.date + '?')) return;
+    api('adminDeleteEntry', S.token, en.empId, en.date)
+      .then(function () { closeModal(); toast('Entry deleted'); if (S.reloadAfterEntry) S.reloadAfterEntry(); })
+      .catch(function (e) { $('edMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
+  }
+
+  /* ---------- Super admin: admins & permissions ---------- */
+  function loadAdmins() {
+    adminLoading();
+    api('superListAdmins', S.token).then(renderAdmins).catch(adminErr);
+  }
+
+  function renderAdmins(r) {
+    S.superData = r;
+    var nonAdmins = r.employees.filter(function (e) { return e.role === 'EMPLOYEE'; });
+    var html = '<div class="card"><h2>Make an admin</h2>' +
+      (nonAdmins.length ? '<div class="row" style="gap:8px"><select id="newAdmin" class="inp" style="flex:1">' +
+        nonAdmins.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('') +
+        '</select><button class="btn small" onclick="setRole($(\'newAdmin\').value, \'ADMIN\')">Make admin</button></div>' : '<p class="muted">Everyone is already an admin.</p>') +
+      '<p class="muted" style="font-size:12px;margin:8px 0 0">Super admins are set in the Employees sheet (Role = SUPER_ADMIN).</p></div>';
+
+    if (!r.admins.length) html += '<div class="card muted">No admins yet.</div>';
+    r.admins.forEach(function (a, i) {
+      var all = a.perms.employees === 'ALL', sel = all ? [] : a.perms.employees;
+      html += '<div class="card"><div class="row"><div><b>' + esc(a.name) + '</b> <span class="muted">' + esc(a.id) + '</span>' +
+        (a.configured ? '' : ' <span class="chip s-LATE">Not set yet</span>') + '</div>' +
+        '<button class="link" style="color:var(--red)" onclick="setRole(\'' + esc(a.id) + '\', \'EMPLOYEE\')">Remove admin</button></div>' +
+        '<div style="margin-top:10px">' + r.permissions.map(function (p) {
+          return '<label class="perm"><input type="checkbox" class="perm-' + i + '" data-key="' + p.key + '"' + (a.perms[p.key] ? ' checked' : '') + '>' +
+            '<span><b>' + esc(p.label) + '</b><br><small class="muted">' + esc(p.help) + '</small></span></label>';
+        }).join('') + '</div>' +
+        '<div class="field"><label>Employees this admin can manage</label>' +
+        '<label class="check"><input type="radio" name="scope-' + i + '" value="ALL"' + (all ? ' checked' : '') + ' onchange="toggleScope(' + i + ')"> All employees</label>' +
+        '<label class="check"><input type="radio" name="scope-' + i + '" value="SEL"' + (all ? '' : ' checked') + ' onchange="toggleScope(' + i + ')"> Only selected</label>' +
+        '<div class="checklist' + (all ? ' hidden' : '') + '" id="scopeList-' + i + '">' + r.employees.filter(function (e) { return e.id !== a.id; }).map(function (e) {
+          return '<label><input type="checkbox" class="scope-' + i + '" value="' + esc(e.id) + '"' + (sel.indexOf(e.id) >= 0 ? ' checked' : '') + '> ' + esc(e.name) + ' <span class="muted">' + esc(e.id) + '</span></label>';
+        }).join('') + '</div></div>' +
+        '<button class="btn" onclick="savePerms(' + i + ', this)">Save permissions</button></div>';
+    });
+    adminBody(html);
+  }
+
+  function toggleScope(i) {
+    var sel = document.querySelector('input[name="scope-' + i + '"]:checked').value;
+    $('scopeList-' + i).classList.toggle('hidden', sel === 'ALL');
+  }
+
+  function savePerms(i, btn) {
+    var a = S.superData.admins[i], perms = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.perm-' + i), function (c) { perms[c.getAttribute('data-key')] = c.checked; });
+    perms.employees = document.querySelector('input[name="scope-' + i + '"]:checked').value === 'ALL' ? 'ALL' : checkedValues('scope-' + i);
+    btn.disabled = true;
+    api('superSavePermissions', S.token, a.id, perms)
+      .then(function (r) { renderAdmins(r); toast('Permissions saved for ' + a.name); })
+      .catch(function (e) { btn.disabled = false; toast(e.message); });
+  }
+
+  function setRole(id, role) {
+    if (role === 'EMPLOYEE' && !confirm('Remove admin rights from ' + id + '?')) return;
+    api('superSetRole', S.token, id, role)
+      .then(function (r) { renderAdmins(r); toast(role === 'ADMIN' ? 'Admin added — now set their permissions' : 'Admin removed'); })
+      .catch(function (e) { toast(e.message); });
+  }
+
+  function loadAudit() {
+    adminLoading();
+    api('superAuditLog', S.token).then(function (rows) {
+      var html = '<div class="card"><h2>Recent admin activity</h2>';
+      if (!rows.length) html += '<p class="muted">Nothing yet.</p>';
+      rows.forEach(function (r) {
+        html += '<div class="list-item"><div><div class="name">' + esc(r.action.replace(/_/g, ' ')) + ' <span class="muted" style="font-weight:400">' + esc(r.emp) + ' ' + esc(r.date) + '</span></div>' +
+          '<div class="sub">' + esc(r.details) + '</div><div class="sub">by ' + esc(r.by) + ' · ' + esc(r.at) + '</div></div></div>';
+      });
+      adminBody(html + '<p class="muted" style="font-size:12px">Full history is in the "Audit Log" tab of the Sheet.</p></div>');
+    }).catch(adminErr);
   }
 
   function exportPayroll(ym) {
