@@ -1507,9 +1507,17 @@ function canManage_(ctx, empId) {
 }
 
 /** May this admin change data of this employee? Own data needs the "Edit Own Entries" permission. */
+/**
+ * May this admin change data of this employee?
+ * - Super admins: anyone.
+ * - Admins: never another admin or a super admin, even with "All employees"; their own data only with
+ *   the "Edit Own Entries" permission; everyone else within their employee scope.
+ */
 function canEditEmployee_(ctx, empId) {
   if (ctx.perms.superAdmin) return true;
   if (empId === ctx.emp.id) return !!ctx.perms.editOwn;
+  const target = findEmployee_(empId);
+  if (target && (target.role === 'ADMIN' || target.role === 'SUPER_ADMIN')) return false;
   return canManage_(ctx, empId);
 }
 
@@ -1517,7 +1525,10 @@ function managedEmployee_(ctx, empId, forEdit) {
   const emp = findEmployee_(String(empId || '').trim().toUpperCase());
   if (!emp) throw new Error('Employee not found.');
   const ok = forEdit ? canEditEmployee_(ctx, emp.id) : canManage_(ctx, emp.id);
-  if (!ok) throw new Error('You are not allowed to ' + (forEdit ? 'change' : 'view') + ' ' + emp.name + '.');
+  if (!ok) {
+    const why = forEdit && emp.id !== ctx.emp.id && emp.role !== 'EMPLOYEE' ? ' Only a super admin can change an admin\'s data.' : '';
+    throw new Error('You are not allowed to ' + (forEdit ? 'change' : 'view') + ' ' + emp.name + '.' + why);
+  }
   return emp;
 }
 
