@@ -61,6 +61,7 @@
     .btn.small { display: inline-block; width: auto; padding: 9px 14px; font-size: 14px; margin: 0; border-radius: 10px; }
     .btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .btns .btn { flex: 1; margin-top: 0; }
+    .btns .btn.small { flex: 1 1 calc(50% - 4px); white-space: nowrap; }
     .big-btn { width: 100%; padding: 22px; border-radius: 18px; font-size: 20px; font-weight: 700; color: #fff; margin-top: 6px; }
 
     .clock { font-size: 40px; font-weight: 700; letter-spacing: 1px; text-align: center; margin: 4px 0; }
@@ -853,6 +854,15 @@
         payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
         (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '') +
         (p.advance ? payLine('Advance recovery', '− ' + money(p.advance, cur), 'red') : '');
+      (m.advances || []).forEach(function (a, ai) {
+        if (navArg && m.canManageAdvance) {
+          // Admins: change / skip this month's deduction right here.
+          html += '<div class="row small" style="padding:6px 0;border-top:1px dashed var(--line)"><span>Advance ' + money(a.amount, cur) + (a.note ? ' <span class="muted">(' + esc(a.note) + ')</span>' : '') +
+            ': ' + (a.wanted ? 'deduct ' + money(a.wanted, cur) : '<b>no deduction</b>') + ' this month' + (a.changed ? ' <span class="chip s-OT">changed</span>' : '') + '</span>' +
+            '<button class="btn small" onclick="changeMonthAdv(' + ai + ')">Change</button></div>';
+        } else if (a.changed && !a.wanted) html += '<p class="muted small" style="margin:6px 0 0">No advance deduction this month' + (a.changeNote ? ' (' + esc(a.changeNote) + ')' : '') + '.</p>';
+        else if (a.changed) html += '<p class="muted small" style="margin:6px 0 0">Advance deduction changed to ' + money(a.wanted, cur) + ' for this month' + (a.changeNote ? ' (' + esc(a.changeNote) + ')' : '') + '.</p>';
+      });
       if (p.pf) {
         html += payLine('PF Employee <span class="muted">(Basic Salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
           payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue');
@@ -963,7 +973,10 @@
     var today = todayLocal();
     var html = '<div class="card"><h2>New request</h2>' +
       '<div class="field"><label>Type</label><select id="rqType" class="inp" onchange="toggleReqType()">' +
-      '<option value="LEAVE">Leave</option><option value="CORRECTION">Attendance correction (forgot check-in / check-out)</option></select></div>' +
+      '<option value="LEAVE">Leave</option><option value="CORRECTION">Attendance correction (forgot check-in / check-out)</option>' +
+      '<option value="ADVANCE">Salary advance</option></select></div>' +
+      '<div id="rqAdv" class="hidden"><div class="grid2"><div class="field"><label>Amount needed</label><input id="rqAmt" class="inp" inputmode="decimal" placeholder="e.g. 10000"></div>' +
+      '<div class="field"><label>Deduct per month (suggested)</label><input id="rqMon" class="inp" inputmode="decimal" placeholder="e.g. 2000"></div></div></div>' +
       '<div id="rqLeave"><div class="grid2"><div class="field"><label>From</label><input id="rqFrom" class="inp" type="date" value="' + today + '"></div>' +
       '<div class="field"><label>To</label><input id="rqTo" class="inp" type="date" value="' + today + '"></div></div>' +
       '<div class="field"><label>Leave type</label><select id="rqLeaveType" class="inp"><option value="PAID">Paid leave</option><option value="UNPAID">Unpaid leave</option></select></div></div>' +
@@ -988,18 +1001,23 @@
   }
 
   function reqTitle(r) {
+    if (r.type === 'ADVANCE') return 'Salary advance ' + money(r.amount, '₹') + (r.monthly ? ' · ' + money(r.monthly, '₹') + '/month' : '');
     if (r.type === 'LEAVE') return (r.leaveType === 'UNPAID' ? 'Unpaid' : 'Paid') + ' leave · ' + esc(fmtDate(r.from)) + (r.to !== r.from ? ' – ' + esc(fmtDate(r.to)) : '');
     return 'Correction · ' + esc(fmtDate(r.from)) + ' · ' + esc(r.in || '—') + ' → ' + esc(r.out || '—');
   }
   function toggleReqType() {
-    var leave = $('rqType').value === 'LEAVE';
-    $('rqLeave').classList.toggle('hidden', !leave); $('rqCorr').classList.toggle('hidden', leave);
+    var t = $('rqType').value;
+    $('rqLeave').classList.toggle('hidden', t !== 'LEAVE');
+    $('rqCorr').classList.toggle('hidden', t !== 'CORRECTION');
+    $('rqAdv').classList.toggle('hidden', t !== 'ADVANCE');
   }
   function sendRequest() {
-    var leave = $('rqType').value === 'LEAVE';
-    var req = leave
+    var t = $('rqType').value;
+    var req = t === 'LEAVE'
       ? { type: 'LEAVE', from: $('rqFrom').value, to: $('rqTo').value, leaveType: $('rqLeaveType').value, reason: $('rqReason').value }
-      : { type: 'CORRECTION', from: $('rqDate').value, in: $('rqIn').value, out: $('rqOut').value, reason: $('rqReason').value };
+      : t === 'ADVANCE'
+        ? { type: 'ADVANCE', amount: $('rqAmt').value, monthly: $('rqMon').value, reason: $('rqReason').value }
+        : { type: 'CORRECTION', from: $('rqDate').value, in: $('rqIn').value, out: $('rqOut').value, reason: $('rqReason').value };
     $('rqBtn').disabled = true;
     api('submitRequest', S.token, req).then(function (list) { renderMyRequests(list); toast('Request sent'); })
       .catch(function (e) { $('rqBtn').disabled = false; $('rqMsg').innerHTML = errBox(e); });
@@ -1014,7 +1032,7 @@
     { key: 'today', label: 'Today', perm: 'viewToday', load: function () { loadAdminToday(); } },
     { key: 'summary', label: 'Monthly Summary', perm: 'viewSummary', load: function () { loadSummary(S.admin.sumYm || ymNow()); } },
     { key: 'payroll', label: 'Payroll', perm: 'viewPayroll', load: function () { loadAdminMonth(S.admin.ym || ymNow()); } },
-    { key: 'requests', label: 'Requests', perm: 'approveRequests', load: function () { loadAdminRequests(); } },
+    { key: 'requests', label: 'Requests', perm: ['approveRequests', 'manageAdvances'], load: function () { loadAdminRequests(); } },
     { key: 'entries', label: 'Entries', perm: 'editAttendance', load: function () { loadEntries(); } },
     { key: 'staff', label: 'Employees', perm: 'manageEmployees', load: function () { loadStaff(); } },
     { key: 'advances', label: 'Advances', perm: 'manageAdvances', load: function () { loadAdvances(); } },
@@ -1022,7 +1040,10 @@
     { key: 'admins', label: 'Admins', perm: 'superAdmin', load: function () { loadAdmins(); } },
     { key: 'log', label: 'Activity', perm: 'superAdmin', load: function () { loadAudit(); } }
   ];
-  function can(perm) { return !!(S.profile && S.profile.perms && S.profile.perms[perm]); }
+  function can(perm) {
+    if (Array.isArray(perm)) return perm.some(can);
+    return !!(S.profile && S.profile.perms && S.profile.perms[perm]);
+  }
 
   function renderAdmin() {
     var a = S.admin;
@@ -1164,6 +1185,24 @@
       (t.otPendingMin ? '<div class="msg warn">' + mins(t.otPendingMin) + ' OT waiting for approval</div>' : '') +
       (t.missedCheckouts ? '<div class="msg err">⚠ ' + t.missedCheckouts + ' missed check-out(s) not cleared yet</div>' : '') + '</div>';
 
+    // Advances this month (admins with "Manage Advances" can change / skip each one here)
+    S.summary = r;
+    var advRows = [];
+    r.rows.forEach(function (e, ri) { (e.advances || []).forEach(function (a, ai) { advRows.push({ e: e, a: a, ri: ri, ai: ai }); }); });
+    if (advRows.length) {
+      html += '<div class="card"><h2>💳 Advances this month</h2>';
+      advRows.forEach(function (x) {
+        var a = x.a;
+        html += '<div class="list-item"><div><div class="name">' + esc(x.e.name) + ' <span class="muted" style="font-weight:400">' + esc(x.e.id) + '</span></div>' +
+          '<div class="sub">Advance ' + money(a.amount, cur) + (a.note ? ' · ' + esc(a.note) : '') + ' · normal ' + money(a.monthly, cur) + '/month</div>' +
+          '<div class="sub">' + (a.wanted ? 'Deduct <b>' + money(a.wanted, cur) + '</b>' : '<b>No deduction</b>') + ' this month' +
+          (a.changed ? ' <span class="chip s-OT">changed</span>' + (a.changeNote ? ' ' + esc(a.changeNote) : '') : '') +
+          ' · balance after ' + money(Math.max(0, a.balanceBefore - a.wanted), cur) + '</div></div>' +
+          (x.e.canEditAdvance ? '<div class="right"><button class="btn small" onclick="changeSumAdv(' + x.ri + ',' + x.ai + ')">Change</button></div>' : '') + '</div>';
+      });
+      html += '</div>';
+    }
+
     // Per employee
     html += '<div class="card"><h2>Per employee</h2><div style="overflow-x:auto"><table class="sum">' +
       '<tr><th>Name</th><th>P</th><th>A</th><th>½</th><th>OT</th><th>PF</th>' + (r.showSplit ? '<th>Bank</th><th>Cash</th>' : '') + '<th>Total</th></tr>';
@@ -1289,6 +1328,7 @@
     r.pending.forEach(function (q, i) {
       html += '<div class="list-item" style="display:block"><div class="row"><div class="name">' + esc(q.name) + ' <span class="muted" style="font-weight:400">' + esc(q.empId) + '</span></div>' + chip('PENDING') + '</div>' +
         '<div style="margin-top:4px">' + reqTitle(q) + '</div><div class="sub">' + esc(q.reason) + ' · sent ' + esc(q.created) + '</div>' +
+ (q.type === 'ADVANCE' ? advApprovalFields(q, i, r) : '') +
         (q.type === 'LEAVE' ? '<select id="aqLt-' + i + '" class="inp" style="margin-top:8px"><option value="PAID"' + (q.leaveType !== 'UNPAID' ? ' selected' : '') + '>Approve as Paid leave</option><option value="UNPAID"' + (q.leaveType === 'UNPAID' ? ' selected' : '') + '>Approve as Unpaid leave</option></select>' : '') +
         '<input id="aqRm-' + i + '" class="inp" style="margin-top:8px" placeholder="Remark (optional)">' +
         '<div class="btns"><button class="btn green" onclick="decideRequest(' + i + ',true,this)">Approve</button>' +
@@ -1318,12 +1358,32 @@
     adminBody(html);
   }
 
+  /** Amount / deduction / start month, and whether to add to a running advance. */
+  function advApprovalFields(q, i, r) {
+    var cur = r.currency, running = q.running || [];
+    return '<div class="grid2"><div class="field"><label>Amount</label><input id="aqAmt-' + i + '" class="inp" inputmode="decimal" value="' + esc(q.amount) + '"></div>' +
+      '<div class="field"><label>Deduct per month</label><input id="aqMon-' + i + '" class="inp" inputmode="decimal" value="' + esc(q.monthly || '') + '" placeholder="e.g. 2000"></div></div>' +
+      (running.length
+        ? '<div class="msg info">' + esc(q.name) + ' already has ' + running.length + ' advance(s) running.</div>' +
+          '<div class="field"><label>Approve as</label><select id="aqMode-' + i + '" class="inp" onchange="$(\'aqStartBox-' + i + '\').classList.toggle(\'hidden\', this.value!==\'NEW\')">' +
+          running.map(function (a) { return '<option value="ADD:' + esc(a.id) + '">Add to running advance' + (a.note ? ' – ' + esc(a.note) : '') + ' (balance ' + money(a.balance, cur) + ')</option>'; }).join('') +
+          '<option value="NEW">New separate advance</option></select></div>'
+        : '<input type="hidden" id="aqMode-' + i + '" value="NEW">') +
+      '<div class="field' + (running.length ? ' hidden' : '') + '" id="aqStartBox-' + i + '"><label>Start deducting from</label><input id="aqStart-' + i + '" class="inp" type="month" value="' + r.currentMonth + '"></div>';
+  }
+
   function decideRequest(i, approve, btn) {
     var q = S.adminReqs.pending[i];
     if (!approve && !confirm('Reject this request?')) return;
     btn.disabled = true;
     var lt = $('aqLt-' + i) ? $('aqLt-' + i).value : null;
-    api('adminDecideRequest', S.token, q.id, approve, $('aqRm-' + i).value, lt)
+    var adv = null;
+    if (q.type === 'ADVANCE') {
+      var mode = $('aqMode-' + i).value;
+      adv = { amount: $('aqAmt-' + i).value, monthly: $('aqMon-' + i).value, startMonth: $('aqStart-' + i).value,
+        mode: mode === 'NEW' ? 'NEW' : 'ADD', advanceId: mode === 'NEW' ? '' : mode.slice(4) };
+    }
+    api('adminDecideRequest', S.token, q.id, approve, $('aqRm-' + i).value, lt, adv)
       .then(function (r) { renderAdminRequests(r); toast(approve ? 'Approved' : 'Rejected'); })
       .catch(function (e) { btn.disabled = false; toast(e.message); });
   }
@@ -1500,7 +1560,8 @@
     S.adv = r;
     var cur = r.currency;
     var html = '<div class="card"><h2>Give an advance</h2>' +
-      '<div class="field"><label>Employee</label><select id="avEmp" class="inp">' + r.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label>Employee</label><select id="avEmp" class="inp" onchange="advEmpHint()">' + r.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')' + (e.ongoing ? ' – advance running' : '') + '</option>'; }).join('') + '</select></div>' +
+      '<div id="avHint"></div>' +
       '<div class="grid2"><div class="field"><label>Amount</label><input id="avAmt" class="inp" inputmode="decimal" placeholder="e.g. 10000"></div>' +
       '<div class="field"><label>Deduct per month</label><input id="avMon" class="inp" inputmode="decimal" placeholder="e.g. 2000"></div>' +
       '<div class="field"><label>Start deducting from</label><input id="avStart" class="inp" type="month" value="' + r.currentMonth + '"></div>' +
@@ -1515,16 +1576,56 @@
       html += '<div class="list-item" style="display:block"><div class="row"><div class="name">' + esc(a.name) + ' <span class="muted" style="font-weight:400">' + esc(a.empId) + '</span></div>' + st + '</div>' +
         '<div class="sub">' + money(a.amount, cur) + ' given ' + esc(fmtDate(a.dateGiven)) + (a.note ? ' · ' + esc(a.note) : '') + '</div>' +
         '<div class="sub">' + money(a.monthly, cur) + '/month from ' + esc(monthName(a.startMonth)) + '</div>' +
+        (a.topUps && a.topUps.length ? a.topUps.map(function (t) { return '<div class="sub">➕ ' + esc(t) + '</div>'; }).join('') : '') +
         '<div class="kv" style="margin-top:8px"><div><b>' + money(a.deductedBefore, cur) + '</b><span>Recovered</span></div>' +
-        '<div><b>' + money(a.thisMonth, cur) + '</b><span>This month</span></div>' +
+        '<div' + (a.thisMonthChanged ? ' class="k-ot"' : '') + '><b>' + money(a.thisMonth, cur) + '</b><span>This month' + (a.thisMonthChanged ? ' (changed)' : '') + '</span></div>' +
         '<div class="k-red"><b>' + money(a.balanceAfter, cur) + '</b><span>Balance after</span></div></div>' +
-        (a.repaid || a.status === 'CLOSED' ? '' : '<div class="btns">' +
+        (a.changes.length ? '<div style="margin-top:8px">' + a.changes.map(function (c) {
+          return '<div class="row small" style="padding:4px 0"><span>📌 <b>' + esc(monthName(c.month)) + ':</b> ' +
+            (c.amount === 0 ? 'no deduction (skipped)' : 'deduct ' + money(c.amount, cur)) + (c.note ? ' <span class="muted">· ' + esc(c.note) + '</span>' : '') + '</span>' +
+            (c.locked ? '<span class="muted">locked</span>' : '<button class="link" style="color:var(--red)" onclick="clearAdvMonth(' + i + ',\'' + c.month + '\')">Undo</button>') + '</div>';
+        }).join('') + '</div>' : '') +
+        (a.status === 'CLOSED' || (a.repaid && !a.changes.length) ? '<div class="btns"><button class="btn small ghost" onclick="openTopUp(' + i + ')">＋ Add more</button></div>' : '<div class="btns">' +
+          '<button class="btn small" onclick="openAdvMonth(' + i + ')">Change a month</button>' +
+          '<button class="btn small ghost" onclick="openTopUp(' + i + ')">＋ Add more</button>' +
           '<button class="btn small ghost" onclick="editAdvance(' + i + ')">Change monthly</button>' +
           (a.status === 'ACTIVE' ? '<button class="btn small ghost" onclick="advStatus(' + i + ',\'PAUSED\')">Pause</button>' : '<button class="btn small ghost" onclick="advStatus(' + i + ',\'ACTIVE\')">Resume</button>') +
           '<button class="btn small soft-red" onclick="advStatus(' + i + ',\'CLOSED\')">Close</button></div>') + '</div>';
     });
-    html += '</div><p class="muted small center">Pause skips deductions until resumed. Close stops it for good (e.g. repaid in cash). Locked months keep what was actually deducted.</p>';
+    html += '</div><p class="muted small center"><b>Add more</b> adds a new amount to a running advance (one balance, one deduction). ' +
+      'Saving a new advance above instead keeps it separate, with its own deduction (both are deducted each month). <b>Change a month</b> sets a different amount (or no deduction) for one month only; the balance moves to later months. ' +
+      'Pause skips every month until resumed. Close stops it for good (e.g. repaid in cash). Locked months keep what was actually deducted.</p>';
     adminBody(html);
+    advEmpHint();
+  }
+
+  /** Tells the admin when the selected employee already has an advance running. */
+  function advEmpHint() {
+    var sel = $('avEmp'); if (!sel || !S.adv) return;
+    var e = S.adv.employees.filter(function (x) { return x.id === sel.value; })[0];
+    $('avHint').innerHTML = e && e.ongoing
+      ? '<div class="msg info">' + esc(e.name) + ' already has an advance running (balance ' + money(e.ongoing, S.adv.currency) + '). ' +
+        'Saving here makes a <b>separate</b> advance with its own deduction. To add to the existing one, use <b>＋ Add more</b> on it below.</div>'
+      : '';
+  }
+
+  /** Adds more money to a running advance. */
+  function openTopUp(i) {
+    var a = S.adv.list[i], cur = S.adv.currency;
+    openModal('<h2 style="margin-top:0">Add more – ' + esc(a.name) + '</h2>' +
+      '<p class="muted small" style="margin-top:-6px">Advance ' + money(a.amount, cur) + ' · balance ' + money(a.balanceAfter + a.thisMonth, cur) + ' · ' + money(a.monthly, cur) + '/month</p>' +
+      '<div class="grid2"><div class="field"><label>Extra amount given</label><input id="tuAmt" class="inp" inputmode="decimal" placeholder="e.g. 5000"></div>' +
+      '<div class="field"><label>Date given</label><input id="tuDate" class="inp" type="date" value="' + todayLocal() + '"></div></div>' +
+      '<div class="field"><label>Deduct per month from now</label><input id="tuMon" class="inp" inputmode="decimal" value="' + esc(a.monthly) + '"></div>' +
+      '<div class="field"><label>Note (optional)</label><input id="tuNote" class="inp" placeholder="e.g. School fees"></div>' +
+      '<button class="btn" id="tuBtn" onclick="saveTopUp(' + i + ')">Add to advance</button><button class="btn ghost" onclick="closeModal()">Cancel</button><div id="tuMsg"></div>');
+  }
+  function saveTopUp(i) {
+    var a = S.adv.list[i];
+    $('tuBtn').disabled = true;
+    api('adminTopUpAdvance', S.token, a.id, { add: $('tuAmt').value, dateGiven: $('tuDate').value, monthly: $('tuMon').value, note: $('tuNote').value })
+      .then(function (r) { closeModal(); renderAdvances(r); toast('Added to ' + a.name + '\'s advance'); })
+      .catch(function (e) { $('tuBtn').disabled = false; $('tuMsg').innerHTML = errBox(e); });
   }
 
   function saveAdvance() {
@@ -1540,6 +1641,63 @@
     if (v === null) return;
     api('adminSaveAdvance', S.token, { id: a.id, monthly: v, note: a.note }).then(renderAdvances).catch(function (e) { toast(e.message); });
   }
+  /**
+   * Skip the deduction or deduct a different amount for one month.
+   * info = { id, name, amount, monthly, startMonth, balance, ym, fixedMonth, changed, currency }; done(result) runs after saving.
+   */
+  function openAdvMonthModal(info, done) {
+    S.advModal = { info: info, done: done };
+    var cur = info.currency;
+    openModal('<h2 style="margin-top:0">' + esc(info.name) + ' – advance ' + money(info.amount, cur) + '</h2>' +
+      '<p class="muted small" style="margin-top:-6px">Normal deduction: ' + money(info.monthly, cur) + '/month' +
+      (info.balance !== undefined ? ' · balance ' + money(info.balance, cur) + ' before this month' : '') + '</p>' +
+      (info.fixedMonth ? '<p><b>' + esc(monthName(info.ym)) + '</b></p><input id="amMonth" type="hidden" value="' + info.ym + '">'
+        : '<div class="field"><label>Month</label><input id="amMonth" class="inp" type="month" min="' + info.startMonth + '" value="' + info.ym + '"></div>') +
+      '<label class="check"><input type="radio" name="amKind" value="skip" checked onchange="$(\'amAmt\').disabled=true"> No deduction this month</label>' +
+      '<label class="check"><input type="radio" name="amKind" value="amount" onchange="$(\'amAmt\').disabled=false;$(\'amAmt\').focus()"> Deduct a different amount</label>' +
+      '<input id="amAmt" class="inp" inputmode="decimal" placeholder="e.g. 1000" disabled>' +
+      '<div class="field"><label>Note (optional)</label><input id="amNote" class="inp" placeholder="e.g. Employee asked to skip – festival"></div>' +
+      '<button class="btn" id="amBtn" onclick="saveAdvMonth()">Save</button>' +
+      (info.changed ? '<button class="btn ghost" onclick="saveAdvMonth(true)">Back to normal deduction</button>' : '') +
+      '<button class="btn ghost" onclick="closeModal()">Cancel</button><div id="amMsg"></div>');
+  }
+  function saveAdvMonth(reset) {
+    var m = S.advModal;
+    var skip = document.querySelector('input[name="amKind"]:checked').value === 'skip';
+    var amt = reset ? '' : (skip ? 0 : $('amAmt').value);
+    if (!reset && !skip && amt === '') { $('amMsg').innerHTML = errBox('Enter the amount to deduct.'); return; }
+    $('amBtn').disabled = true;
+    api('adminSetAdvanceMonth', S.token, m.info.id, $('amMonth').value, amt, reset ? '' : $('amNote').value)
+      .then(function (r) { closeModal(); toast('Saved'); m.done(r); })
+      .catch(function (e) { $('amBtn').disabled = false; $('amMsg').innerHTML = errBox(e); });
+  }
+  /** From the Advances screen (any month). */
+  function openAdvMonth(i) {
+    var a = S.adv.list[i];
+    openAdvMonthModal({ id: a.id, name: a.name, amount: a.amount, monthly: a.monthly, startMonth: a.startMonth,
+      balance: a.balanceAfter + a.thisMonth, ym: S.adv.currentMonth < a.startMonth ? a.startMonth : S.adv.currentMonth,
+      currency: S.adv.currency }, renderAdvances);
+  }
+  /** From an employee's salary card (that month). */
+  function changeMonthAdv(ai) {
+    var m = S.viewMonth, a = m.advances[ai];
+    openAdvMonthModal({ id: a.id, name: m.employee.name, amount: a.amount, monthly: a.monthly, startMonth: a.startMonth,
+      balance: a.balanceBefore, ym: m.ym, fixedMonth: true, changed: a.changed, currency: m.currency },
+      function () { if (S.reloadAfterEntry) S.reloadAfterEntry(); });
+  }
+  /** From the Monthly Summary (that month). */
+  function changeSumAdv(ri, ai) {
+    var r = S.summary, row = r.rows[ri], a = row.advances[ai];
+    openAdvMonthModal({ id: a.id, name: row.name, amount: a.amount, monthly: a.monthly, startMonth: a.startMonth,
+      balance: a.balanceBefore, ym: r.ym, fixedMonth: true, changed: a.changed, currency: r.currency },
+      function () { loadSummary(r.ym); });
+  }
+  function clearAdvMonth(i, ym) {
+    var a = S.adv.list[i];
+    if (!confirm('Go back to the normal deduction for ' + monthName(ym) + '?')) return;
+    api('adminSetAdvanceMonth', S.token, a.id, ym, '', '').then(renderAdvances).catch(function (e) { toast(e.message); });
+  }
+
   function advStatus(i, status) {
     var a = S.adv.list[i];
     if (status === 'CLOSED' && !confirm('Close this advance? No more deductions will be made.')) return;

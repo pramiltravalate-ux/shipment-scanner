@@ -18,6 +18,7 @@ const SHEET = {
   AUDIT: 'Audit Log',
   REQUESTS: 'Requests',
   ADVANCES: 'Advances',
+  ADV_MONTHS: 'Advance Month Changes',
   LOCKS: 'Payroll Locks',
   SNAPSHOTS: 'Payroll Snapshots',
 };
@@ -57,9 +58,10 @@ const COL = {
 };
 
 const REQ_HEADERS = ['ID', 'Created', 'Emp ID', 'Name', 'Type', 'From', 'To', 'In', 'Out', 'Leave Type',
-  'Reason', 'Status', 'Decided By', 'Decided At', 'Remark'];
+  'Reason', 'Status', 'Decided By', 'Decided At', 'Remark', 'Amount', 'Monthly'];
 const ADV_HEADERS = ['ID', 'Emp ID', 'Name', 'Date Given', 'Amount', 'Monthly Deduction', 'Start Month',
-  'Status', 'Note', 'Created By', 'Created At'];
+  'Status', 'Note', 'Created By', 'Created At', 'Top-ups'];
+const ADV_MONTH_HEADERS = ['Advance ID', 'Emp ID', 'Month', 'Deduct', 'Note', 'By', 'At'];
 const LOCK_HEADERS = ['Month', 'Locked By', 'Locked At'];
 const SNAP_HEADERS = ['Month', 'Emp ID', 'Name', 'Data (do not edit)'];
 
@@ -183,7 +185,7 @@ const API_FUNCTIONS = {
   adminToday, adminSummary, adminMonth, adminEmployeeMonth, adminEntryOptions, adminGetEntry, adminSaveEntry,
   adminDeleteEntry, adminBulkEntry, adminRequests, adminDecideRequest, adminDecideOt, adminClearMissed,
   adminStaff, adminSaveStaff, adminResetPin, adminEmployees, adminSavePf, adminAdvances, adminSaveAdvance,
-  adminSetAdvanceStatus, adminLockMonth, superUnlockMonth, adminGetSelfie, adminExportPayroll,
+  adminSetAdvanceStatus, adminSetAdvanceMonth, adminTopUpAdvance, adminLockMonth, superUnlockMonth, adminGetSelfie, adminExportPayroll,
   superListAdmins, superSavePermissions, superSetRole, superAuditLog,
 };
 
@@ -270,9 +272,13 @@ function setup() {
   sh.getRange('A:A').setNumberFormat('@');
   getOrCreate_(ss, SHEET.AUDIT, AUDIT_HEADERS);
   sh = getOrCreate_(ss, SHEET.REQUESTS, REQ_HEADERS);
+  ensureHeaders_(sh, REQ_HEADERS);
   ['F:F', 'G:G', 'H:H', 'I:I'].forEach(a => sh.getRange(a).setNumberFormat('@'));
   sh = getOrCreate_(ss, SHEET.ADVANCES, ADV_HEADERS);
+  ensureHeaders_(sh, ADV_HEADERS);
   ['D:D', 'G:G'].forEach(a => sh.getRange(a).setNumberFormat('@'));
+  sh = getOrCreate_(ss, SHEET.ADV_MONTHS, ADV_MONTH_HEADERS);
+  sh.getRange('C:C').setNumberFormat('@');
   sh = getOrCreate_(ss, SHEET.LOCKS, LOCK_HEADERS);
   sh.getRange('A:A').setNumberFormat('@');
   sh = getOrCreate_(ss, SHEET.SNAPSHOTS, SNAP_HEADERS);
@@ -572,6 +578,7 @@ function submitRequest(token, req) {
   req = req || {};
   const type = String(req.type || '').toUpperCase();
   const today = todayStr_();
+  if (type === 'ADVANCE') return submitAdvanceRequest_(emp, req, token);
   const minDate = s.requestBackDays > 0 ? addDays_(today, -s.requestBackDays) : '2000-01-01';
   const from = toDateStr_(req.from);
   const to = type === 'LEAVE' ? toDateStr_(req.to || req.from) : from;
@@ -602,6 +609,28 @@ function submitRequest(token, req) {
   const row = [id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'), emp.id, emp.name, type,
     "'" + from, "'" + to, inT ? "'" + inT : '', outT ? "'" + outT : '', leaveType, reason, 'PENDING', '', '', ''];
   const sh = sheetOrCreate_(SHEET.REQUESTS, REQ_HEADERS);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  forget_('requests');
+  return myRequests(token);
+}
+
+/** Salary advance request: { type: 'ADVANCE', amount, monthly (suggested deduction), reason } */
+function submitAdvanceRequest_(emp, req, token) {
+  const amount = Number(req.amount);
+  const monthly = req.monthly === '' || req.monthly === undefined ? 0 : Number(req.monthly);
+  const reason = String(req.reason || '').trim().slice(0, 300);
+  if (!(amount > 0)) throw new Error('Enter the advance amount you need.');
+  if (!isFinite(monthly) || monthly < 0) throw new Error('Enter a valid monthly deduction (or leave it empty).');
+  if (!reason) throw new Error('Please write a reason.');
+  if (readRequests_().some(r => r.empId === emp.id && r.status === 'PENDING' && r.type === 'ADVANCE')) {
+    throw new Error('You already have a pending advance request.');
+  }
+  const today = todayStr_();
+  const id = 'R' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  const row = [id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'), emp.id, emp.name, 'ADVANCE',
+    "'" + today, "'" + today, '', '', '', reason, 'PENDING', '', '', '', amount, monthly || ''];
+  const sh = sheetOrCreate_(SHEET.REQUESTS, REQ_HEADERS);
+  ensureHeaders_(sh, REQ_HEADERS);
   sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
   forget_('requests');
   return myRequests(token);
@@ -677,7 +706,7 @@ function payrollRows_(ctx, ym) {
 
   const rows = getEmployees_().filter(e => (e.active || withRecords[e.id]) && canManage_(ctx, e.id)).map(e => {
     const m = buildMonth_(e, ym);
-    return hideSplit_(Object.assign({ id: e.id, name: e.name }, m.totals, m.pay), ctx.perms.viewSplit);
+    return hideSplit_(Object.assign({ id: e.id, name: e.name, advances: m.advances || [] }, m.totals, m.pay), ctx.perms.viewSplit);
   });
   return {
     ym: ym, label: ymLabel_(ym), currency: s.currency, rows: rows,
@@ -723,6 +752,10 @@ function adminSummary(token, ym) {
       id: r.id, name: r.name, present: r.present, absent: r.absent + r.notJoined, halfDay: r.halfDay, leave: r.leave,
       late: r.late, otMin: r.otMin, pf: r.pf, pfEmployee: r.pfEmployee, pfEmployer: r.pfEmployer, advance: r.advance,
       bank: split ? r.bank : undefined, cash: split ? r.cash : undefined, net: r.net, missed: r.missedCheckouts,
+      advances: (r.advances || []).map(a => ({ id: a.id, note: a.note, amount: a.amount, monthly: a.monthly,
+        startMonth: a.startMonth, wanted: a.wanted, deducted: a.deducted, balanceBefore: a.balanceBefore,
+        balanceAfter: a.balanceAfter, changed: a.changed, changeNote: a.changeNote })),
+      canEditAdvance: !!ctx.perms.manageAdvances && !data.locked && canEditEmployee_(ctx, r.id),
     })),
   };
 }
@@ -736,6 +769,7 @@ function adminEmployeeMonth(token, empId, ym) {
   m.canEdit = !!ctx.perms.editAttendance && canEditEmployee_(ctx, emp.id) && !m.locked;
   m.canApproveOt = !!ctx.perms.approveRequests && canEditEmployee_(ctx, emp.id) && !m.locked;
   m.canPayslip = !!ctx.perms.viewPayroll;
+  m.canManageAdvance = !!ctx.perms.manageAdvances && canEditEmployee_(ctx, emp.id) && !m.locked;
   hideSplit_(m, ctx.perms.viewSplit);
   m.minDate = ctx.minDate;
   return m;
@@ -864,16 +898,29 @@ function adminBulkEntry(token, opts) {
 /* ------------------------ Requests & OT approval ------------------- */
 
 function adminRequests(token) {
-  const ctx = authAdmin_(token, 'approveRequests');
+  const ctx = authAdmin_(token, ['approveRequests', 'manageAdvances']);
   const s = getSettings_();
-  const reqs = readRequests_().filter(r => canEditEmployee_(ctx, r.empId));
+  // Leave / corrections need "Approve Requests"; advance requests need "Manage Advances".
+  const allowed = r => (r.type === 'ADVANCE' ? ctx.perms.manageAdvances : ctx.perms.approveRequests);
+  const reqs = readRequests_().filter(r => allowed(r) && canEditEmployee_(ctx, r.empId));
+  const ym = todayStr_().slice(0, 7);
   const out = {
-    pending: reqs.filter(r => r.status === 'PENDING'),
+    pending: reqs.filter(r => r.status === 'PENDING').map(r => {
+      if (r.type !== 'ADVANCE') return r;
+      // Running advances of this employee, so the admin can add the new amount to one of them.
+      const running = readAdvances_().filter(a => a.empId === r.empId && a.status !== 'CLOSED').map(a => {
+        const st = advanceState_(a, ym);
+        return { id: a.id, note: a.note, monthly: a.monthly, balance: st.balanceBefore };
+      }).filter(a => a.balance > 0);
+      return Object.assign({}, r, { running: running });
+    }),
     recent: reqs.filter(r => r.status !== 'PENDING').reverse().slice(0, 20),
-    otApproval: s.otApproval,
+    otApproval: s.otApproval && !!ctx.perms.approveRequests,
+    currentMonth: ym,
+    currency: s.currency,
     ot: [],
   };
-  if (s.otApproval) {
+  if (out.otApproval) {
     const holidays = getHolidays_();
     const emps = {};
     getEmployees_().forEach(e => { emps[e.id] = e; });
@@ -891,12 +938,18 @@ function adminRequests(token) {
   return out;
 }
 
-/** approve: true/false. leaveType overrides the employee's choice for leave requests (PAID / UNPAID). */
-function adminDecideRequest(token, id, approve, remark, leaveType) {
-  const ctx = authAdmin_(token, 'approveRequests');
+/**
+ * approve: true/false. leaveType overrides the employee's choice for leave requests (PAID / UNPAID).
+ * For advance requests, adv = { amount, monthly, startMonth, mode: 'NEW' | 'ADD', advanceId }.
+ */
+function adminDecideRequest(token, id, approve, remark, leaveType, adv) {
+  const ctx = authAdmin_(token, ['approveRequests', 'manageAdvances']);
   const r = readRequests_().filter(x => x.id === id)[0];
   if (!r) throw new Error('Request not found.');
   if (r.status !== 'PENDING') throw new Error('This request was already ' + r.status.toLowerCase() + '.');
+  if (!(r.type === 'ADVANCE' ? ctx.perms.manageAdvances : ctx.perms.approveRequests)) {
+    throw new Error('You do not have permission for this. Ask the super admin.');
+  }
   const emp = managedEmployee_(ctx, r.empId, true);
   remark = String(remark || '').trim().slice(0, 300);
 
@@ -904,7 +957,23 @@ function adminDecideRequest(token, id, approve, remark, leaveType) {
   lock.waitLock(30000);
   try {
     let summary = '';
-    if (approve) {
+    if (approve && r.type === 'ADVANCE') {
+      adv = adv || {};
+      const amount = Number(adv.amount || r.amount);
+      const monthly = Number(adv.monthly || r.monthly);
+      if (!(amount > 0)) throw new Error('Enter the advance amount.');
+      if (!(monthly > 0)) throw new Error('Enter the monthly deduction.');
+      const note = 'Request: ' + r.reason;
+      if (adv.mode === 'ADD') {
+        const a = readAdvances_().filter(x => x.id === adv.advanceId && x.empId === emp.id)[0];
+        if (!a) throw new Error('Choose the running advance to add to.');
+        topUpAdvance_(ctx, a, { add: amount, monthly: monthly, dateGiven: todayStr_(), note: note.slice(0, 100) });
+        summary = 'added ' + amount + ' to advance ' + a.id + ', monthly ' + monthly;
+      } else {
+        const newId = createAdvance_(ctx, emp, { amount: amount, monthly: monthly, startMonth: adv.startMonth, dateGiven: todayStr_(), note: note });
+        summary = 'new advance ' + newId + ': ' + amount + ', monthly ' + monthly;
+      }
+    } else if (approve) {
       const data = entryContext_();
       const s = data.s;
       if (r.type === 'LEAVE') {
@@ -1084,16 +1153,25 @@ function adminAdvances(token) {
   const emps = getEmployees_().filter(e => canEditEmployee_(ctx, e.id));
   const names = {};
   emps.forEach(e => { names[e.id] = e.name; });
+  const adv = readAdvMonths_();
   const list = readAdvances_().filter(a => names[a.empId]).map(a => {
     const st = advanceState_(a, ym);
+    const changes = Object.keys(adv).filter(k => k.indexOf(a.id + '|') === 0)
+      .map(k => ({ month: k.split('|')[1], amount: adv[k].amount, note: adv[k].note, locked: isLocked_(k.split('|')[1]) }))
+      .filter(c => c.month >= ym || !c.locked)
+      .sort((x, y) => (x.month < y.month ? -1 : 1));
     return Object.assign({}, a, {
-      name: names[a.empId], deductedBefore: st.deductedBefore, thisMonth: st.thisMonth,
-      balanceAfter: st.balanceAfter, repaid: st.balanceAfter <= 0,
+      name: names[a.empId], deductedBefore: st.deductedBefore, thisMonth: st.thisMonth, thisMonthChanged: st.changed,
+      balanceAfter: st.balanceAfter, repaid: st.balanceAfter <= 0 && !changes.some(c => c.month > ym), changes: changes,
     });
   }).reverse();
+  const ongoing = {};
+  list.forEach(a => {
+    if (a.status !== 'CLOSED' && !a.repaid) ongoing[a.empId] = round2_((ongoing[a.empId] || 0) + a.balanceAfter + a.thisMonth);
+  });
   return {
     currency: s.currency, currentMonth: ym, list: list,
-    employees: emps.filter(e => e.active).map(e => ({ id: e.id, name: e.name })),
+    employees: emps.filter(e => e.active).map(e => ({ id: e.id, name: e.name, ongoing: ongoing[e.id] || 0 })),
   };
 }
 
@@ -1114,17 +1192,91 @@ function adminSaveAdvance(token, data) {
     forget_('advances');
     audit_(ctx.emp, 'EDIT_ADVANCE', a.empId, a.id, 'monthly ' + a.monthly + ' → ' + monthly);
   } else {
-    const emp = managedEmployee_(ctx, data.empId, true);
-    const amount = Number(data.amount);
-    if (!(amount > 0)) throw new Error('Enter the advance amount.');
-    const start = /^\d{4}-\d{2}$/.test(String(data.startMonth)) ? data.startMonth : todayStr_().slice(0, 7);
-    if (isLocked_(start)) throw new Error('Payroll for ' + ymLabel_(start) + ' is locked. Start from a later month.');
-    const id = 'A' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
-    sh.appendRow([id, emp.id, emp.name, "'" + (toDateStr_(data.dateGiven) || todayStr_()), amount, monthly, "'" + start,
-      'ACTIVE', note, ctx.emp.id + ' ' + ctx.emp.name, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
-    forget_('advances');
-    audit_(ctx.emp, 'ADD_ADVANCE', emp.id, start, 'amount ' + amount + ', monthly ' + monthly + (note ? ', ' + note : ''));
+    createAdvance_(ctx, managedEmployee_(ctx, data.empId, true), Object.assign({}, data, { monthly: monthly, note: note }));
   }
+  return adminAdvances(token);
+}
+
+/** Creates a new advance; returns its id. data = { amount, monthly, startMonth, dateGiven, note } */
+function createAdvance_(ctx, emp, data) {
+  const amount = Number(data.amount);
+  const monthly = Number(data.monthly);
+  if (!(amount > 0)) throw new Error('Enter the advance amount.');
+  if (!(monthly > 0)) throw new Error('Enter the monthly deduction amount.');
+  const note = String(data.note || '').trim().slice(0, 200);
+  const start = /^\d{4}-\d{2}$/.test(String(data.startMonth)) ? data.startMonth : todayStr_().slice(0, 7);
+  if (isLocked_(start)) throw new Error('Payroll for ' + ymLabel_(start) + ' is locked. Start from a later month.');
+  const id = 'A' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  sheetOrCreate_(SHEET.ADVANCES, ADV_HEADERS).appendRow([id, emp.id, emp.name, "'" + (toDateStr_(data.dateGiven) || todayStr_()),
+    amount, monthly, "'" + start, 'ACTIVE', note, ctx.emp.id + ' ' + ctx.emp.name,
+    Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
+  forget_('advances');
+  audit_(ctx.emp, 'ADD_ADVANCE', emp.id, start, id + ': amount ' + amount + ', monthly ' + monthly + (note ? ', ' + note : ''));
+  return id;
+}
+
+/**
+ * Adds more money to an advance that is already running (or re-opens a repaid / closed one).
+ * data = { add, dateGiven, monthly (optional new instalment), note }
+ */
+function adminTopUpAdvance(token, id, data) {
+  const ctx = authAdmin_(token, 'manageAdvances');
+  const a = readAdvances_().filter(x => x.id === id)[0];
+  if (!a) throw new Error('Advance not found.');
+  managedEmployee_(ctx, a.empId, true);
+  topUpAdvance_(ctx, a, data || {});
+  return adminAdvances(token);
+}
+
+function topUpAdvance_(ctx, a, data) {
+  const add = Number(data.add);
+  if (!(add > 0)) throw new Error('Enter the extra amount given.');
+  const monthly = data.monthly === '' || data.monthly === undefined || data.monthly === null ? a.monthly : Number(data.monthly);
+  if (!(monthly > 0)) throw new Error('Enter a valid monthly deduction.');
+  const date = toDateStr_(data.dateGiven) || todayStr_();
+  const note = String(data.note || '').trim().slice(0, 100);
+
+  const sh = sheet_(SHEET.ADVANCES);
+  ensureHeaders_(sh, ADV_HEADERS);
+  const line = date + ' +' + add + (note ? ' (' + note + ')' : '') + ' by ' + ctx.emp.name;
+  sh.getRange(a.row, 5, 1, 2).setValues([[a.amount + add, monthly]]);
+  if (a.status === 'CLOSED') sh.getRange(a.row, 8).setValue('ACTIVE');
+  sh.getRange(a.row, 12).setValue(a.topUps.concat([line]).join('\n'));
+  forget_('advances');
+  audit_(ctx.emp, 'TOPUP_ADVANCE', a.empId, date, a.id + ': ' + a.amount + ' + ' + add + ' = ' + (a.amount + add) +
+    (monthly !== a.monthly ? ', monthly ' + a.monthly + ' → ' + monthly : '') + (note ? ' | ' + note : ''));
+}
+
+/**
+ * Changes the deduction of one advance for one month: amount 0 = skip that month, any other amount = deduct
+ * that instead of the monthly instalment. amount '' (or null) removes the change (back to the normal instalment).
+ */
+function adminSetAdvanceMonth(token, id, ym, amount, note) {
+  const ctx = authAdmin_(token, 'manageAdvances');
+  const a = readAdvances_().filter(x => x.id === id)[0];
+  if (!a) throw new Error('Advance not found.');
+  managedEmployee_(ctx, a.empId, true);
+  if (!/^\d{4}-\d{2}$/.test(String(ym))) throw new Error('Choose the month.');
+  if (ym < a.startMonth) throw new Error('This advance starts in ' + ymLabel_(a.startMonth) + '.');
+  if (isLocked_(ym)) throw new Error('Payroll for ' + ymLabel_(ym) + ' is locked.');
+  const clear = amount === '' || amount === null || amount === undefined;
+  const value = clear ? null : Number(amount);
+  if (!clear && (!isFinite(value) || value < 0)) throw new Error('Enter a valid amount (0 to skip the month).');
+  note = String(note || '').trim().slice(0, 200);
+
+  const sh = sheetOrCreate_(SHEET.ADV_MONTHS, ADV_MONTH_HEADERS);
+  const existing = readAdvMonths_()[a.id + '|' + ym];
+  const before = existing ? existing.amount : 'normal (' + a.monthly + ')';
+  if (clear) {
+    if (existing) sh.deleteRow(existing.row);
+  } else {
+    const row = [a.id, a.empId, "'" + ym, value, note, ctx.emp.id + ' ' + ctx.emp.name,
+      Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')];
+    if (existing) sh.getRange(existing.row, 1, 1, row.length).setValues([row]);
+    else sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  }
+  forget_('advmonths');
+  audit_(ctx.emp, 'ADVANCE_MONTH', a.empId, ym, a.id + ': ' + before + ' → ' + (clear ? 'normal (' + a.monthly + ')' : value === 0 ? 'skip' : value) + (note ? ' | ' + note : ''));
   return adminAdvances(token);
 }
 
@@ -1885,20 +2037,49 @@ function advanceState_(a, ym) {
   let remaining = a.amount;
   let deductedBefore = 0;
   for (let m = a.startMonth; m < ym && remaining > 0; m = nextYm_(m)) {
-    const locked = lockedAdvance_(m, a.empId, a.id);
-    const d = locked !== null ? locked : (a.status === 'ACTIVE' ? Math.min(a.monthly, remaining) : 0);
+    const d = advanceDeduction_(a, m, remaining);
     remaining -= d;
     deductedBefore += d;
   }
   let thisMonth = 0;
-  if (ym >= a.startMonth && remaining > 0) {
-    const locked = lockedAdvance_(ym, a.empId, a.id);
-    thisMonth = locked !== null ? locked : (a.status === 'ACTIVE' ? Math.min(a.monthly, remaining) : 0);
-  }
+  if (ym >= a.startMonth && remaining > 0) thisMonth = advanceDeduction_(a, ym, remaining);
+  const change = readAdvMonths_()[a.id + '|' + ym];
   return {
-    deductedBefore: round2_(deductedBefore), thisMonth: round2_(thisMonth),
+    deductedBefore: round2_(deductedBefore), thisMonth: round2_(thisMonth), changed: !!change,
+    changeNote: change ? change.note : '',
     balanceBefore: round2_(Math.max(0, remaining)), balanceAfter: round2_(Math.max(0, remaining - thisMonth)),
   };
+}
+
+/**
+ * Deduction of one advance in one month:
+ *   locked month → what was actually deducted; CLOSED → 0;
+ *   a change set for that month → that amount (0 = skip), even while paused;
+ *   otherwise the monthly instalment while ACTIVE, 0 while PAUSED. Never more than the balance.
+ */
+function advanceDeduction_(a, ym, remaining) {
+  const locked = lockedAdvance_(ym, a.empId, a.id);
+  if (locked !== null) return locked;
+  if (a.status === 'CLOSED') return 0;
+  const change = readAdvMonths_()[a.id + '|' + ym];
+  if (change) return Math.min(change.amount, remaining);
+  return a.status === 'ACTIVE' ? Math.min(a.monthly, remaining) : 0;
+}
+
+/** { 'advanceId|yyyy-MM': { amount, note, row } } */
+function readAdvMonths_() {
+  return memo_('advmonths', () => {
+    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.ADV_MONTHS);
+    const map = {};
+    if (!sh || sh.getLastRow() < 2) return map;
+    sh.getRange(2, 1, sh.getLastRow() - 1, ADV_MONTH_HEADERS.length).getValues().forEach((r, i) => {
+      const ym = toYm_(r[2]);
+      if (String(r[0]).trim() && ym && r[3] !== '') {
+        map[String(r[0]).trim() + '|' + ym] = { amount: Math.max(0, Number(r[3]) || 0), note: String(r[4] || ''), row: i + 2 };
+      }
+    });
+    return map;
+  });
 }
 
 function advancesForMonth_(empId, ym) {
@@ -1908,7 +2089,8 @@ function advancesForMonth_(empId, ym) {
     const st = advanceState_(a, ym);
     if (st.thisMonth > 0 || st.balanceBefore > 0) {
       items.push({ id: a.id, amount: a.amount, monthly: a.monthly, note: a.note, status: a.status,
-        wanted: st.thisMonth, balanceBefore: st.balanceBefore });
+        wanted: st.thisMonth, balanceBefore: st.balanceBefore, changed: st.changed, changeNote: st.changeNote,
+        startMonth: a.startMonth });
       total += st.thisMonth;
     }
   });
@@ -1933,6 +2115,7 @@ function readAdvances_() {
       dateGiven: toDateStr_(r[3]), amount: Number(r[4]) || 0, monthly: Number(r[5]) || 0,
       startMonth: toYm_(r[6]), status: String(r[7] || 'ACTIVE').trim().toUpperCase(), note: String(r[8] || ''),
       createdBy: String(r[9] || ''),
+      topUps: String(r[11] || '').split('\n').map(x => x.trim()).filter(String),
     })).filter(a => a.id && a.empId && a.startMonth);
   });
 }
@@ -2311,7 +2494,7 @@ function readRequests_() {
       from: toDateStr_(r[5]), to: toDateStr_(r[6]) || toDateStr_(r[5]), in: toTimeStr_(r[7]), out: toTimeStr_(r[8]),
       leaveType: String(r[9] || '').toUpperCase(), reason: String(r[10] || ''), status: String(r[11] || '').toUpperCase(),
       decidedBy: String(r[12] || ''), decidedAt: r[13] instanceof Date ? Utilities.formatDate(r[13], tz_(), 'yyyy-MM-dd HH:mm') : String(r[13] || ''),
-      remark: String(r[14] || ''),
+      remark: String(r[14] || ''), amount: Number(r[15]) || 0, monthly: Number(r[16]) || 0,
     })).filter(r => r.id);
   });
 }
