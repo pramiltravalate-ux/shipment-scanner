@@ -231,4 +231,6 @@ Every change is written to the **Audit Log** tab.
 - **Location and camera permission:** employees must allow both for the site. If they denied it, they open browser settings → Site settings → Location / Camera → Allow.
 - **Payslip download:** if the PDF download doesn't start on a phone, use **Print → Save as PDF**.
 - **Five wrong PIN attempts** lock that Employee ID for 15 minutes.
+- **Speed:** the Settings, Employees, Holidays, Admin Permissions and Payroll Locks tabs are kept in Google's cache, so most actions don't open them. Edits made by hand in those tabs reach the app straight away, because the cache is cleared on edit. Screens you have already opened show at once and then refresh.
+- **Automatic retry:** if Google answers with an error page (for example a 404) or the network drops, the app retries up to 3 times. Retries never create duplicate entries.
 - **The morning rush:** selfies are uploaded before the app waits its turn to write to the sheet, so many people can check in at the same minute.

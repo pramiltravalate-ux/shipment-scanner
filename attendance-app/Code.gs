@@ -112,7 +112,46 @@ function memo_(key, fn) {
   return MEMO[key];
 }
 function forget_() {
-  for (let i = 0; i < arguments.length; i++) delete MEMO[arguments[i]];
+  for (let i = 0; i < arguments.length; i++) {
+    delete MEMO[arguments[i]];
+    if (CACHED_SHEETS[arguments[i]]) dropSheetCache_(CACHED_SHEETS[arguments[i]]);
+  }
+}
+
+/*
+ * Tabs that rarely change are kept in Google's script cache (shared by all users for up to 6 hours), so
+ * most requests don't have to open them. The cache is cleared whenever the app writes to them, and by
+ * onEdit() when someone edits them by hand in the Sheet.
+ */
+const CACHED_SHEETS = {
+  settings: 'Settings', employees: 'Employees', holidays: 'Holidays', perms: 'Admin Permissions', locks: 'Payroll Locks',
+};
+
+/** All values of a tab (dates as 'yyyy-MM-dd', times as 'HH:mm'); null when the tab does not exist. */
+function sheetValues_(name) {
+  const key = 'sv2_' + name;
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const sh = SpreadsheetApp.getActive().getSheetByName(name);
+  if (!sh) return null;
+  const tz = tz_();
+  const values = sh.getDataRange().getValues().map(r => r.map(v => (v instanceof Date
+    ? Utilities.formatDate(v, tz, v.getFullYear() < 1900 ? 'HH:mm' : 'yyyy-MM-dd') : v)));
+  try {
+    const json = JSON.stringify(values);
+    if (json.length < 95000) cache.put(key, json, 21600);
+  } catch (e) { /* too big or cache unavailable: just don't cache */ }
+  return values;
+}
+
+function dropSheetCache_(name) {
+  try { CacheService.getScriptCache().remove('sv2_' + name); } catch (e) { /* ignore */ }
+}
+
+/** Simple trigger: clears the cache of a tab when it is edited by hand. */
+function onEdit(e) {
+  try { dropSheetCache_(e.range.getSheet().getName()); } catch (err) { /* ignore */ }
 }
 
 /* ------------------------------------------------------------------ */
@@ -144,17 +183,26 @@ const API_FUNCTIONS = {
 };
 
 function doPost(e) {
-  let out;
+  let json;
+  let rid = '';
   try {
     const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    // The page retries when a reply is lost or Google answers with an error page. A retried request
+    // carries the same id, so it gets the first answer instead of running the action twice.
+    rid = /^[\w-]{8,64}$/.test(String(req.rid || '')) ? 'rid_' + req.rid : '';
+    const done = rid ? CacheService.getScriptCache().get(rid) : null;
+    if (done) return ContentService.createTextOutput(done).setMimeType(ContentService.MimeType.JSON);
     const fn = Object.prototype.hasOwnProperty.call(API_FUNCTIONS, req.fn) ? API_FUNCTIONS[req.fn] : null;
     if (!fn) throw new Error('Unknown action.');
     const result = fn.apply(null, Array.isArray(req.args) ? req.args : []);
-    out = { ok: true, result: result === undefined ? null : result };
+    json = JSON.stringify({ ok: true, result: result === undefined ? null : result });
   } catch (err) {
-    out = { ok: false, error: String((err && err.message) || err) };
+    json = JSON.stringify({ ok: false, error: String((err && err.message) || err) });
   }
-  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+  if (rid && json.length < 95000) {
+    try { CacheService.getScriptCache().put(rid, json, 600); } catch (err) { /* ignore */ }
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Company name for the login screen (no login needed). */
@@ -225,7 +273,7 @@ function setup() {
   sh = getOrCreate_(ss, SHEET.SNAPSHOTS, SNAP_HEADERS);
   sh.getRange('A:A').setNumberFormat('@');
 
-  forget_('settings');
+  forget_('settings', 'employees', 'holidays', 'perms', 'locks');
   getSelfieFolder_(getSettings_());
   installAutoCheckoutTrigger_();
 
@@ -258,7 +306,9 @@ function login(empId, pin) {
   if (!isHashed_(emp.pin)) writePin_(emp, pin); // PINs typed into the sheet are hashed on first login
   const token = Utilities.getUuid();
   cache.put('tok_' + token, emp.id, 21600); // 6 hours (CacheService maximum)
-  return { token: token, profile: profile_(emp) };
+  const out = { token: token, profile: profile_(emp) };
+  try { out.home = getHome(token); } catch (e) { /* the page will load it separately */ }
+  return out;
 }
 
 function logout(token) {
@@ -298,7 +348,7 @@ function verifyPin_(stored, pin) {
 }
 
 function writePin_(emp, pin) {
-  sheet_(SHEET.EMPLOYEES).getRange(emp.row, 3).setValue(hashPin_(pin));
+  sheet_(SHEET.EMPLOYEES).getRange(empRow_(emp), 3).setValue(hashPin_(pin));
   forget_('employees');
 }
 
@@ -948,11 +998,12 @@ function adminSaveStaff(token, data) {
     } else {
       const emp = managedEmployee_(ctx, data.id, true);
       const active = data.active !== false;
+      const row = empRow_(emp);
       const before = [emp.name, emp.salary, emp.joinDate, emp.phone, emp.active ? 'Active' : 'Inactive', emp.role].join(' / ');
-      sh.getRange(emp.row, 2).setValue(name);
-      sh.getRange(emp.row, 4).setValue(salary);
-      if (role && emp.role !== 'SUPER_ADMIN') sh.getRange(emp.row, 5).setValue(role);
-      sh.getRange(emp.row, 6, 1, 3).setValues([[active ? 'Yes' : 'No', "'" + joinDate, phone]]);
+      sh.getRange(row, 2).setValue(name);
+      sh.getRange(row, 4).setValue(salary);
+      if (role && emp.role !== 'SUPER_ADMIN') sh.getRange(row, 5).setValue(role);
+      sh.getRange(row, 6, 1, 3).setValues([[active ? 'Yes' : 'No', "'" + joinDate, phone]]);
       forget_('employees');
       audit_(ctx.emp, 'EDIT_EMPLOYEE', emp.id, '', before + ' → ' +
         [name, salary, joinDate, phone, active ? 'Active' : 'Inactive', role || emp.role].join(' / '));
@@ -1008,8 +1059,9 @@ function adminSavePf(token, empId, data) {
   const sh = sheet_(SHEET.EMPLOYEES);
   ensureHeaders_(sh, EMP_HEADERS);
   const h = headerIndex_(sh);
+  const row = empRow_(emp);
   ['PF Active', 'PF Bank Salary', 'PF Employee', 'PF Employer'].forEach((name, i) => {
-    sh.getRange(emp.row, h[name] + 1).setValue(vals[i]);
+    sh.getRange(row, h[name] + 1).setValue(vals[i]);
   });
   SpreadsheetApp.flush();
   forget_('employees');
@@ -1111,7 +1163,7 @@ function sweepOpenEntries_(waitForLock) {
 
   const lock = LockService.getScriptLock();
   if (waitForLock) lock.waitLock(30000);
-  else if (!lock.tryLock(5000)) return 0;
+  else if (!lock.tryLock(200)) return 0; // busy (morning rush): the hourly trigger will do it
   try {
     forget_('att');
     const holidays = getHolidays_();
@@ -1199,13 +1251,20 @@ function clearedText_(byEmp) {
   return 'CLEARED by ' + byEmp.id + ' ' + Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm');
 }
 
-/** (Re)creates the hourly trigger that runs autoCheckout(). */
+/** Installable trigger: rows/tabs added or removed by hand → clear all cached tabs. */
+function onSheetChange() {
+  Object.keys(CACHED_SHEETS).forEach(k => dropSheetCache_(CACHED_SHEETS[k]));
+}
+
+/** (Re)creates the hourly trigger that runs autoCheckout() and the sheet-change trigger. */
 function installAutoCheckoutTrigger_() {
   try {
     ScriptApp.getProjectTriggers().forEach(t => {
-      if (t.getHandlerFunction() === 'autoCheckout') ScriptApp.deleteTrigger(t);
+      const fn = t.getHandlerFunction();
+      if (fn === 'autoCheckout' || fn === 'onSheetChange') ScriptApp.deleteTrigger(t);
     });
     ScriptApp.newTrigger('autoCheckout').timeBased().everyHours(1).create();
+    ScriptApp.newTrigger('onSheetChange').forSpreadsheet(SpreadsheetApp.getActive()).onChange().create();
   } catch (e) {
     Logger.log('Could not install the auto check-out trigger: ' + e);
   }
@@ -1356,7 +1415,7 @@ function superSetRole(token, empId, role) {
   const emp = findEmployee_(String(empId).toUpperCase());
   if (!emp) throw new Error('Employee not found.');
   if (emp.role === 'SUPER_ADMIN') throw new Error('Super admins can only be changed in the Employees sheet.');
-  sheet_(SHEET.EMPLOYEES).getRange(emp.row, 5).setValue(role);
+  sheet_(SHEET.EMPLOYEES).getRange(empRow_(emp), 5).setValue(role);
   forget_('employees');
   audit_(ctx.emp, 'SET_ROLE', emp.id, '', emp.role + ' → ' + role);
   return superListAdmins(token);
@@ -1416,11 +1475,10 @@ function permsFor_(emp, saved) {
 
 function readPermissions_() {
   return memo_('perms', () => {
-    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.PERMISSIONS);
+    const values = sheetValues_(SHEET.PERMISSIONS);
     const map = {};
-    if (!sh || sh.getLastRow() < 2) return map;
-    const values = sh.getDataRange().getValues();
-    const h = headerIndex_(sh, values[0]);
+    if (!values || values.length < 2) return map;
+    const h = headerIndex_(null, values[0]);
     values.slice(1).forEach(r => {
       const id = String(r[0]).trim().toUpperCase();
       if (!id) return;
@@ -1858,12 +1916,11 @@ function readAdvances_() {
 
 function getLocks_() {
   return memo_('locks', () => {
-    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.LOCKS);
+    const values = sheetValues_(SHEET.LOCKS);
     const map = {};
-    if (!sh || sh.getLastRow() < 2) return map;
-    sh.getRange(2, 1, sh.getLastRow() - 1, 3).getDisplayValues().forEach(r => {
+    (values || []).slice(1).forEach(r => {
       const ym = toYm_(r[0]);
-      if (ym) map[ym] = { by: r[1], at: r[2] };
+      if (ym) map[ym] = { by: String(r[1]), at: String(r[2]) };
     });
     return map;
   });
@@ -2037,7 +2094,9 @@ function getSelfieFolder_(s) {
 function getSettings_() {
   return memo_('settings', () => {
     const raw = {};
-    sheet_(SHEET.SETTINGS).getDataRange().getValues().slice(1).forEach(r => {
+    const values = sheetValues_(SHEET.SETTINGS);
+    if (!values) sheet_(SHEET.SETTINGS); // throws the "run setup()" message
+    values.slice(1).forEach(r => {
       if (String(r[0]).trim()) raw[String(r[0]).trim()] = r[1];
     });
     const blank = k => raw[k] === undefined || raw[k] === null || String(raw[k]).trim() === '';
@@ -2105,9 +2164,9 @@ function setSetting_(key, value) {
 
 function getEmployees_() {
   return memo_('employees', () => {
-    const sh = sheet_(SHEET.EMPLOYEES);
-    const values = sh.getDataRange().getValues();
-    const h = headerIndex_(sh, values[0]);
+    const values = sheetValues_(SHEET.EMPLOYEES);
+    if (!values) sheet_(SHEET.EMPLOYEES); // throws the "run setup()" message
+    const h = headerIndex_(null, values[0]);
     const get = (r, name) => (h[name] === undefined ? '' : r[h[name]]);
     return values.slice(1)
       .map((r, i) => ({ r: r, row: i + 2 }))
@@ -2159,6 +2218,21 @@ function ensureHeaders_(sh, headers) {
       sh.getRange(1, col).setValue(name).setFontWeight('bold').setBackground('#e8eefc');
     }
   });
+}
+
+/**
+ * The sheet row of an employee, checked against the sheet itself (rows may have been inserted or
+ * deleted by hand since the employee list was cached).
+ */
+function empRow_(emp) {
+  const sh = sheet_(SHEET.EMPLOYEES);
+  const idAt = row => String(sh.getRange(row, 1).getValue()).trim().toUpperCase();
+  if (emp.row >= 2 && emp.row <= sh.getLastRow() && idAt(emp.row) === emp.id) return emp.row;
+  const ids = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(r => String(r[0]).trim().toUpperCase());
+  forget_('employees');
+  const i = ids.indexOf(emp.id);
+  if (i < 1) throw new Error('Employee ' + emp.id + ' was not found in the sheet.');
+  return i + 1;
 }
 
 function findEmployee_(empId) {
@@ -2219,9 +2293,8 @@ function readRequests_() {
 
 function getHolidays_() {
   return memo_('holidays', () => {
-    const sh = sheet_(SHEET.HOLIDAYS);
     const map = {};
-    sh.getDataRange().getValues().slice(1).forEach(r => {
+    (sheetValues_(SHEET.HOLIDAYS) || []).slice(1).forEach(r => {
       const d = toDateStr_(r[0]);
       if (d) map[d] = String(r[1] || 'Holiday');
     });
