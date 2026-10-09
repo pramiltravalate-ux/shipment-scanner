@@ -646,7 +646,7 @@ function adminSummary(token, ym) {
   const pfRows = rows.filter(r => r.pf);
   const totals = {
     employees: rows.length, pfEmployees: pfRows.length,
-    monthlySalary: sum(rows, 'salary'), otPay: sum(rows, 'otPay'), leaveDed: sum(rows, 'leaveDed'),
+    monthlySalary: sum(rows, 'salary'), earned: sum(rows, 'earned'), prorated: rows.some(r => r.prorated), otPay: sum(rows, 'otPay'), leaveDed: sum(rows, 'leaveDed'),
     halfDayDed: sum(rows, 'halfDayDed'), lateCutDed: sum(rows, 'lateCutDed'), advance: sum(rows, 'advance'),
     total: sum(rows, 'net'),
     present: sum(rows, 'present'), absent: rows.reduce((a, r) => a + r.absent + r.notJoined, 0), halfDay: sum(rows, 'halfDay'),
@@ -1698,13 +1698,25 @@ function monthSummary_(emp, ym, s, attByDate, holidays, advanceTotal) {
   t.deductDays += t.lateCutDays;
   t.payableDays = Math.max(0, dim - t.deductDays);
 
+  // Days of the month that have passed: the whole month for past months; for the current month the days
+  // up to yesterday, plus today once the employee has checked in. Salary is earned only for these days.
+  const thisYm = today.slice(0, 7);
+  if (ym < thisYm) t.elapsedDays = dim;
+  else if (ym > thisYm) t.elapsedDays = 0;
+  else {
+    const todayRec = attByDate[today];
+    t.elapsedDays = Number(today.slice(8, 10)) - 1 + (todayRec && todayRec.in ? 1 : 0);
+  }
+  t.elapsedUntil = t.elapsedDays ? ym + '-' + pad2_(t.elapsedDays) : '';
+
   return { totals: t, pay: calcPay_(emp, s, t, dim, advanceTotal || 0), days: days };
 }
 
 /**
  * Salary for the month.
  *   Per day = salary ÷ Salary Days Basis (30), per hour = per day ÷ Standard Hours, per minute = per hour ÷ 60.
- *   Gross   = salary + OT pay − leave − half-day − late-cut deductions.
+ *   Earned  = salary × days passed ÷ days in month (the full salary once the month is over).
+ *   Gross   = earned + OT pay − leave − half-day − late-cut deductions.
  *   Net     = Gross − advance instalment (− PF employee for PF employees).
  * PF employees: Bank = PF Bank Salary − PF Employee, Cash = Salary − PF Bank Salary, and OT/deductions/advance
  * are applied to Cash (or Bank, per the "OT & Deductions Paid In" setting).
@@ -1716,15 +1728,19 @@ function calcPay_(emp, s, t, dim, advanceWanted) {
   const perHour = s.standardHours > 0 ? perDay / s.standardHours : 0;
   const perMin = perHour / 60;
 
+  const ratio = t.elapsedDays === undefined ? 1 : Math.min(1, t.elapsedDays / dim);
+  const earned = R(emp.salary * ratio);
+
   const leaveDed = R((t.absent + t.notJoined) * perDay);
   const halfDayDed = R(t.halfDay * 0.5 * perDay);
   const lateCutDed = R(t.lateCutDays * perDay);
-  const deduction = Math.min(emp.salary, leaveDed + halfDayDed + lateCutDed);
+  const deduction = Math.min(earned, leaveDed + halfDayDed + lateCutDed);
   const otPay = R(t.otMin * perMin * s.otMultiplier);
-  const gross = round2_(emp.salary - deduction + otPay);
+  const gross = round2_(earned - deduction + otPay);
 
   const pay = {
-    salary: round2_(emp.salary), perDay: round2_(perDay), hourly: round2_(perHour), perMin: round2_(perMin),
+    salary: round2_(emp.salary), earned: earned, prorated: ratio < 1, elapsedDays: t.elapsedDays, daysInMonth: dim,
+    perDay: round2_(perDay), hourly: round2_(perHour), perMin: round2_(perMin),
     leaveDed: leaveDed, halfDayDed: halfDayDed, lateCutDed: lateCutDed, deduction: round2_(deduction),
     otPay: otPay, gross: gross, advance: 0,
     pf: false, pfBankSalary: 0, pfEmployee: 0, pfEmployer: 0, bank: 0, cash: 0, net: gross,
@@ -1737,11 +1753,12 @@ function calcPay_(emp, s, t, dim, advanceWanted) {
   }
 
   const pf = pfAmounts_(emp, s);
-  const bankSalary = R(pf.bankSalary), pfEmp = R(pf.employee), pfEr = R(pf.employer);
+  // PF and Basic Salary are counted for the same days as the salary.
+  const bankSalary = R(pf.bankSalary * ratio), pfEmp = R(pf.employee * ratio), pfEr = R(pf.employer * ratio);
   pay.advance = round2_(Math.min(advanceWanted, Math.max(0, gross - pfEmp)));
   let bank, cash;
   if (s.adjustIn === 'BANK') {
-    cash = emp.salary - bankSalary;
+    cash = earned - bankSalary;
     bank = gross - cash - pfEmp - pay.advance;
   } else {
     bank = bankSalary - pfEmp;
@@ -1890,7 +1907,9 @@ function payslipHtml_(emp, m) {
   const e = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const row = (a, b) => '<tr><td>' + a + '</td><td class="r">' + b + '</td></tr>';
 
-  let earn = row('Monthly Salary', money(p.salary)) + row('OT (' + mins(t.otMin) + ')', money(p.otPay));
+  let earn = row('Monthly Salary', money(p.salary)) +
+    (p.prorated ? row('Salary earned (' + p.elapsedDays + ' of ' + p.daysInMonth + ' days)', money(p.earned)) : '') +
+    row('OT (' + mins(t.otMin) + ')', money(p.otPay));
   let ded = row('Leaves (' + (t.absent + t.notJoined) + ' days)', money(p.leaveDed)) +
     row('Half Days (' + t.halfDay + ')', money(p.halfDayDed));
   if (p.lateCutDed) ded += row('Late marks', money(p.lateCutDed));
@@ -1906,7 +1925,7 @@ function payslipHtml_(emp, m) {
     '.tot td{font-weight:bold;border-top:2px solid #1b2333}.muted{color:#6b7486}.stamp{color:#c27c0e;font-weight:bold}' +
     '</style></head><body>' +
     '<h1>' + e(s.company) + '</h1><div class="muted">Salary slip — ' + e(m.label) + '</div>' +
-    (m.locked ? '' : '<div class="stamp">PROVISIONAL — month not locked yet</div>') +
+    (m.locked ? '' : '<div class="stamp">PROVISIONAL — ' + (p.prorated ? 'salary up to ' + e(t.elapsedUntil || 'start of month') : 'month not locked yet') + '</div>') +
     '<h2>Employee</h2><table>' + row('Name', e(emp.name)) + row('Employee ID', e(emp.id)) +
     (emp.joinDate ? row('Joining date', e(emp.joinDate)) : '') + '</table>' +
     '<h2>Attendance</h2><div>' +

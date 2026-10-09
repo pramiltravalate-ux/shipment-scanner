@@ -140,6 +140,8 @@ Gross      = Total Salary + OT pay − Leaves − Half Days
 Net        = Gross − advance instalment (− PF Employee for PF employees)
 ```
 
+**Current month:** the salary is shown only for the days that have passed: Monthly Salary × days passed ÷ days in the month. Today counts once the employee has checked in. PF and Basic Salary are counted for the same days. The amount grows every day, and once the month is over it is the full month's salary. The Monthly Summary and payslips work the same way.
+
 **Employees with PF:**
 
 | | Example: ₹15,000, full month |
