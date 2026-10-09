@@ -192,7 +192,7 @@ At month end, check **Admin → Payroll** and tap **🔒 Lock month**. After tha
 | Role | Can do |
 |---|---|
 | `EMPLOYEE` | Own attendance, month, payslip, requests and PIN |
-| `ADMIN` | Only what the super admin allows. Admins **never see or change super admins**, and never change their own data unless given *Edit Own Entries* |
+| `ADMIN` | Only what the super admin allows. Admins can **never change another admin or a super admin**, even with *All employees*. Super admins are also hidden from them. Admins change their own data only with *Edit Own Entries*. Admins' own requests and missed check-outs go to a super admin |
 | `SUPER_ADMIN` | Everything, plus the **Admins** and **Activity** screens, and unlocking months |
 
 Permissions the super admin can give each admin (**Super Admin → Admins**):
