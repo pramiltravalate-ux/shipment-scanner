@@ -212,6 +212,7 @@ Permissions the super admin can give each admin (**Super Admin → Admins**):
 - Manage Advances
 - Export Payroll (download the Excel file)
 - Lock Payroll
+- Mark Attendance for Others (no phone / forgot phone, e.g. a guard)
 - View Bank / Cash Split
 - View Monthly Summary (the bank/cash totals on it also need *View Bank / Cash Split*)
 - Edit Own Entries
@@ -228,6 +229,13 @@ Each admin also gets a scope: **All employees** or **Only selected**.
 - **Admin marks today as Leave or Absent:** if the employee then checks in, the check-in replaces that status.
 
 Every change is written to the **Audit Log** tab.
+
+### Employees without a smartphone, or who forgot their phone (Admin → Mark Attendance)
+An admin, or anyone you appoint (e.g. a **guard**), can check employees in and out from their own phone:
+- **This phone's GPS** must be at the office, the same radius check as normal. **No selfie** is needed.
+- Every entry records who marked it ("Check-in marked by Guard (E007)"). It shows a 👤 tag on the admin screens and is written to the Audit Log. These entries are not counted as suspicious.
+- **Setting up a guard:** add them as an employee and make them an **Admin** under Super Admin → Admins. Give them **only** *Mark Attendance for Others*, and choose *All employees* or only the people they should mark. They then see just the Mark Attendance screen, and can't see salaries or change anything else.
+- They can't mark admins, super admins or themselves. Only today's check-in and check-out can be marked here; for other days use Entries.
 
 ## 5. Things to know
 
