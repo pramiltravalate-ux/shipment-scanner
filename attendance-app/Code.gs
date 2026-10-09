@@ -128,6 +128,40 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
+/**
+ * JSON API used when the page is hosted outside Google (e.g. GitHub Pages). This avoids Google's
+ * "unable to open the file" error in browsers signed into several Google accounts.
+ * Request body (sent as text/plain): { "fn": "getHome", "args": [token, ...] }
+ */
+const API_FUNCTIONS = {
+  publicInfo, login, logout, changePin, getHome, checkIn, checkOut, getMyMonth, getPayslip,
+  submitRequest, myRequests, cancelRequest,
+  adminToday, adminSummary, adminMonth, adminEmployeeMonth, adminEntryOptions, adminGetEntry, adminSaveEntry,
+  adminDeleteEntry, adminBulkEntry, adminRequests, adminDecideRequest, adminDecideOt, adminClearMissed,
+  adminStaff, adminSaveStaff, adminResetPin, adminEmployees, adminSavePf, adminAdvances, adminSaveAdvance,
+  adminSetAdvanceStatus, adminLockMonth, superUnlockMonth, adminGetSelfie, adminExportPayroll,
+  superListAdmins, superSavePermissions, superSetRole, superAuditLog,
+};
+
+function doPost(e) {
+  let out;
+  try {
+    const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const fn = Object.prototype.hasOwnProperty.call(API_FUNCTIONS, req.fn) ? API_FUNCTIONS[req.fn] : null;
+    if (!fn) throw new Error('Unknown action.');
+    const result = fn.apply(null, Array.isArray(req.args) ? req.args : []);
+    out = { ok: true, result: result === undefined ? null : result };
+  } catch (err) {
+    out = { ok: false, error: String((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Company name for the login screen (no login needed). */
+function publicInfo() {
+  return { company: getSettings_().company };
+}
+
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Attendance App')
     .addItem('Run setup / repair sheets', 'setup')

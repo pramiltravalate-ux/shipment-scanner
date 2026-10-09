@@ -51,6 +51,20 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
 
 > **Updating from an earlier version:** paste both files, run `setup` again (it only adds what is missing and never deletes data), then go to **Deploy → Manage deployments → ✏ Edit → Version: New version → Deploy**. This keeps the same URL.
 
+### Recommended: open the app from GitHub Pages (works with several Google accounts)
+Chrome shows *"Google Drive – Sorry, unable to open the file at present"* for `script.google.com/macros/...` links when the phone is signed into more than one Google account. This is a Google bug. To avoid it, the same page is also published on GitHub Pages and talks to your Apps Script in the background, without any Google login:
+
+1. Merge this branch into `main`. GitHub Pages publishes `attendance/index.html`.
+2. Copy your **deployment ID** from **Deploy → Manage deployments**. It's the long `AKfycb…` text above the Web app URL.
+3. Share this link with everyone:
+   ```
+   https://pramiltravalate-ux.github.io/shipment-scanner/attendance/?id=YOUR_DEPLOYMENT_ID
+   ```
+   The phone remembers the ID after the first visit, so **Add to Home Screen** works too.
+
+GPS, the camera and PDF downloads also work better this way, because the page is not inside Google's frame.
+**After each code update:** paste `Code.gs` into Apps Script and redeploy (**Edit → New version**, which keeps the same ID). Then copy `attendance-app/Index.html` to `attendance/index.html` in GitHub (the two files are identical).
+
 ---
 
 ## 2. Fill the Sheet
