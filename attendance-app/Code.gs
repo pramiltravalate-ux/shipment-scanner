@@ -158,7 +158,12 @@ function onEdit(e) {
 /* Web app entry + sheet menu                                          */
 /* ------------------------------------------------------------------ */
 
-function doGet() {
+function doGet(e) {
+  // Health check used by the hosted page to tell "deployment not public" from "no internet".
+  if (e && e.parameter && e.parameter.ping) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, app: 'attendance' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   const t = HtmlService.createTemplateFromFile('Index');
   t.company = getSettings_().company;
   return t.evaluate()
