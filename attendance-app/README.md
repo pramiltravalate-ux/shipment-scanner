@@ -58,7 +58,7 @@ Chrome shows *"Google Drive – Sorry, unable to open the file at present"* for 
 2. Copy your **deployment ID** from **Deploy → Manage deployments**. It's the long `AKfycb…` text above the Web app URL.
 3. Share this link with everyone:
    ```
-   https://pramiltravalate-ux.github.io/shipment-scanner/attendance/?id=YOUR_DEPLOYMENT_ID
+   https://travalateapp.github.io/shipment-scanner/attendance/?id=YOUR_DEPLOYMENT_ID
    ```
    The phone remembers the ID after the first visit, so **Add to Home Screen** works too.
 
