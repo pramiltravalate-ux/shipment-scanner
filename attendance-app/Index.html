@@ -273,7 +273,8 @@
     HOLIDAY: 'H', OFF_WORK: 'OW', NOT_MARKED: '', NOT_JOINED: '–', UPCOMING: '' };
   var FLAGS = {
     WEAK_GPS: 'Weak GPS', WEAK_GPS_OUT: 'Weak GPS at check-out', REPEAT_GPS: 'Same GPS as another day',
-    SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie', NO_CHECKOUT: 'Did not check out'
+    SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie', NO_CHECKOUT: 'Did not check out',
+    PROXY: 'Check-in marked by guard/admin', PROXY_OUT: 'Check-out marked by guard/admin'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -289,7 +290,9 @@
   function lateChip(late) { return late ? ' <span class="chip s-LATE">Late</span>' : ''; }
   function flagChips(flags) {
     var list = Array.isArray(flags) ? flags : String(flags || '').split(/\s+/).filter(String);
-    return list.map(function (f) { return ' <span class="chip s-FLAG">⚠ ' + esc(FLAGS[f] || f) + '</span>'; }).join('');
+    return list.map(function (f) {
+      return /^PROXY/.test(f) ? ' <span class="chip s-LEAVE">👤 ' + esc(FLAGS[f]) + '</span>' : ' <span class="chip s-FLAG">⚠ ' + esc(FLAGS[f] || f) + '</span>';
+    }).join('');
   }
   function money(n, cur) {
     return (cur || '') + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -1029,6 +1032,7 @@
 
   /* ---------------- Admin ---------------- */
   var ADMIN_TABS = [
+    { key: 'mark', label: 'Mark Attendance', perm: 'markOthers', load: function () { loadProxy(); } },
     { key: 'today', label: 'Today', perm: 'viewToday', load: function () { loadAdminToday(); } },
     { key: 'summary', label: 'Monthly Summary', perm: 'viewSummary', load: function () { loadSummary(S.admin.sumYm || ymNow()); } },
     { key: 'payroll', label: 'Payroll', perm: 'viewPayroll', load: function () { loadAdminMonth(S.admin.ym || ymNow()); } },
@@ -1063,6 +1067,95 @@
   function adminBody(html) { var el = $('adminBody'); if (el) el.innerHTML = html; }
   function adminLoading() { adminBody('<div class="card center"><div class="spinner"></div></div>'); }
   function adminErr(e) { adminBody('<div class="card">' + errBox(e) + '</div>'); }
+
+  /* ---------- Mark attendance for others (no smartphone / forgot phone) ---------- */
+  function loadProxy() {
+    adminLoading();
+    var sentAt = Date.now();
+    api('proxyList', S.token).then(function (r) {
+      S.proxy = { data: r, filter: '', pos: S.proxy && S.proxy.pos, loadedAt: Date.now(),
+        phoneEpoch: Math.round((sentAt + Date.now()) / 2) };
+      renderProxy();
+      if (!proxyPosFresh()) proxyLocate();
+    }).catch(adminErr);
+  }
+
+  function proxyPosFresh() { var p = S.proxy && S.proxy.pos; return p && !p.error && Date.now() - p.at < 3 * 60000; }
+
+  /** Phone clock check, same rule as the employee's own check-in. */
+  function proxyTimeOk() {
+    var P = S.proxy, d = P.data, tol = Math.max(1, d.clockTolerance || 3) * 60000;
+    var elapsed = Date.now() - P.loadedAt;
+    return Math.abs(P.phoneEpoch - d.server.epoch) <= tol &&
+      Math.abs(wallMs(phoneClock().local) - (wallMs(d.server.local) + elapsed)) <= tol;
+  }
+
+  function proxyLocate() {
+    var o = S.proxy.data.office;
+    S.proxy.pos = { locating: true };
+    renderProxyLoc();
+    getBestPosition(o.maxAccuracy).then(function (p) {
+      p.at = Date.now();
+      p.distance = distance(p.lat, p.lng, o.lat, o.lng);
+      if (o.lat == null) p.error = 'Office location is not set yet.';
+      else if (p.accuracy > o.maxAccuracy) p.error = 'GPS signal is weak (±' + Math.round(p.accuracy) + ' m). Move near a window or open area.';
+      else if (p.distance > o.radius) p.error = 'This phone is ' + Math.round(p.distance) + ' m from the office. It must be within ' + o.radius + ' m.';
+      S.proxy.pos = p; renderProxyLoc();
+    }).catch(function (e) { S.proxy.pos = { error: e.message }; renderProxyLoc(); });
+  }
+
+  function renderProxyLoc() {
+    var el = $('pxLoc'); if (!el) return;
+    var p = S.proxy.pos || {};
+    el.innerHTML = p.locating ? '<span class="spinner"></span> <span class="muted">Checking this phone\'s location…</span>'
+      : p.error ? errBox(p.error) + '<button class="btn small ghost" style="margin-top:8px" onclick="proxyLocate()">Retry location</button>'
+      : '<div class="row"><span>📍 <b style="color:var(--green)">At office</b> <span class="muted small">' + Math.round(p.distance) + ' m · ±' + Math.round(p.accuracy) + ' m</span></span>' +
+        '<button class="link" onclick="proxyLocate()">Refresh</button></div>';
+  }
+
+  function renderProxy() {
+    var r = S.proxy.data, q = (S.proxy.filter || '').toLowerCase();
+    var html = '<div class="card"><h2>Mark attendance for others</h2>' +
+      '<p class="muted small" style="margin:-6px 0 8px">For employees without a smartphone or who forgot their phone. This phone must be at the office. No selfie needed. Each entry records your name.</p>' +
+      (proxyTimeOk() ? '' : '<div class="msg err">⚠ This phone\'s time is not correct. Turn ON "Automatic date &amp; time" and reload.</div>') +
+      '<div id="pxLoc"></div></div>';
+    html += '<div class="card"><input class="inp" id="pxSearch" placeholder="🔍 Search name or ID" value="' + esc(S.proxy.filter || '') + '" oninput="S.proxy.filter=this.value;renderProxyList()">' +
+      '<div id="pxList" style="margin-top:8px"></div></div>';
+    adminBody(html);
+    renderProxyLoc();
+    renderProxyList();
+    if (q) { var si = $('pxSearch'); si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
+  }
+
+  function renderProxyList() {
+    var r = S.proxy.data, q = (S.proxy.filter || '').toLowerCase().trim();
+    var list = r.list.filter(function (e) { return !q || e.name.toLowerCase().indexOf(q) >= 0 || e.id.toLowerCase().indexOf(q) >= 0; });
+    var html = list.length ? '' : '<p class="muted">No employees found.</p>';
+    list.forEach(function (e) {
+      var i = r.list.indexOf(e);
+      var btn = !e.in ? '<button class="btn small green" onclick="proxyMark(' + i + ',\'in\',this)">Check In</button>'
+        : !e.out ? '<button class="btn small red" onclick="proxyMark(' + i + ',\'out\',this)">Check Out</button>'
+        : '<span class="chip s-PRESENT">✓ Done</span>';
+      html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
+        '<div class="sub">' + (e.in ? 'In ' + esc(e.in) + (e.out ? ' · Out ' + esc(e.out) : '') + (e.date !== r.date ? ' (' + esc(fmtDate(e.date)) + ')' : '') : 'Not checked in') +
+        (e.byOther ? ' · 👤 marked by guard/admin' : '') + '</div></div><div class="right">' + btn + '</div></div>';
+    });
+    $('pxList').innerHTML = html;
+  }
+
+  function proxyMark(i, mode, btn) {
+    var e = S.proxy.data.list[i];
+    if (!proxyTimeOk()) return toast('Phone time is not correct. Turn on automatic date & time.');
+    if (!proxyPosFresh()) { proxyLocate(); return toast('Checking location… tap again in a moment'); }
+    if (!confirm((mode === 'in' ? 'Check in ' : 'Check out ') + e.name + ' now?')) return;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    var p = S.proxy.pos;
+    api(mode === 'in' ? 'proxyCheckIn' : 'proxyCheckOut', S.token, e.id, p.lat, p.lng, p.accuracy, phoneClock()).then(function (r) {
+      S.proxy.data.list = r.list;
+      renderProxyList();
+      toast(e.name + (mode === 'in' ? ' checked in at ' + r.time + (r.late ? ' (Late)' : '') : ' checked out at ' + r.time + ' · ' + hrs(r.worked)));
+    }).catch(function (err) { btn.disabled = false; btn.textContent = mode === 'in' ? 'Check In' : 'Check Out'; toast(err.message); });
+  }
 
   /* ---------- Today ---------- */
   function loadAdminToday() {

@@ -38,6 +38,7 @@ const PERMISSIONS = [
   { key: 'viewSplit', label: 'View Bank / Cash Split', help: 'See In Bank and In Cash amounts (others only see Total Salary)' },
   { key: 'exportPayroll', label: 'Export Payroll', help: 'Download the monthly payroll as an Excel file' },
   { key: 'lockPayroll', label: 'Lock Payroll', help: 'Lock a finished month so nothing can change it' },
+  { key: 'markOthers', label: 'Mark Attendance for Others', help: 'Check employees in/out from this phone (no smartphone / forgot phone). Location is checked, no selfie. Give only this to a guard' },
   { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF / salary (normally off)' },
 ];
 const PERM_HEADERS = ['Emp ID', 'Name'].concat(PERMISSIONS.map(p => p.label))
@@ -66,6 +67,8 @@ const LOCK_HEADERS = ['Month', 'Locked By', 'Locked At'];
 const SNAP_HEADERS = ['Month', 'Emp ID', 'Name', 'Data (do not edit)'];
 
 const OVERRIDE_VALUES = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE'];
+/** Flags that count as "suspicious" on the admin Today screen (PROXY = marked by a guard/admin is not). */
+const SUSPICIOUS_FLAGS = ['WEAK_GPS', 'WEAK_GPS_OUT', 'REPEAT_GPS', 'SHARED_GPS', 'NO_SELFIE'];
 
 const DEFAULT_SETTINGS = [
   ['Company Name', 'My Company', 'Shown at the top of the app and on payslips'],
@@ -182,6 +185,7 @@ function doGet(e) {
 const API_FUNCTIONS = {
   publicInfo, login, logout, changePin, getHome, checkIn, checkOut, getMyMonth, getPayslip,
   submitRequest, myRequests, cancelRequest,
+  proxyList, proxyCheckIn, proxyCheckOut,
   adminToday, adminSummary, adminMonth, adminEmployeeMonth, adminEntryOptions, adminGetEntry, adminSaveEntry,
   adminDeleteEntry, adminBulkEntry, adminRequests, adminDecideRequest, adminDecideOt, adminClearMissed,
   adminStaff, adminSaveStaff, adminResetPin, adminEmployees, adminSavePf, adminAdvances, adminSaveAdvance,
@@ -409,15 +413,24 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
   const s = getSettings_();
   checkPhoneClock_(s, phoneClock);
   const loc = checkLocation_(s, lat, lng, accuracy);
+  return checkInCore_(emp, s, loc, selfieDataUrl, null);
+}
+
+/**
+ * Check-in for emp. byEmp = the person marking it for them (admin / guard), or null when the employee
+ * marks it on their own phone. Marked-for-others check-ins need no selfie and are flagged PROXY.
+ */
+function checkInCore_(emp, s, loc, selfieDataUrl, byEmp) {
+  const who = byEmp ? emp.name + ' has' : 'You have';
   const today = todayStr_();
   assertUnlocked_(today);
   const existing = () => byDate_(readAttendance_(), emp.id)[today];
-  if (existing() && existing().in) throw new Error('You have already checked in today.');
+  if (existing() && existing().in) throw new Error(who + ' already checked in today.');
 
   // The selfie is saved before taking the lock so that a morning rush does not queue up on Drive uploads.
   const now = Utilities.formatDate(new Date(), tz_(), 'HH:mm');
   let selfieUrl = '';
-  if (s.selfieRequired || selfieDataUrl) {
+  if ((s.selfieRequired && !byEmp) || selfieDataUrl) {
     selfieUrl = saveSelfie_(selfieDataUrl, today + '_' + emp.id + '_' + now.replace(':', '') + '.jpg', s);
   }
 
@@ -426,15 +439,18 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
   try {
     forget_('att');
     const rec = existing();
-    if (rec && rec.in) throw new Error('You have already checked in today.');
+    if (rec && rec.in) throw new Error(who + ' already checked in today.');
     const offType = offType_(today, s, getHolidays_());
     const late = !offType && toMinutes_(now) > s.shiftStartMin + s.lateGrace;
-    const flags = gpsFlags_(emp.id, today, loc, s);
+    // One phone marks many people from the same spot, so the "same GPS" checks don't apply to proxy marks.
+    const flags = byEmp ? ['PROXY'].concat(isFinite(loc.acc) && loc.acc > s.flagAccuracy ? ['WEAK_GPS'] : [])
+      : gpsFlags_(emp.id, today, loc, s);
+    const byNote = byEmp ? 'Check-in marked by ' + byEmp.name + ' (' + byEmp.id + ')' : '';
     const sh = sheet_(SHEET.ATTENDANCE);
 
     if (rec) {
       // An admin had already put a status (e.g. Leave / Absent) on today: the check-in replaces it.
-      const note = [rec.note, 'Status ' + rec.override + ' replaced by check-in'].filter(String).join(' · ');
+      const note = [rec.note, 'Status ' + rec.override + ' replaced by check-in', byNote].filter(String).join(' · ');
       sh.getRange(rec.row, COL.IN + 1, 1, 6).setValues([["'" + now, '', '', 'WORKING', late ? 'Yes' : '', '']]);
       sh.getRange(rec.row, COL.IN_LAT + 1, 1, 4).setValues([[loc.lat, loc.lng, loc.dist, loc.acc]]);
       sh.getRange(rec.row, COL.SELFIE + 1, 1, 3).setValues([[selfieUrl, '', note]]);
@@ -452,11 +468,13 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
       row[COL.IN_DIST] = loc.dist;
       row[COL.IN_ACC] = loc.acc;
       row[COL.SELFIE] = selfieUrl;
+      row[COL.NOTE] = byNote;
       row[COL.FLAGS] = flags.join(' ');
       sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
     }
     SpreadsheetApp.flush();
     forget_('att');
+    if (byEmp) audit_(byEmp, 'MARK_CHECKIN', emp.id, today, now + ' · ' + loc.dist + ' m from office');
     return { time: now, late: late, distance: loc.dist };
   } finally {
     lock.releaseLock();
@@ -468,6 +486,11 @@ function checkOut(token, lat, lng, accuracy, phoneClock) {
   const s = getSettings_();
   checkPhoneClock_(s, phoneClock);
   const loc = s.checkoutLocation ? checkLocation_(s, lat, lng, accuracy) : null;
+  return checkOutCore_(emp, s, loc, null);
+}
+
+function checkOutCore_(emp, s, loc, byEmp) {
+  const who = byEmp ? emp.name + ' has' : 'You have';
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -475,8 +498,8 @@ function checkOut(token, lat, lng, accuracy, phoneClock) {
     const today = todayStr_();
     let rec = byDate_(readAttendance_(), emp.id)[today];
     if (!rec || !rec.in) rec = openOvernight_(emp, s); // night shift: close yesterday's entry
-    if (!rec || !rec.in) throw new Error('You have not checked in today.');
-    if (rec.out) throw new Error('You have already checked out today (at ' + rec.out + ').');
+    if (!rec || !rec.in) throw new Error(who + ' not checked in today.');
+    if (rec.out) throw new Error(who + ' already checked out today (at ' + rec.out + ').');
     assertUnlocked_(rec.date);
 
     const now = Utilities.formatDate(new Date(), tz_(), 'HH:mm');
@@ -488,12 +511,17 @@ function checkOut(token, lat, lng, accuracy, phoneClock) {
     if (loc) {
       sh.getRange(rec.row, COL.OUT_LAT + 1, 1, 3).setValues([[loc.lat, loc.lng, loc.dist]]);
       sh.getRange(rec.row, COL.OUT_ACC + 1).setValue(loc.acc);
-      if (isFinite(loc.acc) && loc.acc > s.flagAccuracy) {
-        sh.getRange(rec.row, COL.FLAGS + 1).setValue((rec.flags + ' WEAK_GPS_OUT').trim());
-      }
+    }
+    const flags = rec.flags.split(/\s+/).filter(String);
+    if (loc && isFinite(loc.acc) && loc.acc > s.flagAccuracy && flags.indexOf('WEAK_GPS_OUT') < 0) flags.push('WEAK_GPS_OUT');
+    if (byEmp && flags.indexOf('PROXY_OUT') < 0) flags.push('PROXY_OUT');
+    if (flags.join(' ') !== rec.flags) sh.getRange(rec.row, COL.FLAGS + 1).setValue(flags.join(' '));
+    if (byEmp) {
+      sh.getRange(rec.row, COL.NOTE + 1).setValue([rec.note, 'Check-out marked by ' + byEmp.name + ' (' + byEmp.id + ')'].filter(String).join(' · '));
     }
     SpreadsheetApp.flush();
     forget_('att');
+    if (byEmp) audit_(byEmp, 'MARK_CHECKOUT', emp.id, rec.date, now + (loc ? ' · ' + loc.dist + ' m from office' : ''));
     return { time: now, worked: d.worked, ot: d.ot, status: d.status, date: rec.date };
   } finally {
     lock.releaseLock();
@@ -657,6 +685,61 @@ function cancelRequest(token, id) {
  * from the app (Admin → Admins). They are stored in the "Admin Permissions" tab.
  */
 
+/* ---------------- Marking attendance for others (no phone) ---------------- */
+
+/** Employees this admin / guard may check in or out today, with their status. */
+function proxyList(token) {
+  const ctx = authAdmin_(token, 'markOthers');
+  const s = getSettings_();
+  const today = todayStr_();
+  const offType = offType_(today, s, getHolidays_());
+  const att = readAttendance_();
+  return {
+    date: today, offType: offType,
+    office: { radius: s.radius, maxAccuracy: s.maxAccuracy,
+      lat: isFinite(s.officeLat) ? s.officeLat : null, lng: isFinite(s.officeLng) ? s.officeLng : null },
+    server: serverClock_(), clockTolerance: s.clockTolerance,
+    list: getEmployees_().filter(e => e.active && e.id !== ctx.emp.id && canEditEmployee_(ctx, e.id)).map(e => {
+      const recs = byDate_(att, e.id);
+      let r = recs[today];
+      const open = (!r || !r.in) ? openOvernight_(e, s) : null;
+      if (open) r = open;
+      return {
+        id: e.id, name: e.name, in: r ? r.in : '', out: r ? r.out : '', date: r ? r.date : today,
+        status: r ? evaluateDay_(r, s, offType, r.date === today).status : (offType || 'NOT_MARKED'),
+        byOther: !!(r && /PROXY/.test(r.flags)),
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+/** Check-in for an employee without a phone. The marker's phone must be at the office; no selfie. */
+function proxyCheckIn(token, empId, lat, lng, accuracy, phoneClock) {
+  const ctx = authAdmin_(token, 'markOthers');
+  const emp = proxyTarget_(ctx, empId);
+  const s = getSettings_();
+  checkPhoneClock_(s, phoneClock);
+  const r = checkInCore_(emp, s, checkLocation_(s, lat, lng, accuracy), null, ctx.emp);
+  return Object.assign(r, { list: proxyList(token).list });
+}
+
+function proxyCheckOut(token, empId, lat, lng, accuracy, phoneClock) {
+  const ctx = authAdmin_(token, 'markOthers');
+  const emp = proxyTarget_(ctx, empId);
+  const s = getSettings_();
+  checkPhoneClock_(s, phoneClock);
+  // Location is always required when marking for someone else.
+  const r = checkOutCore_(emp, s, checkLocation_(s, lat, lng, accuracy), ctx.emp);
+  return Object.assign(r, { list: proxyList(token).list });
+}
+
+function proxyTarget_(ctx, empId) {
+  const emp = managedEmployee_(ctx, empId, true);
+  if (emp.id === ctx.emp.id) throw new Error('Use your own Attendance screen to mark your own attendance.');
+  if (!emp.active) throw new Error(emp.name + ' is not active.');
+  return emp;
+}
+
 function adminToday(token) {
   const ctx = authAdmin_(token, 'viewToday');
   sweepOpenEntries_();
@@ -671,13 +754,13 @@ function adminToday(token) {
     const r = recs[e.id];
     const d = r ? evaluateDay_(r, s, offType, true) : { status: offType || 'NOT_MARKED' };
     const flags = r && r.flags ? r.flags.split(/\s+/).filter(String) : [];
-    if (r && r.in && s.selfieRequired && !r.selfie && !/replaced|Entered by/i.test(String(r.note))) flags.push('NO_SELFIE');
+    if (r && r.in && s.selfieRequired && !r.selfie && !/PROXY/.test(r.flags) && !/replaced|Entered by|marked by/i.test(String(r.note))) flags.push('NO_SELFIE');
     counts.total++;
     if (r && r.in) counts.in++;
     if (d.late) counts.late++;
     if (r && r.out) counts.out++;
     if (!r || !r.in) counts.notMarked++;
-    if (flags.length) counts.flagged++;
+    if (flags.some(f => SUSPICIOUS_FLAGS.indexOf(f) >= 0)) counts.flagged++;
     return {
       id: e.id, name: e.name, in: r ? r.in : '', out: r ? r.out : '', status: d.status,
       late: !!d.late, worked: d.worked || 0, distance: r ? r.inDist : '', accuracy: r ? r.inAcc : '',
