@@ -60,7 +60,7 @@ const COL = {
 const REQ_HEADERS = ['ID', 'Created', 'Emp ID', 'Name', 'Type', 'From', 'To', 'In', 'Out', 'Leave Type',
   'Reason', 'Status', 'Decided By', 'Decided At', 'Remark'];
 const ADV_HEADERS = ['ID', 'Emp ID', 'Name', 'Date Given', 'Amount', 'Monthly Deduction', 'Start Month',
-  'Status', 'Note', 'Created By', 'Created At'];
+  'Status', 'Note', 'Created By', 'Created At', 'Top-ups'];
 const ADV_MONTH_HEADERS = ['Advance ID', 'Emp ID', 'Month', 'Deduct', 'Note', 'By', 'At'];
 const LOCK_HEADERS = ['Month', 'Locked By', 'Locked At'];
 const SNAP_HEADERS = ['Month', 'Emp ID', 'Name', 'Data (do not edit)'];
@@ -185,7 +185,7 @@ const API_FUNCTIONS = {
   adminToday, adminSummary, adminMonth, adminEmployeeMonth, adminEntryOptions, adminGetEntry, adminSaveEntry,
   adminDeleteEntry, adminBulkEntry, adminRequests, adminDecideRequest, adminDecideOt, adminClearMissed,
   adminStaff, adminSaveStaff, adminResetPin, adminEmployees, adminSavePf, adminAdvances, adminSaveAdvance,
-  adminSetAdvanceStatus, adminSetAdvanceMonth, adminLockMonth, superUnlockMonth, adminGetSelfie, adminExportPayroll,
+  adminSetAdvanceStatus, adminSetAdvanceMonth, adminTopUpAdvance, adminLockMonth, superUnlockMonth, adminGetSelfie, adminExportPayroll,
   superListAdmins, superSavePermissions, superSetRole, superAuditLog,
 };
 
@@ -274,6 +274,7 @@ function setup() {
   sh = getOrCreate_(ss, SHEET.REQUESTS, REQ_HEADERS);
   ['F:F', 'G:G', 'H:H', 'I:I'].forEach(a => sh.getRange(a).setNumberFormat('@'));
   sh = getOrCreate_(ss, SHEET.ADVANCES, ADV_HEADERS);
+  ensureHeaders_(sh, ADV_HEADERS);
   ['D:D', 'G:G'].forEach(a => sh.getRange(a).setNumberFormat('@'));
   sh = getOrCreate_(ss, SHEET.ADV_MONTHS, ADV_MONTH_HEADERS);
   sh.getRange('C:C').setNumberFormat('@');
@@ -1100,9 +1101,13 @@ function adminAdvances(token) {
       balanceAfter: st.balanceAfter, repaid: st.balanceAfter <= 0 && !changes.some(c => c.month > ym), changes: changes,
     });
   }).reverse();
+  const ongoing = {};
+  list.forEach(a => {
+    if (a.status !== 'CLOSED' && !a.repaid) ongoing[a.empId] = round2_((ongoing[a.empId] || 0) + a.balanceAfter + a.thisMonth);
+  });
   return {
     currency: s.currency, currentMonth: ym, list: list,
-    employees: emps.filter(e => e.active).map(e => ({ id: e.id, name: e.name })),
+    employees: emps.filter(e => e.active).map(e => ({ id: e.id, name: e.name, ongoing: ongoing[e.id] || 0 })),
   };
 }
 
@@ -1134,6 +1139,35 @@ function adminSaveAdvance(token, data) {
     forget_('advances');
     audit_(ctx.emp, 'ADD_ADVANCE', emp.id, start, 'amount ' + amount + ', monthly ' + monthly + (note ? ', ' + note : ''));
   }
+  return adminAdvances(token);
+}
+
+/**
+ * Adds more money to an advance that is already running (or re-opens a repaid / closed one).
+ * data = { add, dateGiven, monthly (optional new instalment), note }
+ */
+function adminTopUpAdvance(token, id, data) {
+  const ctx = authAdmin_(token, 'manageAdvances');
+  data = data || {};
+  const a = readAdvances_().filter(x => x.id === id)[0];
+  if (!a) throw new Error('Advance not found.');
+  managedEmployee_(ctx, a.empId, true);
+  const add = Number(data.add);
+  if (!(add > 0)) throw new Error('Enter the extra amount given.');
+  const monthly = data.monthly === '' || data.monthly === undefined || data.monthly === null ? a.monthly : Number(data.monthly);
+  if (!(monthly > 0)) throw new Error('Enter a valid monthly deduction.');
+  const date = toDateStr_(data.dateGiven) || todayStr_();
+  const note = String(data.note || '').trim().slice(0, 100);
+
+  const sh = sheet_(SHEET.ADVANCES);
+  ensureHeaders_(sh, ADV_HEADERS);
+  const line = date + ' +' + add + (note ? ' (' + note + ')' : '') + ' by ' + ctx.emp.name;
+  sh.getRange(a.row, 5, 1, 2).setValues([[a.amount + add, monthly]]);
+  if (a.status === 'CLOSED') sh.getRange(a.row, 8).setValue('ACTIVE');
+  sh.getRange(a.row, 12).setValue(a.topUps.concat([line]).join('\n'));
+  forget_('advances');
+  audit_(ctx.emp, 'TOPUP_ADVANCE', a.empId, date, a.id + ': ' + a.amount + ' + ' + add + ' = ' + (a.amount + add) +
+    (monthly !== a.monthly ? ', monthly ' + a.monthly + ' → ' + monthly : '') + (note ? ' | ' + note : ''));
   return adminAdvances(token);
 }
 
@@ -2004,6 +2038,7 @@ function readAdvances_() {
       dateGiven: toDateStr_(r[3]), amount: Number(r[4]) || 0, monthly: Number(r[5]) || 0,
       startMonth: toYm_(r[6]), status: String(r[7] || 'ACTIVE').trim().toUpperCase(), note: String(r[8] || ''),
       createdBy: String(r[9] || ''),
+      topUps: String(r[11] || '').split('\n').map(x => x.trim()).filter(String),
     })).filter(a => a.id && a.empId && a.startMonth);
   });
 }

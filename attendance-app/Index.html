@@ -1505,7 +1505,8 @@
     S.adv = r;
     var cur = r.currency;
     var html = '<div class="card"><h2>Give an advance</h2>' +
-      '<div class="field"><label>Employee</label><select id="avEmp" class="inp">' + r.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label>Employee</label><select id="avEmp" class="inp" onchange="advEmpHint()">' + r.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')' + (e.ongoing ? ' – advance running' : '') + '</option>'; }).join('') + '</select></div>' +
+      '<div id="avHint"></div>' +
       '<div class="grid2"><div class="field"><label>Amount</label><input id="avAmt" class="inp" inputmode="decimal" placeholder="e.g. 10000"></div>' +
       '<div class="field"><label>Deduct per month</label><input id="avMon" class="inp" inputmode="decimal" placeholder="e.g. 2000"></div>' +
       '<div class="field"><label>Start deducting from</label><input id="avStart" class="inp" type="month" value="' + r.currentMonth + '"></div>' +
@@ -1520,6 +1521,7 @@
       html += '<div class="list-item" style="display:block"><div class="row"><div class="name">' + esc(a.name) + ' <span class="muted" style="font-weight:400">' + esc(a.empId) + '</span></div>' + st + '</div>' +
         '<div class="sub">' + money(a.amount, cur) + ' given ' + esc(fmtDate(a.dateGiven)) + (a.note ? ' · ' + esc(a.note) : '') + '</div>' +
         '<div class="sub">' + money(a.monthly, cur) + '/month from ' + esc(monthName(a.startMonth)) + '</div>' +
+        (a.topUps && a.topUps.length ? a.topUps.map(function (t) { return '<div class="sub">➕ ' + esc(t) + '</div>'; }).join('') : '') +
         '<div class="kv" style="margin-top:8px"><div><b>' + money(a.deductedBefore, cur) + '</b><span>Recovered</span></div>' +
         '<div' + (a.thisMonthChanged ? ' class="k-ot"' : '') + '><b>' + money(a.thisMonth, cur) + '</b><span>This month' + (a.thisMonthChanged ? ' (changed)' : '') + '</span></div>' +
         '<div class="k-red"><b>' + money(a.balanceAfter, cur) + '</b><span>Balance after</span></div></div>' +
@@ -1528,15 +1530,47 @@
             (c.amount === 0 ? 'no deduction (skipped)' : 'deduct ' + money(c.amount, cur)) + (c.note ? ' <span class="muted">· ' + esc(c.note) + '</span>' : '') + '</span>' +
             (c.locked ? '<span class="muted">locked</span>' : '<button class="link" style="color:var(--red)" onclick="clearAdvMonth(' + i + ',\'' + c.month + '\')">Undo</button>') + '</div>';
         }).join('') + '</div>' : '') +
-        (a.status === 'CLOSED' || (a.repaid && !a.changes.length) ? '' : '<div class="btns">' +
+        (a.status === 'CLOSED' || (a.repaid && !a.changes.length) ? '<div class="btns"><button class="btn small ghost" onclick="openTopUp(' + i + ')">＋ Add more</button></div>' : '<div class="btns">' +
           '<button class="btn small" onclick="openAdvMonth(' + i + ')">Change a month</button>' +
+          '<button class="btn small ghost" onclick="openTopUp(' + i + ')">＋ Add more</button>' +
           '<button class="btn small ghost" onclick="editAdvance(' + i + ')">Change monthly</button>' +
           (a.status === 'ACTIVE' ? '<button class="btn small ghost" onclick="advStatus(' + i + ',\'PAUSED\')">Pause</button>' : '<button class="btn small ghost" onclick="advStatus(' + i + ',\'ACTIVE\')">Resume</button>') +
           '<button class="btn small soft-red" onclick="advStatus(' + i + ',\'CLOSED\')">Close</button></div>') + '</div>';
     });
-    html += '</div><p class="muted small center"><b>Change a month</b> sets a different amount (or no deduction) for one month only; the balance moves to later months. ' +
+    html += '</div><p class="muted small center"><b>Add more</b> adds a new amount to a running advance (one balance, one deduction). ' +
+      'Saving a new advance above instead keeps it separate, with its own deduction (both are deducted each month). <b>Change a month</b> sets a different amount (or no deduction) for one month only; the balance moves to later months. ' +
       'Pause skips every month until resumed. Close stops it for good (e.g. repaid in cash). Locked months keep what was actually deducted.</p>';
     adminBody(html);
+    advEmpHint();
+  }
+
+  /** Tells the admin when the selected employee already has an advance running. */
+  function advEmpHint() {
+    var sel = $('avEmp'); if (!sel || !S.adv) return;
+    var e = S.adv.employees.filter(function (x) { return x.id === sel.value; })[0];
+    $('avHint').innerHTML = e && e.ongoing
+      ? '<div class="msg info">' + esc(e.name) + ' already has an advance running (balance ' + money(e.ongoing, S.adv.currency) + '). ' +
+        'Saving here makes a <b>separate</b> advance with its own deduction. To add to the existing one, use <b>＋ Add more</b> on it below.</div>'
+      : '';
+  }
+
+  /** Adds more money to a running advance. */
+  function openTopUp(i) {
+    var a = S.adv.list[i], cur = S.adv.currency;
+    openModal('<h2 style="margin-top:0">Add more – ' + esc(a.name) + '</h2>' +
+      '<p class="muted small" style="margin-top:-6px">Advance ' + money(a.amount, cur) + ' · balance ' + money(a.balanceAfter + a.thisMonth, cur) + ' · ' + money(a.monthly, cur) + '/month</p>' +
+      '<div class="grid2"><div class="field"><label>Extra amount given</label><input id="tuAmt" class="inp" inputmode="decimal" placeholder="e.g. 5000"></div>' +
+      '<div class="field"><label>Date given</label><input id="tuDate" class="inp" type="date" value="' + todayLocal() + '"></div></div>' +
+      '<div class="field"><label>Deduct per month from now</label><input id="tuMon" class="inp" inputmode="decimal" value="' + esc(a.monthly) + '"></div>' +
+      '<div class="field"><label>Note (optional)</label><input id="tuNote" class="inp" placeholder="e.g. School fees"></div>' +
+      '<button class="btn" id="tuBtn" onclick="saveTopUp(' + i + ')">Add to advance</button><button class="btn ghost" onclick="closeModal()">Cancel</button><div id="tuMsg"></div>');
+  }
+  function saveTopUp(i) {
+    var a = S.adv.list[i];
+    $('tuBtn').disabled = true;
+    api('adminTopUpAdvance', S.token, a.id, { add: $('tuAmt').value, dateGiven: $('tuDate').value, monthly: $('tuMon').value, note: $('tuNote').value })
+      .then(function (r) { closeModal(); renderAdvances(r); toast('Added to ' + a.name + '\'s advance'); })
+      .catch(function (e) { $('tuBtn').disabled = false; $('tuMsg').innerHTML = errBox(e); });
   }
 
   function saveAdvance() {
