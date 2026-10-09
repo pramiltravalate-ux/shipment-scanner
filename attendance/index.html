@@ -360,10 +360,33 @@
         return wait([700, 1500, 3000][n]).then(function () { return attempt(n + 1); });
       });
     };
-    return attempt(0).then(function (res) {
+    return attempt(0).catch(function (err) {
+      return err.network ? diagnose(url).then(function (msg) { throw new Error(msg || err.message); }) : Promise.reject(err);
+    }).then(function (res) {
       if (!res || !res.ok) throw new Error((res && res.error) || 'Something went wrong.');
       return res.result;
     }).catch(fail);
+  }
+
+  /**
+   * After a request could not reach the server at all, find out why:
+   * - the ping works → it was a passing problem;
+   * - Google answers but blocks the app → the Apps Script deployment is not public (or the link has a wrong ID);
+   * - nothing answers → the phone is offline.
+   */
+  function diagnose(url) {
+    return fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + 'ping=1', { credentials: 'omit' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { return j && j.ok ? 'The server did not answer in time. Please try again.' : null; })
+      .catch(function () {
+        return fetch(url, { mode: 'no-cors', credentials: 'omit' }).then(function () {
+          return 'The app server is not set up correctly. Admin: in Apps Script open Deploy → Manage deployments → ✏ Edit, ' +
+            'set "Execute as: Me" and "Who has access: Anyone", choose "New version" and Deploy. ' +
+            'Also make sure the link contains that deployment\'s ID.';
+        }, function () {
+          return 'No internet connection. Please check your mobile data / Wi-Fi and try again.';
+        });
+      });
   }
 
   function postOnce(url, body) {
@@ -377,10 +400,16 @@
     }).then(function (r) {
       if (!r.ok) throw retryable('The server is busy (' + r.status + '). Please try again in a moment.');
       return r.text().then(function (t) {
-        try { return JSON.parse(t); } catch (e) { throw retryable('The server is busy. Please try again in a moment.'); }
+        try { return JSON.parse(t); } catch (e) {
+          var err = retryable('The server is busy. Please try again in a moment.');
+          err.network = true; // got a Google page instead of the app's answer: check why after the retries
+          throw err;
+        }
       });
     }, function () {
-      throw retryable('No internet connection, or the server could not be reached. Please try again.');
+      var e = retryable('No internet connection, or the server could not be reached. Please try again.');
+      e.network = true;
+      throw e;
     }).then(function (res) { clearTimeout(timer); return res; }, function (e) { clearTimeout(timer); throw e; });
   }
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -1168,7 +1197,7 @@
     html += '<div class="btns">' +
       (r.canLock ? '<button class="btn" onclick="lockMonth(\'' + ym + '\')">🔒 Lock month</button>' : '') +
       (r.canUnlock ? '<button class="btn soft-red" onclick="unlockMonth(\'' + ym + '\')">Unlock</button>' : '') +
-      (can('exportPayroll') ? '<button class="btn ghost" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export to Sheet</button>' : '') +
+      (can('exportPayroll') ? '<button class="btn ghost" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">⬇ Download Excel</button>' : '') +
       '</div><div id="exportMsg"></div></div>';
     html += '<div class="card"><h2>Employees</h2>';
     r.rows.forEach(function (e) {
@@ -1197,13 +1226,45 @@
     api('superUnlockMonth', S.token, ym).then(function (r) { renderAdminMonth(r); toast('Month unlocked'); }).catch(adminErr);
   }
 
+  /** Builds the payroll as an Excel file in the browser and downloads it. */
   function exportPayroll(ym) {
-    $('exportBtn').disabled = true;
-    api('adminExportPayroll', S.token, ym).then(function (r) {
-      $('exportMsg').innerHTML = '<div class="msg ok">Saved to tab "' + esc(r.sheet) + '". <a href="' + esc(r.url) + '" target="_blank">Open sheet</a></div>';
+    var btn = $('exportBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Preparing Excel…';
+    $('exportMsg').innerHTML = '';
+    Promise.all([api('adminExportPayroll', S.token, ym), loadXlsx()]).then(function (res) {
+      var r = res[0];
+      var noSum = ['Emp ID', 'Name', 'Days Counted', 'PF', 'Per Day', 'Per Hour', 'Per Min'];
+      var totals = r.header.map(function (h, i) {
+        if (i === 0) return 'TOTAL';
+        if (noSum.indexOf(h) >= 0) return '';
+        var sum = 0, any = false;
+        r.rows.forEach(function (row) { if (typeof row[i] === 'number') { sum += row[i]; any = true; } });
+        return any ? Math.round(sum * 100) / 100 : '';
+      });
+      var aoa = [[r.title], [r.status], ['Generated ' + r.generated + ' · amounts in ' + r.currency], [], r.header]
+        .concat(r.rows).concat([totals]);
+      var ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = r.header.map(function (h) { return { wch: h === 'Name' ? 22 : Math.max(10, Math.min(18, h.length + 2)) }; });
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + r.rows.length, c: r.header.length - 1 } }) };
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Payroll ' + ym);
+      XLSX.writeFile(wb, r.fileName);
+      $('exportMsg').innerHTML = '<div class="msg ok">Downloaded <b>' + esc(r.fileName) + '</b> (' + r.rows.length + ' employees). Check your Downloads folder.</div>';
     }).catch(function (e) {
       $('exportMsg').innerHTML = errBox(e);
-    }).then(function () { var b = $('exportBtn'); if (b) b.disabled = false; });
+    }).then(function () { var b = $('exportBtn'); if (b) { b.disabled = false; b.innerHTML = '⬇ Download Excel'; } });
+  }
+
+  /** Loads the Excel library (SheetJS) the first time it is needed. */
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload = function () { resolve(); };
+      sc.onerror = function () { reject(new Error('Could not load the Excel maker. Check the internet connection and try again.')); };
+      document.head.appendChild(sc);
+    });
   }
 
   function openEmployee(id, ym) {

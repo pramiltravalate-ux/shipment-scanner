@@ -35,7 +35,7 @@ const PERMISSIONS = [
   { key: 'manageEmployees', label: 'Manage Employees', help: 'Add employees, change salary/details, reset PINs' },
   { key: 'manageAdvances', label: 'Manage Advances', help: 'Give advances and set monthly deductions' },
   { key: 'viewSplit', label: 'View Bank / Cash Split', help: 'See In Bank and In Cash amounts (others only see Total Salary)' },
-  { key: 'exportPayroll', label: 'Export Payroll', help: 'Create the payroll tab in the Sheet' },
+  { key: 'exportPayroll', label: 'Export Payroll', help: 'Download the monthly payroll as an Excel file' },
   { key: 'lockPayroll', label: 'Lock Payroll', help: 'Lock a finished month so nothing can change it' },
   { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF / salary (normally off)' },
 ];
@@ -158,7 +158,12 @@ function onEdit(e) {
 /* Web app entry + sheet menu                                          */
 /* ------------------------------------------------------------------ */
 
-function doGet() {
+function doGet(e) {
+  // Health check used by the hosted page to tell "deployment not public" from "no internet".
+  if (e && e.parameter && e.parameter.ping) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, app: 'attendance' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   const t = HtmlService.createTemplateFromFile('Index');
   t.company = getSettings_().company;
   return t.evaluate()
@@ -1334,31 +1339,40 @@ function adminGetSelfie(token, row) {
   return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 
-/** Writes a "Payroll yyyy-MM" tab with every employee's salary for the month. */
+/**
+ * Payroll table for a month. The page turns it into an Excel (.xlsx) file the admin downloads;
+ * nothing is written to the Google Sheet.
+ */
 function adminExportPayroll(token, ym) {
   const ctx = authAdmin_(token, 'exportPayroll');
   const data = payrollRows_(ctx, validYm_(ym));
-  const ss = SpreadsheetApp.getActive();
-  const name = 'Payroll ' + data.ym;
-  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
-  sh.clear();
   const split = !!ctx.perms.viewSplit;
-  const header = ['Emp ID', 'Name', 'Monthly Salary', 'Present', 'Half Days', 'Absent (Leaves)', 'Paid Leave',
-    'Week Off', 'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Mins', 'Early Leaving Mins', 'OT Mins (gross)',
-    'OT Mins (net)', 'OT Hrs (net)', 'Per Day', 'Per Hour', 'Per Min', 'OT Pay', 'Leave Deduction',
-    'Half Day Deduction', 'Late Cut Deduction', 'Advance Deduction', 'Gross Payable', 'PF', 'PF Bank Salary',
-    'PF Employee', 'PF Employer'].concat(split ? ['In Bank', 'In Cash'] : []).concat(['Total Salary', 'Locked']);
-  const rows = data.rows.map(r => [r.id, r.name, r.salary, r.present, r.halfDay, r.absent + r.notJoined, r.leave,
+  const header = ['Emp ID', 'Name', 'Monthly Salary', 'Days Counted', 'Salary Earned', 'Present', 'Half Days',
+    'Absent (Leaves)', 'Paid Leave', 'Week Off', 'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Mins',
+    'Early Leaving Mins', 'OT Mins (gross)', 'OT Mins (net)', 'OT Hrs (net)', 'Per Day', 'Per Hour', 'Per Min',
+    'OT Pay', 'Leave Deduction', 'Half Day Deduction', 'Late Cut Deduction', 'Advance Deduction', 'Gross Payable',
+    'PF', 'Basic Salary (PF)', 'PF Employee', 'PF Employer']
+    .concat(split ? ['In Bank', 'In Cash'] : []).concat(['Total Salary']);
+  const rows = data.rows.map(r => [r.id, r.name, r.salary,
+    (r.elapsedDays === undefined ? r.daysInMonth : r.elapsedDays) + ' / ' + r.daysInMonth,
+    r.earned === undefined ? r.salary : r.earned, r.present, r.halfDay, r.absent + r.notJoined, r.leave,
     r.weekOff, r.holiday, r.offWork, r.late, r.lateMin, r.earlyMin || 0, r.otMinGross, r.otMin, r.otHours, r.perDay,
     r.hourly, r.perMin, r.otPay, r.leaveDed, r.halfDayDed, r.lateCutDed, r.advance || 0, r.gross,
     r.pf ? 'Yes' : 'No', r.pf ? r.pfBankSalary : '', r.pf ? r.pfEmployee : '', r.pf ? r.pfEmployer : '',
-  ].concat(split ? [r.pf ? r.bank : '', r.pf ? r.cash : ''] : []).concat([r.net, data.locked ? 'Yes' : 'No']));
-  sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold').setBackground('#e8eefc');
-  if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
-  sh.setFrozenRows(1);
-  sh.autoResizeColumns(1, header.length);
-  audit_(ctx.emp, 'EXPORT_PAYROLL', '', data.ym, rows.length + ' employees');
-  return { url: ss.getUrl() + '#gid=' + sh.getSheetId(), sheet: name };
+  ].concat(split ? [r.pf ? r.bank : '', r.pf ? r.cash : ''] : []).concat([r.net]));
+  const status = data.locked ? 'Final (locked by ' + data.locked.by + ' on ' + data.locked.at + ')'
+    : data.ym === todayStr_().slice(0, 7) ? 'Provisional – month in progress (salary up to today)' : 'Provisional – not locked';
+  audit_(ctx.emp, 'EXPORT_PAYROLL', '', data.ym, rows.length + ' employees (Excel)');
+  return {
+    fileName: 'Payroll_' + data.ym + '.xlsx',
+    title: getSettings_().company + ' – Payroll ' + data.label,
+    status: status,
+    generated: Utilities.formatDate(new Date(), tz_(), 'dd MMM yyyy HH:mm') + ' by ' + ctx.emp.name,
+    currency: data.currency,
+    header: header,
+    rows: rows,
+    textCols: ['Emp ID', 'Name', 'Days Counted', 'PF'],
+  };
 }
 
 /* ------------------------- Super admin ----------------------------- */
