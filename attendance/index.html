@@ -1197,7 +1197,7 @@
     html += '<div class="btns">' +
       (r.canLock ? '<button class="btn" onclick="lockMonth(\'' + ym + '\')">🔒 Lock month</button>' : '') +
       (r.canUnlock ? '<button class="btn soft-red" onclick="unlockMonth(\'' + ym + '\')">Unlock</button>' : '') +
-      (can('exportPayroll') ? '<button class="btn ghost" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export to Sheet</button>' : '') +
+      (can('exportPayroll') ? '<button class="btn ghost" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">⬇ Download Excel</button>' : '') +
       '</div><div id="exportMsg"></div></div>';
     html += '<div class="card"><h2>Employees</h2>';
     r.rows.forEach(function (e) {
@@ -1226,13 +1226,45 @@
     api('superUnlockMonth', S.token, ym).then(function (r) { renderAdminMonth(r); toast('Month unlocked'); }).catch(adminErr);
   }
 
+  /** Builds the payroll as an Excel file in the browser and downloads it. */
   function exportPayroll(ym) {
-    $('exportBtn').disabled = true;
-    api('adminExportPayroll', S.token, ym).then(function (r) {
-      $('exportMsg').innerHTML = '<div class="msg ok">Saved to tab "' + esc(r.sheet) + '". <a href="' + esc(r.url) + '" target="_blank">Open sheet</a></div>';
+    var btn = $('exportBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Preparing Excel…';
+    $('exportMsg').innerHTML = '';
+    Promise.all([api('adminExportPayroll', S.token, ym), loadXlsx()]).then(function (res) {
+      var r = res[0];
+      var noSum = ['Emp ID', 'Name', 'Days Counted', 'PF', 'Per Day', 'Per Hour', 'Per Min'];
+      var totals = r.header.map(function (h, i) {
+        if (i === 0) return 'TOTAL';
+        if (noSum.indexOf(h) >= 0) return '';
+        var sum = 0, any = false;
+        r.rows.forEach(function (row) { if (typeof row[i] === 'number') { sum += row[i]; any = true; } });
+        return any ? Math.round(sum * 100) / 100 : '';
+      });
+      var aoa = [[r.title], [r.status], ['Generated ' + r.generated + ' · amounts in ' + r.currency], [], r.header]
+        .concat(r.rows).concat([totals]);
+      var ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = r.header.map(function (h) { return { wch: h === 'Name' ? 22 : Math.max(10, Math.min(18, h.length + 2)) }; });
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + r.rows.length, c: r.header.length - 1 } }) };
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Payroll ' + ym);
+      XLSX.writeFile(wb, r.fileName);
+      $('exportMsg').innerHTML = '<div class="msg ok">Downloaded <b>' + esc(r.fileName) + '</b> (' + r.rows.length + ' employees). Check your Downloads folder.</div>';
     }).catch(function (e) {
       $('exportMsg').innerHTML = errBox(e);
-    }).then(function () { var b = $('exportBtn'); if (b) b.disabled = false; });
+    }).then(function () { var b = $('exportBtn'); if (b) { b.disabled = false; b.innerHTML = '⬇ Download Excel'; } });
+  }
+
+  /** Loads the Excel library (SheetJS) the first time it is needed. */
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload = function () { resolve(); };
+      sc.onerror = function () { reject(new Error('Could not load the Excel maker. Check the internet connection and try again.')); };
+      document.head.appendChild(sc);
+    });
   }
 
   function openEmployee(id, ym) {
