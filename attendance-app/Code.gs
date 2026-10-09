@@ -16,18 +16,26 @@ const SHEET = {
   HOLIDAYS: 'Holidays',
   PERMISSIONS: 'Admin Permissions',
   AUDIT: 'Audit Log',
+  REQUESTS: 'Requests',
+  ADVANCES: 'Advances',
+  LOCKS: 'Payroll Locks',
+  SNAPSHOTS: 'Payroll Snapshots',
 };
 
 const ROLES = ['EMPLOYEE', 'ADMIN', 'SUPER_ADMIN'];
 
 /** What a super admin can allow each admin to do. */
 const PERMISSIONS = [
-  { key: 'viewToday', label: 'View Today', help: "Today's live attendance and selfies" },
-  { key: 'viewPayroll', label: 'View Payroll', help: 'Monthly salary, OT, PF of employees' },
+  { key: 'viewToday', label: 'View Today', help: "Today's live attendance, selfies and flags" },
+  { key: 'viewPayroll', label: 'View Payroll', help: 'Monthly salary, OT, PF, payslips' },
   { key: 'editAttendance', label: 'Edit Attendance', help: 'Add / change / delete entries, including back-dated ones' },
+  { key: 'approveRequests', label: 'Approve Requests', help: 'Approve leave, corrections and OT' },
   { key: 'editPf', label: 'Edit PF', help: 'Turn PF on/off and change PF amounts' },
+  { key: 'manageEmployees', label: 'Manage Employees', help: 'Add employees, change salary/details, reset PINs' },
+  { key: 'manageAdvances', label: 'Manage Advances', help: 'Give advances and set monthly deductions' },
   { key: 'exportPayroll', label: 'Export Payroll', help: 'Create the payroll tab in the Sheet' },
-  { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF (normally off)' },
+  { key: 'lockPayroll', label: 'Lock Payroll', help: 'Lock a finished month so nothing can change it' },
+  { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF / salary (normally off)' },
 ];
 const PERM_HEADERS = ['Emp ID', 'Name'].concat(PERMISSIONS.map(p => p.label))
   .concat(['Allowed Employees', 'Updated By', 'Updated At']);
@@ -38,34 +46,48 @@ const EMP_HEADERS = ['Emp ID', 'Name', 'PIN', 'Monthly Salary', 'Role', 'Active'
 
 const ATT_HEADERS = ['Date', 'Emp ID', 'Name', 'Check In', 'Check Out', 'Worked Hrs', 'Status', 'Late',
   'OT Hrs', 'In Lat', 'In Lng', 'In Distance (m)', 'In Accuracy (m)', 'Out Lat', 'Out Lng',
-  'Out Distance (m)', 'Selfie', 'Override Status', 'Admin Note'];
+  'Out Distance (m)', 'Selfie', 'Override Status', 'Admin Note', 'Out Accuracy (m)', 'OT Approved', 'Flags'];
 
 const COL = {
   DATE: 0, EMP: 1, NAME: 2, IN: 3, OUT: 4, WORKED: 5, STATUS: 6, LATE: 7, OT: 8,
   IN_LAT: 9, IN_LNG: 10, IN_DIST: 11, IN_ACC: 12, OUT_LAT: 13, OUT_LNG: 14, OUT_DIST: 15,
-  SELFIE: 16, OVERRIDE: 17, NOTE: 18,
+  SELFIE: 16, OVERRIDE: 17, NOTE: 18, OUT_ACC: 19, OT_APPROVED: 20, FLAGS: 21,
 };
+
+const REQ_HEADERS = ['ID', 'Created', 'Emp ID', 'Name', 'Type', 'From', 'To', 'In', 'Out', 'Leave Type',
+  'Reason', 'Status', 'Decided By', 'Decided At', 'Remark'];
+const ADV_HEADERS = ['ID', 'Emp ID', 'Name', 'Date Given', 'Amount', 'Monthly Deduction', 'Start Month',
+  'Status', 'Note', 'Created By', 'Created At'];
+const LOCK_HEADERS = ['Month', 'Locked By', 'Locked At'];
+const SNAP_HEADERS = ['Month', 'Emp ID', 'Name', 'Data (do not edit)'];
 
 const OVERRIDE_VALUES = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE'];
 
 const DEFAULT_SETTINGS = [
-  ['Company Name', 'My Company', 'Shown at the top of the app'],
+  ['Company Name', 'My Company', 'Shown at the top of the app and on payslips'],
   ['Office Latitude', '', 'Google Maps → right-click your office → click the coordinates to copy them'],
   ['Office Longitude', '', 'Paste the second number here'],
   ['Allowed Radius (m)', 30, 'Employee must be within this distance of the office'],
   ['Max GPS Accuracy (m)', 50, 'Readings less accurate than this are rejected (higher = more lenient)'],
+  ['Flag GPS Accuracy Above (m)', 35, 'Check-ins less accurate than this are flagged for the admin'],
   ['Check Location On Check-Out', 'Yes', 'Yes / No'],
   ['Selfie Required', 'Yes', 'Yes / No (selfie is taken at check-in)'],
+  ['Live Camera Only', 'No', 'Yes = selfie must come from the live camera (no gallery photos). Test on your phones first'],
   ['Shift Start', '09:30', '24-hour time, HH:mm'],
   ['Late Grace (min)', 10, 'Check-in after Shift Start + grace = Late'],
-  ['Standard Hours', 9, 'Hours per day. Time worked beyond this is OT'],
+  ['Standard Hours', 9, 'Hours per day. Time worked beyond this is OT. Shift end = Shift Start + this'],
   ['Full Day Min Hours', 8, 'Worked hours needed for a full day'],
   ['Half Day Min Hours', 4, 'At least this (but below Full Day) = Half Day. Less = Absent'],
   ['No Check-Out Counts As', 'HALF_DAY', 'PRESENT / HALF_DAY / ABSENT — when an employee forgets to check out'],
+  ['Allow Overnight Shift', 'No', 'Yes = check-out after midnight closes the previous day\'s entry'],
+  ['Max Shift Hours', 16, 'With overnight shifts, an open entry older than this cannot be checked out'],
   ['Salary Days Basis', 30, 'Per day = Monthly Salary ÷ this. Per hour = per day ÷ Standard Hours. (0 = days in that month)'],
-  ['OT Multiplier', 1.5,'OT pay = net OT minutes × per-minute rate × this'],
+  ['OT Multiplier', 1.5, 'OT pay = net OT minutes × per-minute rate × this'],
   ['OT Block (min)', 0, 'Daily OT counted only in complete blocks of this many minutes (0 = every minute)'],
+  ['Max OT Per Day (min)', 0, 'Cap on OT counted per day (0 = no cap)'],
+  ['OT Needs Approval', 'No', 'Yes = OT counts only after an admin approves it'],
   ['Late Minutes Reduce OT', 'Yes', 'Monthly OT minutes − total late minutes (minutes after Shift Start on late days)'],
+  ['Early Leaving Reduces OT', 'Yes', 'Monthly OT minutes − minutes left before shift end (on present days)'],
   ['Weekly Off', 'Sunday', 'Comma separated, e.g. Sunday  or  Saturday,Sunday'],
   ['Off-Day Work Is OT', 'Yes', 'All hours worked on a weekly off / holiday count as OT'],
   ['Lates Per Half-Day Cut', 0, 'Every N late marks in a month deduct half a day (0 = no deduction)'],
@@ -73,11 +95,23 @@ const DEFAULT_SETTINGS = [
   ['Default PF Bank Salary %', 90, 'Used when an employee\'s "PF Bank Salary" is blank (e.g. 90% of 15000 = 13500)'],
   ['Default PF Employee %', 12, 'Used when "PF Employee" is blank — % of PF Bank Salary'],
   ['Default PF Employer %', 13, 'Used when "PF Employer" is blank — % of PF Bank Salary'],
-  ['OT & Deductions Paid In', 'CASH', 'CASH / BANK — for PF employees, which part absorbs OT and leave/half-day deductions'],
+  ['OT & Deductions Paid In', 'CASH', 'CASH / BANK — for PF employees, which part absorbs OT, leave and advance deductions'],
+  ['Round To Rupee', 'Yes', 'Round salary amounts to whole rupees'],
   ['Admin Back-Date Limit (days)', 45, 'Admins can add/change entries up to this many days back (super admin: no limit; 0 = no limit)'],
+  ['Request Back-Date Limit (days)', 7, 'Employees can request corrections / leave up to this many days back'],
   ['Currency', '₹', ''],
   ['Selfie Folder ID', '', 'Filled automatically'],
 ];
+
+/** Per-execution cache so each request reads every tab at most once. */
+const MEMO = {};
+function memo_(key, fn) {
+  if (!Object.prototype.hasOwnProperty.call(MEMO, key)) MEMO[key] = fn();
+  return MEMO[key];
+}
+function forget_() {
+  for (let i = 0; i < arguments.length; i++) delete MEMO[arguments[i]];
+}
 
 /* ------------------------------------------------------------------ */
 /* Web app entry + sheet menu                                          */
@@ -129,22 +163,33 @@ function setup() {
 
   // Attendance
   sh = getOrCreate_(ss, SHEET.ATTENDANCE, ATT_HEADERS);
+  ensureHeaders_(sh, ATT_HEADERS);
   ['A:A', 'D:D', 'E:E'].forEach(a => sh.getRange(a).setNumberFormat('@'));
   sh.getRange(2, COL.OVERRIDE + 1, sh.getMaxRows() - 1, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(OVERRIDE_VALUES, true)
       .setAllowInvalid(false).build());
+  sh.getRange(2, COL.OT_APPROVED + 1, sh.getMaxRows() - 1, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['YES', 'NO'], true).build());
 
   // Holidays
   sh = getOrCreate_(ss, SHEET.HOLIDAYS, ['Date', 'Holiday Name']);
   sh.getRange('A:A').setNumberFormat('@');
 
-  // Admin permissions + audit log
+  // Admin permissions, audit log, requests, advances, payroll locks
   sh = getOrCreate_(ss, SHEET.PERMISSIONS, PERM_HEADERS);
   ensureHeaders_(sh, PERM_HEADERS);
   sh.getRange('A:A').setNumberFormat('@');
   getOrCreate_(ss, SHEET.AUDIT, AUDIT_HEADERS);
+  sh = getOrCreate_(ss, SHEET.REQUESTS, REQ_HEADERS);
+  ['F:F', 'G:G', 'H:H', 'I:I'].forEach(a => sh.getRange(a).setNumberFormat('@'));
+  sh = getOrCreate_(ss, SHEET.ADVANCES, ADV_HEADERS);
+  ['D:D', 'G:G'].forEach(a => sh.getRange(a).setNumberFormat('@'));
+  sh = getOrCreate_(ss, SHEET.LOCKS, LOCK_HEADERS);
+  sh.getRange('A:A').setNumberFormat('@');
+  sh = getOrCreate_(ss, SHEET.SNAPSHOTS, SNAP_HEADERS);
+  sh.getRange('A:A').setNumberFormat('@');
 
-  delete getSettings_.cache;
+  forget_('settings');
   getSelfieFolder_(getSettings_());
 
   try {
@@ -154,7 +199,7 @@ function setup() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Public API — called from the web page via google.script.run         */
+/* Login & PIN                                                         */
 /* ------------------------------------------------------------------ */
 
 function login(empId, pin) {
@@ -168,11 +213,12 @@ function login(empId, pin) {
   if (fails >= 5) throw new Error('Too many wrong attempts. Try again after 15 minutes.');
 
   const emp = findEmployee_(empId);
-  if (!emp || !emp.active || emp.pin !== pin) {
+  if (!emp || !emp.active || !verifyPin_(emp.pin, pin)) {
     cache.put(failKey, String(fails + 1), 900);
     throw new Error('Invalid Employee ID or PIN.');
   }
   cache.remove(failKey);
+  if (!isHashed_(emp.pin)) writePin_(emp, pin); // PINs typed into the sheet are hashed on first login
   const token = Utilities.getUuid();
   cache.put('tok_' + token, emp.id, 21600); // 6 hours (CacheService maximum)
   return { token: token, profile: profile_(emp) };
@@ -183,31 +229,76 @@ function logout(token) {
   return true;
 }
 
+function changePin(token, oldPin, newPin) {
+  const emp = auth_(token);
+  if (!verifyPin_(emp.pin, String(oldPin || '').trim())) throw new Error('Current PIN is wrong.');
+  newPin = validPin_(newPin);
+  writePin_(emp, newPin);
+  audit_(emp, 'CHANGE_PIN', emp.id, '', 'Changed own PIN');
+  return true;
+}
+
+function validPin_(pin) {
+  pin = String(pin || '').trim();
+  if (!/^\d{4,6}$/.test(pin)) throw new Error('PIN must be 4 to 6 digits.');
+  return pin;
+}
+
+function isHashed_(stored) {
+  return /^sha256\$/.test(String(stored));
+}
+
+function hashPin_(pin, salt) {
+  salt = salt || Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + pin, Utilities.Charset.UTF_8);
+  return 'sha256$' + salt + '$' + bytes.map(b => ('0' + ((b + 256) % 256).toString(16)).slice(-2)).join('');
+}
+
+function verifyPin_(stored, pin) {
+  stored = String(stored || '');
+  if (!isHashed_(stored)) return stored !== '' && stored === pin;
+  return hashPin_(pin, stored.split('$')[1]) === stored;
+}
+
+function writePin_(emp, pin) {
+  sheet_(SHEET.EMPLOYEES).getRange(emp.row, 3).setValue(hashPin_(pin));
+  forget_('employees');
+}
+
+/* ------------------------------------------------------------------ */
+/* Employee: attendance                                                */
+/* ------------------------------------------------------------------ */
+
 function getHome(token) {
   const emp = auth_(token);
   const s = getSettings_();
   const today = todayStr_();
-  const rec = readAttendance_().filter(r => r.empId === emp.id && r.date === today)[0];
-  const offType = offType_(today, s, getHolidays_());
+  const holidays = getHolidays_();
+  const rec = byDate_(readAttendance_(), emp.id)[today];
+  const offType = offType_(today, s, holidays);
   const day = rec ? evaluateDay_(rec, s, offType, true) : { status: offType || 'NOT_MARKED' };
+  const open = openOvernight_(emp, s);
   return {
     profile: profile_(emp),
     company: s.company,
     today: today,
     todayLabel: Utilities.formatDate(new Date(), tz_(), 'EEEE, dd MMM yyyy'),
     offType: offType,
-    record: rec ? { in: rec.in, out: rec.out } : null,
+    record: rec ? { in: rec.in, out: rec.out, override: rec.override } : null,
+    openPrevious: open ? { date: open.date, in: open.in } : null,
     day: day,
     office: {
       lat: isFinite(s.officeLat) ? s.officeLat : null, lng: isFinite(s.officeLng) ? s.officeLng : null,
       radius: s.radius, maxAccuracy: s.maxAccuracy,
     },
     selfieRequired: s.selfieRequired,
+    liveCameraOnly: s.liveCameraOnly,
     checkoutLocation: s.checkoutLocation,
     shiftStart: minutesToStr_(s.shiftStartMin),
     standardHours: s.standardHours,
     server: serverClock_(),
     clockTolerance: s.clockTolerance,
+    pendingRequests: readRequests_().filter(r => r.empId === emp.id && r.status === 'PENDING').length,
   };
 }
 
@@ -216,36 +307,54 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
   const s = getSettings_();
   checkPhoneClock_(s, phoneClock);
   const loc = checkLocation_(s, lat, lng, accuracy);
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const today = todayStr_();
-    const now = Utilities.formatDate(new Date(), tz_(), 'HH:mm');
-    const already = readAttendance_().some(r => r.empId === emp.id && r.date === today && r.in);
-    if (already) throw new Error('You have already checked in today.');
+  const today = todayStr_();
+  assertUnlocked_(today);
+  const existing = () => byDate_(readAttendance_(), emp.id)[today];
+  if (existing() && existing().in) throw new Error('You have already checked in today.');
 
-    let selfieUrl = '';
-    if (s.selfieRequired || selfieDataUrl) {
-      selfieUrl = saveSelfie_(selfieDataUrl, today + '_' + emp.id + '_' + now.replace(':', '') + '.jpg', s);
-    }
+  // The selfie is saved before taking the lock so that a morning rush does not queue up on Drive uploads.
+  const now = Utilities.formatDate(new Date(), tz_(), 'HH:mm');
+  let selfieUrl = '';
+  if (s.selfieRequired || selfieDataUrl) {
+    selfieUrl = saveSelfie_(selfieDataUrl, today + '_' + emp.id + '_' + now.replace(':', '') + '.jpg', s);
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    forget_('att');
+    const rec = existing();
+    if (rec && rec.in) throw new Error('You have already checked in today.');
     const offType = offType_(today, s, getHolidays_());
     const late = !offType && toMinutes_(now) > s.shiftStartMin + s.lateGrace;
-
-    const row = new Array(ATT_HEADERS.length).fill('');
-    row[COL.DATE] = "'" + today;
-    row[COL.EMP] = emp.id;
-    row[COL.NAME] = emp.name;
-    row[COL.IN] = "'" + now;
-    row[COL.STATUS] = 'WORKING';
-    row[COL.LATE] = late ? 'Yes' : '';
-    row[COL.IN_LAT] = loc.lat;
-    row[COL.IN_LNG] = loc.lng;
-    row[COL.IN_DIST] = loc.dist;
-    row[COL.IN_ACC] = loc.acc;
-    row[COL.SELFIE] = selfieUrl;
+    const flags = gpsFlags_(emp.id, today, loc, s);
     const sh = sheet_(SHEET.ATTENDANCE);
-    sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+
+    if (rec) {
+      // An admin had already put a status (e.g. Leave / Absent) on today: the check-in replaces it.
+      const note = [rec.note, 'Status ' + rec.override + ' replaced by check-in'].filter(String).join(' · ');
+      sh.getRange(rec.row, COL.IN + 1, 1, 6).setValues([["'" + now, '', '', 'WORKING', late ? 'Yes' : '', '']]);
+      sh.getRange(rec.row, COL.IN_LAT + 1, 1, 4).setValues([[loc.lat, loc.lng, loc.dist, loc.acc]]);
+      sh.getRange(rec.row, COL.SELFIE + 1, 1, 3).setValues([[selfieUrl, '', note]]);
+      sh.getRange(rec.row, COL.FLAGS + 1).setValue(flags.join(' '));
+    } else {
+      const row = new Array(ATT_HEADERS.length).fill('');
+      row[COL.DATE] = "'" + today;
+      row[COL.EMP] = emp.id;
+      row[COL.NAME] = emp.name;
+      row[COL.IN] = "'" + now;
+      row[COL.STATUS] = 'WORKING';
+      row[COL.LATE] = late ? 'Yes' : '';
+      row[COL.IN_LAT] = loc.lat;
+      row[COL.IN_LNG] = loc.lng;
+      row[COL.IN_DIST] = loc.dist;
+      row[COL.IN_ACC] = loc.acc;
+      row[COL.SELFIE] = selfieUrl;
+      row[COL.FLAGS] = flags.join(' ');
+      sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    }
     SpreadsheetApp.flush();
+    forget_('att');
     return { time: now, late: late, distance: loc.dist };
   } finally {
     lock.releaseLock();
@@ -258,31 +367,151 @@ function checkOut(token, lat, lng, accuracy, phoneClock) {
   checkPhoneClock_(s, phoneClock);
   const loc = s.checkoutLocation ? checkLocation_(s, lat, lng, accuracy) : null;
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  lock.waitLock(30000);
   try {
+    forget_('att');
     const today = todayStr_();
-    const rec = readAttendance_().filter(r => r.empId === emp.id && r.date === today && r.in)[0];
-    if (!rec) throw new Error('You have not checked in today.');
+    let rec = byDate_(readAttendance_(), emp.id)[today];
+    if (!rec || !rec.in) rec = openOvernight_(emp, s); // night shift: close yesterday's entry
+    if (!rec || !rec.in) throw new Error('You have not checked in today.');
     if (rec.out) throw new Error('You have already checked out today (at ' + rec.out + ').');
+    assertUnlocked_(rec.date);
 
     const now = Utilities.formatDate(new Date(), tz_(), 'HH:mm');
     rec.out = now;
-    const d = evaluateDay_(rec, s, offType_(today, s, getHolidays_()), false);
+    const d = evaluateDay_(rec, s, offType_(rec.date, s, getHolidays_()), false);
 
     const sh = sheet_(SHEET.ATTENDANCE);
     sh.getRange(rec.row, COL.OUT + 1, 1, 5).setValues([["'" + now, d.worked, d.status, d.late ? 'Yes' : '', d.ot]]);
-    if (loc) sh.getRange(rec.row, COL.OUT_LAT + 1, 1, 3).setValues([[loc.lat, loc.lng, loc.dist]]);
+    if (loc) {
+      sh.getRange(rec.row, COL.OUT_LAT + 1, 1, 3).setValues([[loc.lat, loc.lng, loc.dist]]);
+      sh.getRange(rec.row, COL.OUT_ACC + 1).setValue(loc.acc);
+      if (isFinite(loc.acc) && loc.acc > s.flagAccuracy) {
+        sh.getRange(rec.row, COL.FLAGS + 1).setValue((rec.flags + ' WEAK_GPS_OUT').trim());
+      }
+    }
     SpreadsheetApp.flush();
-    return { time: now, worked: d.worked, ot: d.ot, status: d.status };
+    forget_('att');
+    return { time: now, worked: d.worked, ot: d.ot, status: d.status, date: rec.date };
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Yesterday's entry that is still open, when overnight shifts are allowed and it is not too old. */
+function openOvernight_(emp, s) {
+  if (!s.overnight) return null;
+  const today = todayStr_();
+  const y = addDays_(today, -1);
+  const rec = byDate_(readAttendance_(), emp.id)[y];
+  if (!rec || !rec.in || rec.out) return null;
+  const nowMin = toMinutes_(Utilities.formatDate(new Date(), tz_(), 'HH:mm'));
+  return nowMin + 1440 - toMinutes_(rec.in) <= s.maxShiftHours * 60 ? rec : null;
+}
+
+/** Suspicious-GPS markers shown to admins: weak accuracy, identical coordinates to earlier days or other people. */
+function gpsFlags_(empId, date, loc, s) {
+  const flags = [];
+  if (isFinite(loc.acc) && loc.acc > s.flagAccuracy) flags.push('WEAK_GPS');
+  const key = coordKey_(loc.lat, loc.lng);
+  const since = addDays_(date, -60);
+  const att = readAttendance_();
+  if (att.some(r => r.empId === empId && r.date !== date && r.date >= since && coordKey_(r.inLat, r.inLng) === key)) {
+    flags.push('REPEAT_GPS');
+  }
+  if (att.some(r => r.empId !== empId && r.date === date && coordKey_(r.inLat, r.inLng) === key)) {
+    flags.push('SHARED_GPS');
+  }
+  return flags;
+}
+
+function coordKey_(lat, lng) {
+  if (lat === '' || lng === '' || !isFinite(Number(lat)) || !isFinite(Number(lng))) return 'none';
+  return Number(lat).toFixed(6) + ',' + Number(lng).toFixed(6);
 }
 
 /** Monthly attendance, OT and salary for the logged-in employee. ym = 'yyyy-MM'. */
 function getMyMonth(token, ym) {
   const emp = auth_(token);
   return buildMonth_(emp, validYm_(ym));
+}
+
+/** Payslip as HTML (and optionally PDF). Employees get their own; admins with View Payroll anyone they manage. */
+function getPayslip(token, ym, empId, asPdf) {
+  const me = auth_(token);
+  let emp = me;
+  if (empId && String(empId).toUpperCase() !== me.id) {
+    const ctx = authAdmin_(token, 'viewPayroll');
+    emp = managedEmployee_(ctx, empId);
+  }
+  const m = buildMonth_(emp, validYm_(ym));
+  const html = payslipHtml_(emp, m);
+  const out = { html: html, fileName: 'Payslip_' + emp.id + '_' + m.ym + '.pdf' };
+  if (asPdf) {
+    const pdf = Utilities.newBlob(html, 'text/html', 'payslip.html').getAs('application/pdf');
+    out.pdf = Utilities.base64Encode(pdf.getBytes());
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Employee: requests (leave / correction)                             */
+/* ------------------------------------------------------------------ */
+
+/** req = { type: 'LEAVE', from, to, leaveType: 'PAID'|'UNPAID', reason } or { type: 'CORRECTION', from, in, out, reason } */
+function submitRequest(token, req) {
+  const emp = auth_(token);
+  const s = getSettings_();
+  req = req || {};
+  const type = String(req.type || '').toUpperCase();
+  const today = todayStr_();
+  const minDate = s.requestBackDays > 0 ? addDays_(today, -s.requestBackDays) : '2000-01-01';
+  const from = toDateStr_(req.from);
+  const to = type === 'LEAVE' ? toDateStr_(req.to || req.from) : from;
+  const reason = String(req.reason || '').trim().slice(0, 300);
+  if (!from || !to) throw new Error('Choose the date.');
+  if (from < minDate) throw new Error('You can only request for dates from ' + minDate + ' onwards.');
+  if (!reason) throw new Error('Please write a reason.');
+
+  let inT = '', outT = '', leaveType = '';
+  if (type === 'LEAVE') {
+    if (to < from) throw new Error('"To" date must be on or after "From" date.');
+    if (to > addDays_(today, 90)) throw new Error('Leave can be requested at most 90 days ahead.');
+    leaveType = String(req.leaveType || 'PAID').toUpperCase() === 'UNPAID' ? 'UNPAID' : 'PAID';
+  } else if (type === 'CORRECTION') {
+    if (from > today) throw new Error('Corrections are only for past days or today.');
+    inT = toTimeStr_(req.in);
+    outT = toTimeStr_(req.out);
+    if (!inT && !outT) throw new Error('Enter the correct check-in and/or check-out time.');
+  } else {
+    throw new Error('Unknown request type.');
+  }
+  for (let d = from; d <= to; d = addDays_(d, 1)) assertUnlocked_(d);
+  if (readRequests_().some(r => r.empId === emp.id && r.status === 'PENDING' && r.type === type && r.from === from)) {
+    throw new Error('You already have a pending request for this date.');
+  }
+
+  const id = 'R' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  const row = [id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'), emp.id, emp.name, type,
+    "'" + from, "'" + to, inT ? "'" + inT : '', outT ? "'" + outT : '', leaveType, reason, 'PENDING', '', '', ''];
+  const sh = sheetOrCreate_(SHEET.REQUESTS, REQ_HEADERS);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  forget_('requests');
+  return myRequests(token);
+}
+
+function myRequests(token) {
+  const emp = auth_(token);
+  return readRequests_().filter(r => r.empId === emp.id).reverse().slice(0, 30);
+}
+
+function cancelRequest(token, id) {
+  const emp = auth_(token);
+  const r = readRequests_().filter(x => x.id === id && x.empId === emp.id)[0];
+  if (!r || r.status !== 'PENDING') throw new Error('Only pending requests can be cancelled.');
+  sheet_(SHEET.REQUESTS).getRange(r.row, 12).setValue('CANCELLED');
+  forget_('requests');
+  return myRequests(token);
 }
 
 /* ---------------------------- Admin ------------------------------- */
@@ -300,22 +529,26 @@ function adminToday(token) {
   const recs = {};
   readAttendance_().forEach(r => { if (r.date === today && !recs[r.empId]) recs[r.empId] = r; });
 
-  const counts = { total: 0, in: 0, late: 0, out: 0, notMarked: 0 };
+  const counts = { total: 0, in: 0, late: 0, out: 0, notMarked: 0, flagged: 0 };
   const list = getEmployees_().filter(e => e.active && canManage_(ctx, e.id)).map(e => {
     const r = recs[e.id];
     const d = r ? evaluateDay_(r, s, offType, true) : { status: offType || 'NOT_MARKED' };
+    const flags = r && r.flags ? r.flags.split(/\s+/).filter(String) : [];
+    if (r && r.in && s.selfieRequired && !r.selfie && !/replaced|Entered by/i.test(String(r.note))) flags.push('NO_SELFIE');
     counts.total++;
     if (r && r.in) counts.in++;
     if (d.late) counts.late++;
     if (r && r.out) counts.out++;
     if (!r || !r.in) counts.notMarked++;
+    if (flags.length) counts.flagged++;
     return {
       id: e.id, name: e.name, in: r ? r.in : '', out: r ? r.out : '', status: d.status,
-      late: !!d.late, worked: d.worked || 0, distance: r ? r.inDist : '', row: r ? r.row : 0,
-      hasSelfie: !!(r && r.selfie),
+      late: !!d.late, worked: d.worked || 0, distance: r ? r.inDist : '', accuracy: r ? r.inAcc : '',
+      row: r ? r.row : 0, hasSelfie: !!(r && r.selfie), flags: flags,
     };
   });
-  list.sort((a, b) => (a.in ? 0 : 1) - (b.in ? 0 : 1) || a.name.localeCompare(b.name));
+  list.sort((a, b) => (b.flags.length ? 1 : 0) - (a.flags.length ? 1 : 0) ||
+    (a.in ? 0 : 1) - (b.in ? 0 : 1) || a.name.localeCompare(b.name));
   return { date: today, offType: offType, counts: counts, list: list };
 }
 
@@ -326,28 +559,37 @@ function adminMonth(token, ym) {
 
 function payrollRows_(ctx, ym) {
   const s = getSettings_();
-  const holidays = getHolidays_();
   const att = readAttendance_().filter(r => r.date.indexOf(ym) === 0);
   const withRecords = {};
   att.forEach(r => { withRecords[r.empId] = true; });
+  const lock = getLocks_()[ym];
 
   const rows = getEmployees_().filter(e => (e.active || withRecords[e.id]) && canManage_(ctx, e.id)).map(e => {
-    const m = monthSummary_(e, ym, s, byDate_(att, e.id), holidays);
+    const m = buildMonth_(e, ym);
     return Object.assign({ id: e.id, name: e.name }, m.totals, m.pay);
   });
-  return { ym: ym, label: ymLabel_(ym), currency: s.currency, rows: rows };
+  return {
+    ym: ym, label: ymLabel_(ym), currency: s.currency, rows: rows,
+    locked: lock ? { by: lock.by, at: lock.at } : null,
+    canLock: !lock && ym < todayStr_().slice(0, 7) && !!ctx.perms.lockPayroll,
+    canUnlock: !!lock && ctx.perms.superAdmin,
+  };
 }
 
 /** One employee's calendar. Salary is hidden unless the admin has "View Payroll". */
 function adminEmployeeMonth(token, empId, ym) {
-  const ctx = authAdmin_(token, ['viewPayroll', 'editAttendance']);
+  const ctx = authAdmin_(token, ['viewPayroll', 'editAttendance', 'approveRequests']);
   const emp = managedEmployee_(ctx, empId);
   const m = buildMonth_(emp, validYm_(ym));
   if (!ctx.perms.viewPayroll) delete m.pay;
-  m.canEdit = canEditEmployee_(ctx, emp.id);
+  m.canEdit = !!ctx.perms.editAttendance && canEditEmployee_(ctx, emp.id) && !m.locked;
+  m.canApproveOt = !!ctx.perms.approveRequests && canEditEmployee_(ctx, emp.id) && !m.locked;
+  m.canPayslip = !!ctx.perms.viewPayroll;
   m.minDate = ctx.minDate;
   return m;
 }
+
+/* ----------------------- Entries (back-dated) ---------------------- */
 
 /** Employees this admin may pick in the "Entries" screen, plus the allowed date range. */
 function adminEntryOptions(token) {
@@ -357,6 +599,7 @@ function adminEntryOptions(token) {
       .map(e => ({ id: e.id, name: e.name })),
     minDate: ctx.minDate,
     maxDate: todayStr_(),
+    bulkMaxDate: addDays_(todayStr_(), -1),
     overrides: OVERRIDE_VALUES,
   };
 }
@@ -368,19 +611,21 @@ function adminGetEntry(token, empId, date) {
   date = checkEntryDate_(ctx, date);
   const s = getSettings_();
   const off = offType_(date, s, getHolidays_());
-  const rec = readAttendance_().filter(r => r.empId === emp.id && r.date === date)[0];
+  const rec = byDate_(readAttendance_(), emp.id)[date];
   return {
     empId: emp.id, name: emp.name, date: date, offType: off,
     exists: !!rec,
     in: rec ? rec.in : '', out: rec ? rec.out : '', override: rec ? rec.override : '',
     note: rec ? String(rec.note || '') : '', hasSelfie: !!(rec && rec.selfie),
+    otApproved: rec ? rec.otApproved : '', otNeedsApproval: s.otApproval,
+    flags: rec ? rec.flags : '',
     day: rec ? evaluateDay_(rec, s, off, date === todayStr_()) : null,
   };
 }
 
 /**
  * Adds or updates a (back-dated) entry.
- * entry = { empId, date: 'yyyy-MM-dd', in: 'HH:mm', out: 'HH:mm', override: '' | PRESENT | HALF_DAY | ABSENT | LEAVE, note }
+ * entry = { empId, date, in: 'HH:mm', out: 'HH:mm', override: '' | PRESENT | HALF_DAY | ABSENT | LEAVE, note, otApproved }
  */
 function adminSaveEntry(token, entry) {
   const ctx = authAdmin_(token, 'editAttendance');
@@ -388,11 +633,11 @@ function adminSaveEntry(token, entry) {
   const date = checkEntryDate_(ctx, entry.date);
   const e = cleanEntry_(entry);
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  lock.waitLock(30000);
   try {
-    const ctxData = entryContext_();
-    const result = upsertEntry_(ctxData, emp, date, e, ctx.emp, true);
-    flushNewRows_(ctxData);
+    const data = entryContext_();
+    const result = upsertEntry_(data, emp, date, e, ctx.emp, true);
+    flushNewRows_(data);
     audit_(ctx.emp, result.created ? 'ADD_ENTRY' : 'EDIT_ENTRY', emp.id, date, result.before + ' → ' + entryText_(e));
     return adminGetEntry(token, emp.id, date);
   } finally {
@@ -405,11 +650,13 @@ function adminDeleteEntry(token, empId, date) {
   const emp = managedEmployee_(ctx, empId, true);
   date = checkEntryDate_(ctx, date);
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  lock.waitLock(30000);
   try {
-    const rec = readAttendance_().filter(r => r.empId === emp.id && r.date === date)[0];
+    forget_('att');
+    const rec = byDate_(readAttendance_(), emp.id)[date];
     if (!rec) throw new Error('No entry for this date.');
     sheet_(SHEET.ATTENDANCE).deleteRow(rec.row);
+    forget_('att');
     audit_(ctx.emp, 'DELETE_ENTRY', emp.id, date, entryText_(rec));
     return true;
   } finally {
@@ -418,8 +665,9 @@ function adminDeleteEntry(token, empId, date) {
 }
 
 /**
- * Fills many days at once (e.g. the days before the app went live).
- * opts = { empIds: [...] , from, to, in, out, override, note, skipOff: true, overwrite: false }
+ * Fills many days at once (e.g. the days before the app went live). Only up to yesterday, so it can
+ * never block a real check-in today.
+ * opts = { empIds: [...], from, to, in, out, override, note, skipOff: true, overwrite: false }
  */
 function adminBulkEntry(token, opts) {
   const ctx = authAdmin_(token, 'editAttendance');
@@ -427,6 +675,7 @@ function adminBulkEntry(token, opts) {
   const from = checkEntryDate_(ctx, opts.from);
   const to = checkEntryDate_(ctx, opts.to);
   if (to < from) throw new Error('"To" date must be on or after "From" date.');
+  if (to >= todayStr_()) throw new Error('Bulk fill goes up to yesterday only. Use "One day" for today.');
   const ids = (opts.empIds || []).map(x => String(x).toUpperCase()).filter((x, i, arr) => arr.indexOf(x) === i);
   if (!ids.length) throw new Error('Select at least one employee.');
   const emps = ids.map(id => managedEmployee_(ctx, id, true));
@@ -459,6 +708,173 @@ function adminBulkEntry(token, opts) {
     lock.releaseLock();
   }
 }
+
+/* ------------------------ Requests & OT approval ------------------- */
+
+function adminRequests(token) {
+  const ctx = authAdmin_(token, 'approveRequests');
+  const s = getSettings_();
+  const reqs = readRequests_().filter(r => canEditEmployee_(ctx, r.empId));
+  const out = {
+    pending: reqs.filter(r => r.status === 'PENDING'),
+    recent: reqs.filter(r => r.status !== 'PENDING').reverse().slice(0, 20),
+    otApproval: s.otApproval,
+    ot: [],
+  };
+  if (s.otApproval) {
+    const holidays = getHolidays_();
+    const emps = {};
+    getEmployees_().forEach(e => { emps[e.id] = e; });
+    const since = ctx.minDate > addDays_(todayStr_(), -62) ? ctx.minDate : addDays_(todayStr_(), -62);
+    readAttendance_().forEach(r => {
+      if (r.date < since || r.otApproved || !r.out || !emps[r.empId] || !canEditEmployee_(ctx, r.empId)) return;
+      if (isLocked_(r.date.slice(0, 7))) return;
+      const d = evaluateDay_(r, s, offType_(r.date, s, holidays), false);
+      if (d.otPending > 0) {
+        out.ot.push({ empId: r.empId, name: emps[r.empId].name, date: r.date, in: r.in, out: r.out, otMin: d.otPending });
+      }
+    });
+    out.ot.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+  return out;
+}
+
+/** approve: true/false. leaveType overrides the employee's choice for leave requests (PAID / UNPAID). */
+function adminDecideRequest(token, id, approve, remark, leaveType) {
+  const ctx = authAdmin_(token, 'approveRequests');
+  const r = readRequests_().filter(x => x.id === id)[0];
+  if (!r) throw new Error('Request not found.');
+  if (r.status !== 'PENDING') throw new Error('This request was already ' + r.status.toLowerCase() + '.');
+  const emp = managedEmployee_(ctx, r.empId, true);
+  remark = String(remark || '').trim().slice(0, 300);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let summary = '';
+    if (approve) {
+      const data = entryContext_();
+      const s = data.s;
+      if (r.type === 'LEAVE') {
+        const paid = String(leaveType || r.leaveType || 'PAID').toUpperCase() !== 'UNPAID';
+        let n = 0;
+        for (let d = r.from; d <= r.to; d = addDays_(d, 1)) {
+          assertUnlocked_(d);
+          if (offType_(d, s, data.holidays)) continue;
+          const rec = data.map[emp.id + '|' + d];
+          upsertEntry_(data, emp, d, {
+            in: rec && rec.in ? rec.in : '', out: rec && rec.out ? rec.out : '',
+            override: paid ? 'LEAVE' : 'ABSENT', note: (paid ? 'Paid' : 'Unpaid') + ' leave: ' + r.reason,
+          }, ctx.emp, true);
+          n++;
+        }
+        summary = (paid ? 'Paid' : 'Unpaid') + ' leave, ' + n + ' working day(s)';
+      } else {
+        checkEntryDate_(ctx, r.from);
+        const rec = data.map[emp.id + '|' + r.from];
+        const e = cleanEntry_({
+          in: r.in || (rec ? rec.in : ''), out: r.out || (rec ? rec.out : ''),
+          note: 'Correction: ' + r.reason,
+        });
+        upsertEntry_(data, emp, r.from, e, ctx.emp, true);
+        summary = entryText_(e);
+      }
+      flushNewRows_(data);
+    }
+    sheet_(SHEET.REQUESTS).getRange(r.row, 12, 1, 4).setValues([[approve ? 'APPROVED' : 'REJECTED', ctx.emp.id + ' ' + ctx.emp.name,
+      Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'), remark]]);
+    forget_('requests');
+    audit_(ctx.emp, approve ? 'APPROVE_REQUEST' : 'REJECT_REQUEST', emp.id, r.from + (r.to !== r.from ? ' to ' + r.to : ''),
+      r.type + (summary ? ' | ' + summary : '') + (remark ? ' | ' + remark : ''));
+  } finally {
+    lock.releaseLock();
+  }
+  return adminRequests(token);
+}
+
+function adminDecideOt(token, empId, date, approve) {
+  const ctx = authAdmin_(token, 'approveRequests');
+  const emp = managedEmployee_(ctx, empId, true);
+  date = toDateStr_(date);
+  assertUnlocked_(date);
+  const rec = byDate_(readAttendance_(), emp.id)[date];
+  if (!rec) throw new Error('Entry not found.');
+  sheet_(SHEET.ATTENDANCE).getRange(rec.row, COL.OT_APPROVED + 1).setValue(approve ? 'YES' : 'NO');
+  forget_('att');
+  audit_(ctx.emp, approve ? 'APPROVE_OT' : 'REJECT_OT', emp.id, date, rec.in + '–' + rec.out);
+  return true;
+}
+
+/* --------------------------- Employees ----------------------------- */
+
+function adminStaff(token) {
+  const ctx = authAdmin_(token, 'manageEmployees');
+  return {
+    canSetRole: ctx.perms.superAdmin,
+    list: getEmployees_().filter(e => canEditEmployee_(ctx, e.id)).map(e => ({
+      id: e.id, name: e.name, salary: e.salary, role: e.role, active: e.active, joinDate: e.joinDate, phone: e.phone,
+    })),
+  };
+}
+
+/** data = { isNew, id, name, pin (new only), salary, joinDate, phone, active, role (super admin only) } */
+function adminSaveStaff(token, data) {
+  const ctx = authAdmin_(token, 'manageEmployees');
+  data = data || {};
+  const name = String(data.name || '').trim();
+  const salary = Number(data.salary);
+  const joinDate = toDateStr_(data.joinDate) || todayStr_();
+  const phone = String(data.phone || '').trim();
+  if (!name) throw new Error('Enter the name.');
+  if (!isFinite(salary) || salary < 0) throw new Error('Enter a valid monthly salary.');
+  let role = String(data.role || 'EMPLOYEE').toUpperCase();
+  if (!ctx.perms.superAdmin || ['EMPLOYEE', 'ADMIN'].indexOf(role) < 0) role = null;
+
+  const sh = sheet_(SHEET.EMPLOYEES);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    forget_('employees');
+    if (data.isNew) {
+      const id = String(data.id || '').trim().toUpperCase();
+      if (!/^[A-Z0-9_-]{1,20}$/.test(id)) throw new Error('Employee ID can use letters, numbers, - and _ only.');
+      if (findEmployee_(id)) throw new Error('Employee ID ' + id + ' already exists.');
+      const pin = validPin_(data.pin);
+      const h = headerIndex_(sh);
+      const row = new Array(Math.max(sh.getLastColumn(), EMP_HEADERS.length)).fill('');
+      row[0] = id; row[1] = name; row[2] = hashPin_(pin); row[3] = salary; row[4] = role || 'EMPLOYEE';
+      row[5] = 'Yes'; row[6] = "'" + joinDate; row[7] = phone;
+      if (h['PF Active'] !== undefined) row[h['PF Active']] = 'No';
+      sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+      forget_('employees');
+      audit_(ctx.emp, 'ADD_EMPLOYEE', id, joinDate, name + ', salary ' + salary);
+    } else {
+      const emp = managedEmployee_(ctx, data.id, true);
+      const active = data.active !== false;
+      const before = [emp.name, emp.salary, emp.joinDate, emp.phone, emp.active ? 'Active' : 'Inactive', emp.role].join(' / ');
+      sh.getRange(emp.row, 2).setValue(name);
+      sh.getRange(emp.row, 4).setValue(salary);
+      if (role && emp.role !== 'SUPER_ADMIN') sh.getRange(emp.row, 5).setValue(role);
+      sh.getRange(emp.row, 6, 1, 3).setValues([[active ? 'Yes' : 'No', "'" + joinDate, phone]]);
+      forget_('employees');
+      audit_(ctx.emp, 'EDIT_EMPLOYEE', emp.id, '', before + ' → ' +
+        [name, salary, joinDate, phone, active ? 'Active' : 'Inactive', role || emp.role].join(' / '));
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return adminStaff(token);
+}
+
+function adminResetPin(token, empId, newPin) {
+  const ctx = authAdmin_(token, 'manageEmployees');
+  const emp = managedEmployee_(ctx, empId, true);
+  writePin_(emp, validPin_(newPin));
+  audit_(ctx.emp, 'RESET_PIN', emp.id, '', 'PIN reset');
+  return true;
+}
+
+/* ------------------------------ PF -------------------------------- */
 
 /** Employee list with PF settings for the admin "PF Setup" screen. */
 function adminEmployees(token) {
@@ -498,10 +914,126 @@ function adminSavePf(token, empId, data) {
     sh.getRange(emp.row, h[name] + 1).setValue(vals[i]);
   });
   SpreadsheetApp.flush();
+  forget_('employees');
   audit_(ctx.emp, 'EDIT_PF', emp.id, '', 'PF ' + vals[0] + ', bank ' + vals[1] + ', employee ' + vals[2] +
     ', employer ' + vals[3]);
   return adminEmployees(token);
 }
+
+/* ---------------------------- Advances ----------------------------- */
+
+function adminAdvances(token) {
+  const ctx = authAdmin_(token, 'manageAdvances');
+  const s = getSettings_();
+  const ym = todayStr_().slice(0, 7);
+  const emps = getEmployees_().filter(e => canEditEmployee_(ctx, e.id));
+  const names = {};
+  emps.forEach(e => { names[e.id] = e.name; });
+  const list = readAdvances_().filter(a => names[a.empId]).map(a => {
+    const st = advanceState_(a, ym);
+    return Object.assign({}, a, {
+      name: names[a.empId], deductedBefore: st.deductedBefore, thisMonth: st.thisMonth,
+      balanceAfter: st.balanceAfter, repaid: st.balanceAfter <= 0,
+    });
+  }).reverse();
+  return {
+    currency: s.currency, currentMonth: ym, list: list,
+    employees: emps.filter(e => e.active).map(e => ({ id: e.id, name: e.name })),
+  };
+}
+
+/** data = { id (edit) | empId (new), amount, monthly, startMonth, dateGiven, note } */
+function adminSaveAdvance(token, data) {
+  const ctx = authAdmin_(token, 'manageAdvances');
+  data = data || {};
+  const monthly = Number(data.monthly);
+  if (!(monthly > 0)) throw new Error('Enter the monthly deduction amount.');
+  const note = String(data.note || '').trim().slice(0, 200);
+  const sh = sheetOrCreate_(SHEET.ADVANCES, ADV_HEADERS);
+  if (data.id) {
+    const a = readAdvances_().filter(x => x.id === data.id)[0];
+    if (!a) throw new Error('Advance not found.');
+    managedEmployee_(ctx, a.empId, true);
+    sh.getRange(a.row, 6).setValue(monthly);
+    sh.getRange(a.row, 9).setValue(note);
+    forget_('advances');
+    audit_(ctx.emp, 'EDIT_ADVANCE', a.empId, a.id, 'monthly ' + a.monthly + ' → ' + monthly);
+  } else {
+    const emp = managedEmployee_(ctx, data.empId, true);
+    const amount = Number(data.amount);
+    if (!(amount > 0)) throw new Error('Enter the advance amount.');
+    const start = /^\d{4}-\d{2}$/.test(String(data.startMonth)) ? data.startMonth : todayStr_().slice(0, 7);
+    if (isLocked_(start)) throw new Error('Payroll for ' + ymLabel_(start) + ' is locked. Start from a later month.');
+    const id = 'A' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+    sh.appendRow([id, emp.id, emp.name, "'" + (toDateStr_(data.dateGiven) || todayStr_()), amount, monthly, "'" + start,
+      'ACTIVE', note, ctx.emp.id + ' ' + ctx.emp.name, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
+    forget_('advances');
+    audit_(ctx.emp, 'ADD_ADVANCE', emp.id, start, 'amount ' + amount + ', monthly ' + monthly + (note ? ', ' + note : ''));
+  }
+  return adminAdvances(token);
+}
+
+/** status: ACTIVE (resume) / PAUSED (skip deductions until resumed) / CLOSED (stop for good, e.g. repaid in cash). */
+function adminSetAdvanceStatus(token, id, status) {
+  const ctx = authAdmin_(token, 'manageAdvances');
+  status = String(status).toUpperCase();
+  if (['ACTIVE', 'PAUSED', 'CLOSED'].indexOf(status) < 0) throw new Error('Invalid status.');
+  const a = readAdvances_().filter(x => x.id === id)[0];
+  if (!a) throw new Error('Advance not found.');
+  managedEmployee_(ctx, a.empId, true);
+  sheet_(SHEET.ADVANCES).getRange(a.row, 8).setValue(status);
+  forget_('advances');
+  audit_(ctx.emp, 'ADVANCE_' + status, a.empId, a.id, a.status + ' → ' + status);
+  return adminAdvances(token);
+}
+
+/* -------------------------- Payroll lock --------------------------- */
+
+/** Freezes a finished month: salary, attendance and advance deductions are saved and can no longer change. */
+function adminLockMonth(token, ym) {
+  const ctx = authAdmin_(token, 'lockPayroll');
+  ym = validYm_(ym);
+  if (ym >= todayStr_().slice(0, 7)) throw new Error('Only finished months can be locked.');
+  if (isLocked_(ym)) throw new Error(ymLabel_(ym) + ' is already locked.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const att = readAttendance_().filter(r => r.date.indexOf(ym) === 0);
+    const withRecords = {};
+    att.forEach(r => { withRecords[r.empId] = true; });
+    const rows = getEmployees_().filter(e => e.active || withRecords[e.id]).map(e => {
+      const m = computeMonth_(e, ym);
+      return ["'" + ym, e.id, e.name, JSON.stringify({ totals: m.totals, pay: m.pay, days: m.days, advances: m.advances })];
+    });
+    const snap = sheetOrCreate_(SHEET.SNAPSHOTS, SNAP_HEADERS);
+    if (rows.length) snap.getRange(snap.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
+    sheetOrCreate_(SHEET.LOCKS, LOCK_HEADERS).appendRow(["'" + ym, ctx.emp.id + ' ' + ctx.emp.name,
+      Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
+    forget_('locks', 'snapshots');
+    audit_(ctx.emp, 'LOCK_MONTH', '', ym, rows.length + ' employees');
+  } finally {
+    lock.releaseLock();
+  }
+  return adminMonth(token, ym);
+}
+
+function superUnlockMonth(token, ym) {
+  const ctx = authAdmin_(token, 'superAdmin');
+  ym = validYm_(ym);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    deleteRowsWhere_(SHEET.LOCKS, r => toYm_(r[0]) === ym);
+    deleteRowsWhere_(SHEET.SNAPSHOTS, r => toYm_(r[0]) === ym);
+    forget_('locks', 'snapshots');
+    audit_(ctx.emp, 'UNLOCK_MONTH', '', ym, '');
+  } finally {
+    lock.releaseLock();
+  }
+  return adminMonth(token, ym);
+}
+
+/* ---------------------------- Misc admin --------------------------- */
 
 /** Returns the check-in selfie as a data URL so admins can view it inside the app. */
 function adminGetSelfie(token, row) {
@@ -524,15 +1056,15 @@ function adminExportPayroll(token, ym) {
   const sh = ss.getSheetByName(name) || ss.insertSheet(name);
   sh.clear();
   const header = ['Emp ID', 'Name', 'Total Salary', 'Present', 'Half Days', 'Absent (Leaves)', 'Paid Leave',
-    'Week Off', 'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Mins', 'OT Mins (gross)', 'OT Mins (net)',
-    'OT Hrs (net)', 'Per Day', 'Per Hour', 'Per Min', 'OT Pay', 'Leave Deduction', 'Half Day Deduction',
-    'Late Cut Deduction', 'Gross Payable', 'PF', 'PF Bank Salary', 'PF Employee', 'PF Employer', 'In Bank',
-    'In Cash', 'Net Salary'];
+    'Week Off', 'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Mins', 'Early Leaving Mins', 'OT Mins (gross)',
+    'OT Mins (net)', 'OT Hrs (net)', 'Per Day', 'Per Hour', 'Per Min', 'OT Pay', 'Leave Deduction',
+    'Half Day Deduction', 'Late Cut Deduction', 'Advance Deduction', 'Gross Payable', 'PF', 'PF Bank Salary',
+    'PF Employee', 'PF Employer', 'In Bank', 'In Cash', 'Net Salary', 'Locked'];
   const rows = data.rows.map(r => [r.id, r.name, r.salary, r.present, r.halfDay, r.absent + r.notJoined, r.leave,
-    r.weekOff, r.holiday, r.offWork, r.late, r.lateMin, r.otMinGross, r.otMin, r.otHours, r.perDay, r.hourly,
-    r.perMin, r.otPay, r.leaveDed, r.halfDayDed, r.lateCutDed, r.gross, r.pf ? 'Yes' : 'No',
-    r.pf ? r.pfBankSalary : '', r.pf ? r.pfEmployee : '', r.pf ? r.pfEmployer : '', r.pf ? r.bank : '',
-    r.pf ? r.cash : '', r.net]);
+    r.weekOff, r.holiday, r.offWork, r.late, r.lateMin, r.earlyMin || 0, r.otMinGross, r.otMin, r.otHours, r.perDay,
+    r.hourly, r.perMin, r.otPay, r.leaveDed, r.halfDayDed, r.lateCutDed, r.advance || 0, r.gross,
+    r.pf ? 'Yes' : 'No', r.pf ? r.pfBankSalary : '', r.pf ? r.pfEmployee : '', r.pf ? r.pfEmployer : '',
+    r.pf ? r.bank : '', r.pf ? r.cash : '', r.net, data.locked ? 'Yes' : 'No']);
   sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold').setBackground('#e8eefc');
   if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
   sh.setFrozenRows(1);
@@ -565,15 +1097,25 @@ function superSavePermissions(token, empId, perms) {
   perms = perms || {};
   const list = perms.employees === 'ALL' ? 'ALL'
     : (perms.employees || []).map(x => String(x).trim().toUpperCase()).filter(String).join(',');
-  const row = [emp.id, emp.name].concat(PERMISSIONS.map(p => (perms[p.key] ? 'Yes' : 'No')))
-    .concat([list || 'NONE', ctx.emp.id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
 
   const sh = permSheet_();
+  ensureHeaders_(sh, PERM_HEADERS);
+  const h = headerIndex_(sh);
+  const row = new Array(sh.getLastColumn()).fill('');
+  row[h['Emp ID']] = emp.id;
+  row[h['Name']] = emp.name;
+  PERMISSIONS.forEach(p => { row[h[p.label]] = perms[p.key] ? 'Yes' : 'No'; });
+  row[h['Allowed Employees']] = list || 'NONE';
+  row[h['Updated By']] = ctx.emp.id;
+  row[h['Updated At']] = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm');
+
   const ids = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(r => String(r[0]).trim().toUpperCase()) : [];
   const i = ids.indexOf(emp.id);
   const at = i >= 0 ? i + 2 : sh.getLastRow() + 1;
   sh.getRange(at, 1, 1, row.length).setValues([row]);
-  audit_(ctx.emp, 'SET_PERMISSIONS', emp.id, '', row.slice(2, 2 + PERMISSIONS.length + 1).join(' '));
+  forget_('perms');
+  audit_(ctx.emp, 'SET_PERMISSIONS', emp.id, '',
+    PERMISSIONS.filter(p => perms[p.key]).map(p => p.label).join(', ') + ' | employees: ' + (list || 'NONE'));
   return superListAdmins(token);
 }
 
@@ -586,6 +1128,7 @@ function superSetRole(token, empId, role) {
   if (!emp) throw new Error('Employee not found.');
   if (emp.role === 'SUPER_ADMIN') throw new Error('Super admins can only be changed in the Employees sheet.');
   sheet_(SHEET.EMPLOYEES).getRange(emp.row, 5).setValue(role);
+  forget_('employees');
   audit_(ctx.emp, 'SET_ROLE', emp.id, '', emp.role + ' → ' + role);
   return superListAdmins(token);
 }
@@ -639,41 +1182,44 @@ function permsFor_(emp, saved) {
     }
     return Object.assign(none, { viewToday: true, employees: 'ALL' }); // safe default
   }
-  return row;
+  return Object.assign({}, row);
 }
 
 function readPermissions_() {
-  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.PERMISSIONS);
-  const map = {};
-  if (!sh || sh.getLastRow() < 2) return map;
-  const values = sh.getDataRange().getValues();
-  const h = headerIndex_(sh, values[0]);
-  values.slice(1).forEach(r => {
-    const id = String(r[0]).trim().toUpperCase();
-    if (!id) return;
-    const p = { superAdmin: false };
-    PERMISSIONS.forEach(x => { p[x.key] = /^(y|yes|true|1)$/i.test(String(r[h[x.label]]).trim()); });
-    const list = String(r[h['Allowed Employees']] || '').trim().toUpperCase();
-    p.employees = list === 'ALL' ? 'ALL' : list.split(/[,\s]+/).filter(x => x && x !== 'NONE');
-    map[id] = p;
+  return memo_('perms', () => {
+    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.PERMISSIONS);
+    const map = {};
+    if (!sh || sh.getLastRow() < 2) return map;
+    const values = sh.getDataRange().getValues();
+    const h = headerIndex_(sh, values[0]);
+    values.slice(1).forEach(r => {
+      const id = String(r[0]).trim().toUpperCase();
+      if (!id) return;
+      const p = { superAdmin: false };
+      PERMISSIONS.forEach(x => { p[x.key] = h[x.label] !== undefined && /^(y|yes|true|1)$/i.test(String(r[h[x.label]]).trim()); });
+      const list = String(r[h['Allowed Employees']] || '').trim().toUpperCase();
+      p.employees = list === 'ALL' ? 'ALL' : list.split(/[,\s]+/).filter(x => x && x !== 'NONE');
+      map[id] = p;
+    });
+    return map;
   });
-  return map;
 }
 
 function permSheet_() {
-  const ss = SpreadsheetApp.getActive();
-  return getOrCreate_(ss, SHEET.PERMISSIONS, PERM_HEADERS);
+  return sheetOrCreate_(SHEET.PERMISSIONS, PERM_HEADERS);
 }
 
-/** May this admin see / work with this employee at all? */
+/** May this admin see / work with this employee at all? Admins never manage super admins. */
 function canManage_(ctx, empId) {
   if (ctx.perms.superAdmin) return true;
   if (empId === ctx.emp.id) return true; // everyone can see their own data
+  const target = findEmployee_(empId);
+  if (target && target.role === 'SUPER_ADMIN') return false;
   const list = ctx.perms.employees;
   return list === 'ALL' || (list || []).indexOf(empId) >= 0;
 }
 
-/** May this admin change data of this employee? Own entries need the "Edit Own Entries" permission. */
+/** May this admin change data of this employee? Own data needs the "Edit Own Entries" permission. */
 function canEditEmployee_(ctx, empId) {
   if (ctx.perms.superAdmin) return true;
   if (empId === ctx.emp.id) return !!ctx.perms.editOwn;
@@ -693,50 +1239,67 @@ function checkEntryDate_(ctx, date) {
   if (!d) throw new Error('Choose a valid date.');
   if (d > todayStr_()) throw new Error('Entries cannot be added for future dates.');
   if (d < ctx.minDate) throw new Error('You can only change entries from ' + ctx.minDate + ' onwards.');
+  assertUnlocked_(d);
   return d;
 }
 
 function cleanEntry_(e) {
+  const s = getSettings_();
   const out = {
     in: toTimeStr_(e.in), out: toTimeStr_(e.out),
     override: OVERRIDE_VALUES.indexOf(String(e.override || '').toUpperCase()) >= 0 ? String(e.override).toUpperCase() : '',
     note: String(e.note || '').trim().slice(0, 300),
   };
+  if (e.otApproved !== undefined) {
+    const v = String(e.otApproved || '').toUpperCase();
+    out.otApproved = v === 'YES' || v === 'NO' ? v : '';
+  }
   if (out.out && !out.in) throw new Error('Enter the check-in time as well.');
-  if (out.in && out.out && toMinutes_(out.out) <= toMinutes_(out.in)) throw new Error('Check-out must be after check-in.');
+  if (out.in && out.out && toMinutes_(out.out) <= toMinutes_(out.in)) {
+    if (!s.overnight) throw new Error('Check-out must be after check-in.');
+    if (toMinutes_(out.out) + 1440 - toMinutes_(out.in) > s.maxShiftHours * 60) {
+      throw new Error('That shift is longer than ' + s.maxShiftHours + ' hours.');
+    }
+  }
   if (!out.in && !out.override) throw new Error('Enter a check-in time or choose a status (Present / Half Day / Absent / Leave).');
   return out;
 }
 
 /** Reads attendance once so many entries can be written quickly. */
 function entryContext_() {
+  forget_('att');
   const map = {};
   readAttendance_().forEach(r => { if (!map[r.empId + '|' + r.date]) map[r.empId + '|' + r.date] = r; });
   return { map: map, newRows: [], s: getSettings_(), holidays: getHolidays_(), sh: sheet_(SHEET.ATTENDANCE) };
 }
 
 function flushNewRows_(data) {
-  if (!data.newRows.length) return;
-  data.sh.getRange(data.sh.getLastRow() + 1, 1, data.newRows.length, ATT_HEADERS.length).setValues(data.newRows);
-  data.newRows = [];
+  if (data.newRows.length) {
+    data.sh.getRange(data.sh.getLastRow() + 1, 1, data.newRows.length, ATT_HEADERS.length).setValues(data.newRows);
+    data.newRows = [];
+  }
   SpreadsheetApp.flush();
+  forget_('att');
 }
 
 /** Creates or updates the row for emp + date. Location/selfie of an existing row are kept. */
 function upsertEntry_(data, emp, date, e, byEmp, overwrite) {
   const rec = data.map[emp.id + '|' + date];
   if (rec && !overwrite) return { skipped: true };
+  assertUnlocked_(date);
 
-  const calc = evaluateDay_({ in: e.in, out: e.out, override: e.override }, data.s,
-    offType_(date, data.s, data.holidays), date === todayStr_());
+  const calc = evaluateDay_({ in: e.in, out: e.out, override: e.override, otApproved: e.otApproved || (rec ? rec.otApproved : '') },
+    data.s, offType_(date, data.s, data.holidays), date === todayStr_());
   const note = e.note || ('Entered by ' + byEmp.name);
   const status = [e.in ? "'" + e.in : '', e.out ? "'" + e.out : '', calc.worked, calc.status, calc.late ? 'Yes' : '', calc.ot];
 
-  if (rec) {
+  if (rec && rec.row > 0) {
     data.sh.getRange(rec.row, COL.IN + 1, 1, status.length).setValues([status]);
     data.sh.getRange(rec.row, COL.OVERRIDE + 1, 1, 2).setValues([[e.override, note]]);
+    if (e.otApproved !== undefined) data.sh.getRange(rec.row, COL.OT_APPROVED + 1).setValue(e.otApproved);
     return { created: false, before: entryText_(rec) };
   }
+  if (rec) return { skipped: true }; // created earlier in this same batch
   const row = new Array(ATT_HEADERS.length).fill('');
   row[COL.DATE] = "'" + date;
   row[COL.EMP] = emp.id;
@@ -744,8 +1307,9 @@ function upsertEntry_(data, emp, date, e, byEmp, overwrite) {
   status.forEach((v, i) => { row[COL.IN + i] = v; });
   row[COL.OVERRIDE] = e.override;
   row[COL.NOTE] = note;
+  row[COL.OT_APPROVED] = e.otApproved || '';
   data.newRows.push(row);
-  data.map[emp.id + '|' + date] = { row: -1 }; // avoid duplicates within one batch
+  data.map[emp.id + '|' + date] = { row: -1 };
   return { created: true, before: '(none)' };
 }
 
@@ -754,35 +1318,48 @@ function entryText_(e) {
 }
 
 function audit_(byEmp, action, empId, date, details) {
-  const sh = getOrCreate_(SpreadsheetApp.getActive(), SHEET.AUDIT, AUDIT_HEADERS);
+  const sh = sheetOrCreate_(SHEET.AUDIT, AUDIT_HEADERS);
   sh.appendRow([Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm:ss'), byEmp.id + ' ' + byEmp.name,
     action, empId, date, details]);
-}
-
-function addDays_(dateStr, n) {
-  const p = dateStr.split('-').map(Number);
-  const d = new Date(p[0], p[1] - 1, p[2] + n);
-  return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
 }
 
 /* ------------------------------------------------------------------ */
 /* Attendance / salary calculation                                     */
 /* ------------------------------------------------------------------ */
 
+/** Month view: the frozen snapshot for locked months, a live calculation otherwise. */
 function buildMonth_(emp, ym) {
   const s = getSettings_();
-  const att = readAttendance_().filter(r => r.date.indexOf(ym) === 0);
-  const m = monthSummary_(emp, ym, s, byDate_(att, emp.id), getHolidays_());
+  const lock = getLocks_()[ym];
+  const snap = lock ? getSnapshot_(ym, emp.id) : null;
+  const m = snap || computeMonth_(emp, ym);
   m.employee = { id: emp.id, name: emp.name };
   m.ym = ym;
   m.label = ymLabel_(ym);
   m.currency = s.currency;
+  m.locked = lock ? { by: lock.by, at: lock.at } : null;
   m.inProgress = ym === todayStr_().slice(0, 7);
   m.rules = {
     shiftStart: minutesToStr_(s.shiftStartMin), lateGrace: s.lateGrace, standardHours: s.standardHours,
     otMultiplier: s.otMultiplier, latesPerHalfDay: s.latesPerHalfDay, salaryDays: s.salaryDays,
-    lateReducesOt: s.lateReducesOt, adjustIn: s.adjustIn,
+    lateReducesOt: s.lateReducesOt, earlyReducesOt: s.earlyReducesOt, adjustIn: s.adjustIn, otApproval: s.otApproval,
   };
+  return m;
+}
+
+function computeMonth_(emp, ym) {
+  const s = getSettings_();
+  const att = readAttendance_().filter(r => r.date.indexOf(ym) === 0);
+  const adv = advancesForMonth_(emp.id, ym);
+  const m = monthSummary_(emp, ym, s, byDate_(att, emp.id), getHolidays_(), adv.total);
+  // The salary may not cover every instalment: recover what it can, in order.
+  let left = m.pay.advance;
+  adv.items.forEach(a => {
+    a.deducted = round2_(Math.min(a.wanted, left));
+    left -= a.deducted;
+    a.balanceAfter = round2_(Math.max(0, a.balanceBefore - a.deducted));
+  });
+  m.advances = adv.items;
   return m;
 }
 
@@ -792,9 +1369,13 @@ function buildMonth_(emp, ym) {
  */
 function evaluateDay_(rec, s, offType, isToday) {
   const inMin = toMinutes_(rec.in);
-  const outMin = toMinutes_(rec.out);
-  const d = { in: rec.in || '', out: rec.out || '', worked: 0, ot: 0, late: false, status: '' };
-  if (inMin != null && outMin != null && outMin > inMin) d.worked = round2_((outMin - inMin) / 60);
+  let outMin = toMinutes_(rec.out);
+  if (inMin != null && outMin != null && outMin <= inMin && s.overnight) outMin += 1440; // next-day check-out
+  const workedMin = inMin != null && outMin != null && outMin > inMin ? outMin - inMin : 0;
+  const d = {
+    in: rec.in || '', out: rec.out || '', worked: round2_(workedMin / 60), ot: 0, otMin: 0, otPending: 0,
+    late: false, lateMin: 0, earlyMin: 0, status: '', overnight: outMin != null && outMin >= 1440,
+  };
 
   if (rec.override) d.status = rec.override;
   else if (offType) d.status = inMin != null ? 'OFF_WORK' : offType;
@@ -804,30 +1385,38 @@ function evaluateDay_(rec, s, offType, isToday) {
   else if (d.worked >= s.halfDayHours) d.status = 'HALF_DAY';
   else d.status = 'ABSENT';
 
-  // An admin override replaces the automatic status and clears the late mark.
-  d.late = !rec.override && !offType && inMin != null && inMin > s.shiftStartMin + s.lateGrace;
+  // Leave / Absent set by an admin clear the late & early marks; Present / Half Day keep them.
+  const cleared = rec.override === 'LEAVE' || rec.override === 'ABSENT';
+  d.late = !cleared && !offType && inMin != null && inMin > s.shiftStartMin + s.lateGrace;
   d.lateMin = d.late ? inMin - s.shiftStartMin : 0;
+  const shiftEnd = s.shiftStartMin + s.standardHours * 60;
+  if (!cleared && !offType && d.status === 'PRESENT' && outMin != null && outMin < shiftEnd) d.earlyMin = shiftEnd - outMin;
 
-  const workedMin = inMin != null && outMin != null && outMin > inMin ? outMin - inMin : 0;
   let otMin = 0;
-  if (d.status !== 'ABSENT') {
+  if (d.status !== 'ABSENT' && d.status !== 'LEAVE') {
     otMin = offType ? (s.offDayOt ? workedMin : 0) : Math.max(0, workedMin - s.standardHours * 60);
   }
   if (s.otBlock > 0) otMin = Math.floor(otMin / s.otBlock) * s.otBlock;
+  if (s.maxOtPerDay > 0) otMin = Math.min(otMin, s.maxOtPerDay);
+  if (otMin > 0 && s.otApproval && rec.otApproved !== 'YES') {
+    d.otPending = rec.otApproved === 'NO' ? 0 : otMin;
+    d.otRejected = rec.otApproved === 'NO';
+    otMin = 0;
+  }
   d.otMin = otMin;
   d.ot = round2_(otMin / 60);
   return d;
 }
 
-function monthSummary_(emp, ym, s, attByDate, holidays) {
+function monthSummary_(emp, ym, s, attByDate, holidays, advanceTotal) {
   const y = Number(ym.slice(0, 4));
   const m = Number(ym.slice(5, 7));
   const dim = new Date(y, m, 0).getDate();
   const today = todayStr_();
   const t = {
     daysInMonth: dim, present: 0, halfDay: 0, absent: 0, leave: 0, weekOff: 0, holiday: 0, offWork: 0,
-    notJoined: 0, late: 0, lateMin: 0, workedHours: 0, otMinGross: 0, otMin: 0, otHours: 0,
-    deductDays: 0, lateCutDays: 0, payableDays: 0,
+    notJoined: 0, late: 0, lateMin: 0, earlyMin: 0, workedHours: 0, otMinGross: 0, otMin: 0, otHours: 0,
+    otPendingMin: 0, deductDays: 0, lateCutDays: 0, payableDays: 0,
   };
   const days = [];
 
@@ -837,7 +1426,7 @@ function monthSummary_(emp, ym, s, attByDate, holidays) {
     const rec = attByDate[ds];
     let d;
     if (emp.joinDate && ds < emp.joinDate) d = { status: 'NOT_JOINED' };
-    else if (ds > today) d = { status: off || 'UPCOMING' };
+    else if (ds > today) d = rec && rec.override === 'LEAVE' ? { status: 'LEAVE', planned: true } : { status: off || 'UPCOMING' };
     else if (rec) d = evaluateDay_(rec, s, off, ds === today);
     else if (off) d = { status: off };
     else d = { status: ds === today ? 'NOT_MARKED' : 'ABSENT' };
@@ -847,7 +1436,9 @@ function monthSummary_(emp, ym, s, attByDate, holidays) {
     d.dow = new Date(y, m - 1, day).getDay();
     if (off === 'HOLIDAY') d.holidayName = holidays[ds];
     if (rec && rec.note) d.note = String(rec.note);
+    if (rec && rec.flags) d.flags = rec.flags;
     days.push(d);
+    if (d.planned) continue; // future leave is shown but not counted yet
 
     switch (d.status) {
       case 'PRESENT': case 'WORKING': t.present++; break;
@@ -860,57 +1451,68 @@ function monthSummary_(emp, ym, s, attByDate, holidays) {
       case 'NOT_JOINED': t.notJoined++; t.deductDays += 1; break;
     }
     if (d.late) { t.late++; t.lateMin += d.lateMin || 0; }
+    t.earlyMin += d.earlyMin || 0;
     t.workedHours += d.worked || 0;
     t.otMinGross += d.otMin || 0;
+    t.otPendingMin += d.otPending || 0;
   }
 
-  // Net OT = all OT minutes in the month − all late minutes in the month (never below zero).
-  t.otMin = Math.max(0, t.otMinGross - (s.lateReducesOt ? t.lateMin : 0));
+  // Net OT = all OT minutes − late minutes − early-leaving minutes (never below zero).
+  t.otMin = Math.max(0, t.otMinGross - (s.lateReducesOt ? t.lateMin : 0) - (s.earlyReducesOt ? t.earlyMin : 0));
   t.otHours = round2_(t.otMin / 60);
   t.workedHours = round2_(t.workedHours);
   t.lateCutDays = s.latesPerHalfDay > 0 ? Math.floor(t.late / s.latesPerHalfDay) * 0.5 : 0;
   t.deductDays += t.lateCutDays;
   t.payableDays = Math.max(0, dim - t.deductDays);
 
-  return { totals: t, pay: calcPay_(emp, s, t, dim), days: days };
+  return { totals: t, pay: calcPay_(emp, s, t, dim, advanceTotal || 0), days: days };
 }
 
 /**
  * Salary for the month.
  *   Per day = salary ÷ Salary Days Basis (30), per hour = per day ÷ Standard Hours, per minute = per hour ÷ 60.
  *   Gross   = salary + OT pay − leave − half-day − late-cut deductions.
- * PF employees: Bank = PF Bank Salary − PF Employee, Cash = Salary − PF Bank Salary, and OT/deductions
+ *   Net     = Gross − advance instalment (− PF employee for PF employees).
+ * PF employees: Bank = PF Bank Salary − PF Employee, Cash = Salary − PF Bank Salary, and OT/deductions/advance
  * are applied to Cash (or Bank, per the "OT & Deductions Paid In" setting).
  */
-function calcPay_(emp, s, t, dim) {
+function calcPay_(emp, s, t, dim, advanceWanted) {
+  const R = s.roundRupee ? Math.round : round2_;
   const basis = s.salaryDays > 0 ? s.salaryDays : dim;
   const perDay = emp.salary / basis;
   const perHour = s.standardHours > 0 ? perDay / s.standardHours : 0;
   const perMin = perHour / 60;
 
-  const leaveDed = (t.absent + t.notJoined) * perDay;
-  const halfDayDed = t.halfDay * 0.5 * perDay;
-  const lateCutDed = t.lateCutDays * perDay;
+  const leaveDed = R((t.absent + t.notJoined) * perDay);
+  const halfDayDed = R(t.halfDay * 0.5 * perDay);
+  const lateCutDed = R(t.lateCutDays * perDay);
   const deduction = Math.min(emp.salary, leaveDed + halfDayDed + lateCutDed);
-  const otPay = t.otMin * perMin * s.otMultiplier;
-  const gross = emp.salary - deduction + otPay;
+  const otPay = R(t.otMin * perMin * s.otMultiplier);
+  const gross = round2_(emp.salary - deduction + otPay);
 
   const pay = {
     salary: round2_(emp.salary), perDay: round2_(perDay), hourly: round2_(perHour), perMin: round2_(perMin),
-    leaveDed: round2_(leaveDed), halfDayDed: round2_(halfDayDed), lateCutDed: round2_(lateCutDed),
-    deduction: round2_(deduction), otPay: round2_(otPay), gross: round2_(gross),
-    pf: false, pfBankSalary: 0, pfEmployee: 0, pfEmployer: 0, bank: 0, cash: 0, net: round2_(gross),
+    leaveDed: leaveDed, halfDayDed: halfDayDed, lateCutDed: lateCutDed, deduction: round2_(deduction),
+    otPay: otPay, gross: gross, advance: 0,
+    pf: false, pfBankSalary: 0, pfEmployee: 0, pfEmployer: 0, bank: 0, cash: 0, net: gross,
   };
-  if (!emp.pf.active) return pay;
+
+  if (!emp.pf.active) {
+    pay.advance = round2_(Math.min(advanceWanted, Math.max(0, gross)));
+    pay.net = round2_(gross - pay.advance);
+    return pay;
+  }
 
   const pf = pfAmounts_(emp, s);
+  const bankSalary = R(pf.bankSalary), pfEmp = R(pf.employee), pfEr = R(pf.employer);
+  pay.advance = round2_(Math.min(advanceWanted, Math.max(0, gross - pfEmp)));
   let bank, cash;
   if (s.adjustIn === 'BANK') {
-    cash = emp.salary - pf.bankSalary;
-    bank = gross - cash - pf.employee;
+    cash = emp.salary - bankSalary;
+    bank = gross - cash - pfEmp - pay.advance;
   } else {
-    bank = pf.bankSalary - pf.employee;
-    cash = gross - pf.bankSalary;
+    bank = bankSalary - pfEmp;
+    cash = gross - bankSalary - pay.advance;
   }
   // If deductions are bigger than one part, take the rest from the other part.
   if (cash < 0) { bank += cash; cash = 0; }
@@ -918,8 +1520,8 @@ function calcPay_(emp, s, t, dim) {
   cash = Math.max(0, cash);
 
   return Object.assign(pay, {
-    pf: true, pfBankSalary: round2_(pf.bankSalary), pfEmployee: round2_(pf.employee),
-    pfEmployer: round2_(pf.employer), bank: round2_(bank), cash: round2_(cash), net: round2_(bank + cash),
+    pf: true, pfBankSalary: bankSalary, pfEmployee: pfEmp, pfEmployer: pfEr,
+    bank: round2_(bank), cash: round2_(cash), net: round2_(bank + cash),
   });
 }
 
@@ -937,6 +1539,156 @@ function pfAmounts_(emp, s) {
     employee: amt(emp.pf.employee, s.pfEmployeePct, bankSalary),
     employer: amt(emp.pf.employer, s.pfEmployerPct, bankSalary),
   };
+}
+
+/* ----------------------------- Advances ---------------------------- */
+
+/**
+ * How much of one advance is recovered up to and in month ym.
+ * Locked months use what was actually deducted (from the payroll snapshot); other months use the
+ * monthly instalment while the advance is ACTIVE.
+ */
+function advanceState_(a, ym) {
+  let remaining = a.amount;
+  let deductedBefore = 0;
+  for (let m = a.startMonth; m < ym && remaining > 0; m = nextYm_(m)) {
+    const locked = lockedAdvance_(m, a.empId, a.id);
+    const d = locked !== null ? locked : (a.status === 'ACTIVE' ? Math.min(a.monthly, remaining) : 0);
+    remaining -= d;
+    deductedBefore += d;
+  }
+  let thisMonth = 0;
+  if (ym >= a.startMonth && remaining > 0) {
+    const locked = lockedAdvance_(ym, a.empId, a.id);
+    thisMonth = locked !== null ? locked : (a.status === 'ACTIVE' ? Math.min(a.monthly, remaining) : 0);
+  }
+  return {
+    deductedBefore: round2_(deductedBefore), thisMonth: round2_(thisMonth),
+    balanceBefore: round2_(Math.max(0, remaining)), balanceAfter: round2_(Math.max(0, remaining - thisMonth)),
+  };
+}
+
+function advancesForMonth_(empId, ym) {
+  const items = [];
+  let total = 0;
+  readAdvances_().filter(a => a.empId === empId && a.startMonth <= ym).forEach(a => {
+    const st = advanceState_(a, ym);
+    if (st.thisMonth > 0 || st.balanceBefore > 0) {
+      items.push({ id: a.id, amount: a.amount, monthly: a.monthly, note: a.note, status: a.status,
+        wanted: st.thisMonth, balanceBefore: st.balanceBefore });
+      total += st.thisMonth;
+    }
+  });
+  return { total: round2_(total), items: items };
+}
+
+/** The amount actually deducted for an advance in a locked month, or null when the month is not locked. */
+function lockedAdvance_(ym, empId, advId) {
+  if (!getLocks_()[ym]) return null;
+  const snap = getSnapshot_(ym, empId);
+  if (!snap) return 0;
+  const item = (snap.advances || []).filter(x => x.id === advId)[0];
+  return item ? Number(item.deducted || 0) : 0;
+}
+
+function readAdvances_() {
+  return memo_('advances', () => {
+    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.ADVANCES);
+    if (!sh || sh.getLastRow() < 2) return [];
+    return sh.getRange(2, 1, sh.getLastRow() - 1, ADV_HEADERS.length).getValues().map((r, i) => ({
+      row: i + 2, id: String(r[0]), empId: String(r[1]).trim().toUpperCase(), name: String(r[2]),
+      dateGiven: toDateStr_(r[3]), amount: Number(r[4]) || 0, monthly: Number(r[5]) || 0,
+      startMonth: toYm_(r[6]), status: String(r[7] || 'ACTIVE').trim().toUpperCase(), note: String(r[8] || ''),
+      createdBy: String(r[9] || ''),
+    })).filter(a => a.id && a.empId && a.startMonth);
+  });
+}
+
+/* ------------------------- Locks & snapshots ----------------------- */
+
+function getLocks_() {
+  return memo_('locks', () => {
+    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.LOCKS);
+    const map = {};
+    if (!sh || sh.getLastRow() < 2) return map;
+    sh.getRange(2, 1, sh.getLastRow() - 1, 3).getDisplayValues().forEach(r => {
+      const ym = toYm_(r[0]);
+      if (ym) map[ym] = { by: r[1], at: r[2] };
+    });
+    return map;
+  });
+}
+
+function isLocked_(ym) {
+  return !!getLocks_()[ym];
+}
+
+function assertUnlocked_(date) {
+  const ym = String(date).slice(0, 7);
+  if (isLocked_(ym)) throw new Error('Payroll for ' + ymLabel_(ym) + ' is locked. Ask the super admin to unlock it first.');
+}
+
+/** Snapshot { totals, pay, days, advances } saved when the month was locked. Advance deductions are taken from pay. */
+function getSnapshot_(ym, empId) {
+  const raw = memo_('snapshots', () => {
+    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.SNAPSHOTS);
+    const map = {};
+    if (!sh || sh.getLastRow() < 2) return map;
+    sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().forEach(r => {
+      map[toYm_(r[0]) + '|' + String(r[1]).trim().toUpperCase()] = r[3];
+    });
+    return map;
+  })[ym + '|' + empId];
+  if (!raw) return null;
+  const snap = JSON.parse(raw);
+  // Spread the advance actually deducted over the advances, in order.
+  return snap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Payslip                                                             */
+/* ------------------------------------------------------------------ */
+
+function payslipHtml_(emp, m) {
+  const s = getSettings_();
+  const t = m.totals, p = m.pay, c = s.currency;
+  const money = n => c + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: s.roundRupee ? 0 : 2, maximumFractionDigits: 2 });
+  const mins = n => { n = Math.round(n || 0); return Math.floor(n / 60) + 'h ' + pad2_(n % 60) + 'm'; };
+  const e = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const row = (a, b) => '<tr><td>' + a + '</td><td class="r">' + b + '</td></tr>';
+
+  let earn = row('Total Salary', money(p.salary)) + row('OT (' + mins(t.otMin) + ')', money(p.otPay));
+  let ded = row('Leaves (' + (t.absent + t.notJoined) + ' days)', money(p.leaveDed)) +
+    row('Half Days (' + t.halfDay + ')', money(p.halfDayDed));
+  if (p.lateCutDed) ded += row('Late marks', money(p.lateCutDed));
+  if (p.advance) ded += row('Advance recovery', money(p.advance));
+  if (p.pf) ded += row('PF Employee', money(p.pfEmployee));
+  const totalDed = p.deduction + (p.advance || 0) + (p.pf ? p.pfEmployee : 0);
+
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+    'body{font-family:Arial,Helvetica,sans-serif;color:#1b2333;margin:24px;font-size:13px}' +
+    'h1{font-size:20px;margin:0}h2{font-size:14px;margin:18px 0 6px;color:#2f5fe3}' +
+    'table{width:100%;border-collapse:collapse}td{padding:6px 8px;border-bottom:1px solid #e3e7ef}.r{text-align:right}' +
+    '.box{display:inline-block;border:1px solid #e3e7ef;border-radius:8px;padding:8px 12px;margin:4px 8px 4px 0}' +
+    '.tot td{font-weight:bold;border-top:2px solid #1b2333}.muted{color:#6b7486}.stamp{color:#c27c0e;font-weight:bold}' +
+    '</style></head><body>' +
+    '<h1>' + e(s.company) + '</h1><div class="muted">Salary slip — ' + e(m.label) + '</div>' +
+    (m.locked ? '' : '<div class="stamp">PROVISIONAL — month not locked yet</div>') +
+    '<h2>Employee</h2><table>' + row('Name', e(emp.name)) + row('Employee ID', e(emp.id)) +
+    (emp.joinDate ? row('Joining date', e(emp.joinDate)) : '') + '</table>' +
+    '<h2>Attendance</h2><div>' +
+    ['Present ' + t.present, 'Half days ' + t.halfDay, 'Absent ' + (t.absent + t.notJoined), 'Paid leave ' + t.leave,
+      'Week off ' + t.weekOff, 'Holidays ' + t.holiday, 'Late ' + t.late + ' (' + mins(t.lateMin) + ')',
+      'Net OT ' + mins(t.otMin)].map(x => '<span class="box">' + x + '</span>').join('') + '</div>' +
+    '<h2>Earnings</h2><table>' + earn + '</table>' +
+    '<h2>Deductions</h2><table>' + ded + '<tr class="tot"><td>Total deductions</td><td class="r">' + money(totalDed) + '</td></tr></table>' +
+    (p.pf ? '<h2>Payment</h2><table>' + row('In Bank', money(p.bank)) + row('In Cash', money(p.cash)) +
+      row('PF Employer contribution (paid by company)', money(p.pfEmployer)) + '</table>' : '') +
+    '<table style="margin-top:14px"><tr class="tot"><td>Net pay</td><td class="r">' + money(p.net) + '</td></tr></table>' +
+    ((m.advances || []).length ? '<p class="muted">Advance balance after this month: ' +
+      money((m.advances || []).reduce((sum, a) => sum + (a.balanceAfter || 0), 0)) + '</p>' : '') +
+    '<p class="muted">Generated ' + Utilities.formatDate(new Date(), tz_(), 'dd MMM yyyy HH:mm') + '. This is a computer-generated slip.</p>' +
+    '</body></html>';
 }
 
 /* ------------------------------------------------------------------ */
@@ -1031,54 +1783,63 @@ function getSelfieFolder_(s) {
 }
 
 function getSettings_() {
-  if (getSettings_.cache) return getSettings_.cache;
-  const raw = {};
-  sheet_(SHEET.SETTINGS).getDataRange().getValues().slice(1).forEach(r => {
-    if (String(r[0]).trim()) raw[String(r[0]).trim()] = r[1];
+  return memo_('settings', () => {
+    const raw = {};
+    sheet_(SHEET.SETTINGS).getDataRange().getValues().slice(1).forEach(r => {
+      if (String(r[0]).trim()) raw[String(r[0]).trim()] = r[1];
+    });
+    const blank = k => raw[k] === undefined || raw[k] === null || String(raw[k]).trim() === '';
+    const num = (k, def) => (blank(k) || isNaN(Number(raw[k])) ? def : Number(raw[k]));
+    const yes = (k, def) => (blank(k) ? def : /^(y|yes|true|1)$/i.test(String(raw[k]).trim()));
+    const str = (k, def) => (blank(k) ? def : String(raw[k]).trim());
+
+    const dayIdx = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+    const weeklyOff = str('Weekly Off', 'Sunday').split(/[,;\s]+/)
+      .map(x => dayIdx[x.trim().slice(0, 3).toLowerCase()])
+      .filter(x => x !== undefined);
+    const noCheckout = str('No Check-Out Counts As', 'HALF_DAY').toUpperCase().replace(/[\s-]+/g, '_');
+    const shiftStart = toMinutes_(raw['Shift Start']);
+
+    return {
+      company: str('Company Name', 'Attendance'),
+      officeLat: num('Office Latitude', NaN),
+      officeLng: num('Office Longitude', NaN),
+      radius: num('Allowed Radius (m)', 30),
+      maxAccuracy: num('Max GPS Accuracy (m)', 50),
+      flagAccuracy: num('Flag GPS Accuracy Above (m)', 35),
+      checkoutLocation: yes('Check Location On Check-Out', true),
+      selfieRequired: yes('Selfie Required', true),
+      liveCameraOnly: yes('Live Camera Only', false),
+      shiftStartMin: shiftStart == null ? 570 : shiftStart,
+      lateGrace: num('Late Grace (min)', 10),
+      standardHours: num('Standard Hours', 9),
+      fullDayHours: num('Full Day Min Hours', 8),
+      halfDayHours: num('Half Day Min Hours', 4),
+      noCheckoutStatus: ['PRESENT', 'HALF_DAY', 'ABSENT'].indexOf(noCheckout) >= 0 ? noCheckout : 'HALF_DAY',
+      overnight: yes('Allow Overnight Shift', false),
+      maxShiftHours: num('Max Shift Hours', 16),
+      otMultiplier: num('OT Multiplier', 1.5),
+      otBlock: num('OT Block (min)', 0),
+      maxOtPerDay: num('Max OT Per Day (min)', 0),
+      otApproval: yes('OT Needs Approval', false),
+      salaryDays: num('Salary Days Basis', 30),
+      lateReducesOt: yes('Late Minutes Reduce OT', true),
+      earlyReducesOt: yes('Early Leaving Reduces OT', true),
+      clockTolerance: num('Phone Time Tolerance (min)', 3),
+      pfBankPct: num('Default PF Bank Salary %', 90),
+      pfEmployeePct: num('Default PF Employee %', 12),
+      pfEmployerPct: num('Default PF Employer %', 13),
+      adjustIn: str('OT & Deductions Paid In', 'CASH').toUpperCase() === 'BANK' ? 'BANK' : 'CASH',
+      roundRupee: yes('Round To Rupee', true),
+      weeklyOff: weeklyOff,
+      offDayOt: yes('Off-Day Work Is OT', true),
+      latesPerHalfDay: num('Lates Per Half-Day Cut', 0),
+      backDateDays: num('Admin Back-Date Limit (days)', 45),
+      requestBackDays: num('Request Back-Date Limit (days)', 7),
+      currency: str('Currency', '₹'),
+      selfieFolderId: str('Selfie Folder ID', ''),
+    };
   });
-  const blank = k => raw[k] === undefined || raw[k] === null || String(raw[k]).trim() === '';
-  const num = (k, def) => (blank(k) || isNaN(Number(raw[k])) ? def : Number(raw[k]));
-  const yes = (k, def) => (blank(k) ? def : /^(y|yes|true|1)$/i.test(String(raw[k]).trim()));
-  const str = (k, def) => (blank(k) ? def : String(raw[k]).trim());
-
-  const dayIdx = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-  const weeklyOff = str('Weekly Off', 'Sunday').split(/[,;\s]+/)
-    .map(x => dayIdx[x.trim().slice(0, 3).toLowerCase()])
-    .filter(x => x !== undefined);
-  const noCheckout = str('No Check-Out Counts As', 'HALF_DAY').toUpperCase().replace(/[\s-]+/g, '_');
-  const shiftStart = toMinutes_(raw['Shift Start']);
-
-  getSettings_.cache = {
-    company: str('Company Name', 'Attendance'),
-    officeLat: num('Office Latitude', NaN),
-    officeLng: num('Office Longitude', NaN),
-    radius: num('Allowed Radius (m)', 30),
-    maxAccuracy: num('Max GPS Accuracy (m)', 50),
-    checkoutLocation: yes('Check Location On Check-Out', true),
-    selfieRequired: yes('Selfie Required', true),
-    shiftStartMin: shiftStart == null ? 570 : shiftStart,
-    lateGrace: num('Late Grace (min)', 10),
-    standardHours: num('Standard Hours', 9),
-    fullDayHours: num('Full Day Min Hours', 8),
-    halfDayHours: num('Half Day Min Hours', 4),
-    noCheckoutStatus: ['PRESENT', 'HALF_DAY', 'ABSENT'].indexOf(noCheckout) >= 0 ? noCheckout : 'HALF_DAY',
-    otMultiplier: num('OT Multiplier', 1.5),
-    otBlock: num('OT Block (min)', 0),
-    salaryDays: num('Salary Days Basis', 30),
-    lateReducesOt: yes('Late Minutes Reduce OT', true),
-    clockTolerance: num('Phone Time Tolerance (min)', 3),
-    pfBankPct: num('Default PF Bank Salary %', 90),
-    pfEmployeePct: num('Default PF Employee %', 12),
-    pfEmployerPct: num('Default PF Employer %', 13),
-    adjustIn: str('OT & Deductions Paid In', 'CASH').toUpperCase() === 'BANK' ? 'BANK' : 'CASH',
-    weeklyOff: weeklyOff,
-    offDayOt: yes('Off-Day Work Is OT', true),
-    latesPerHalfDay: num('Lates Per Half-Day Cut', 0),
-    backDateDays: num('Admin Back-Date Limit (days)', 45),
-    currency: str('Currency', '₹'),
-    selfieFolderId: str('Selfie Folder ID', ''),
-  };
-  return getSettings_.cache;
 }
 
 function setSetting_(key, value) {
@@ -1087,45 +1848,48 @@ function setSetting_(key, value) {
   const i = keys.indexOf(key);
   if (i >= 0) sh.getRange(i + 1, 2).setValue(value);
   else sh.appendRow([key, value, '']);
-  delete getSettings_.cache;
+  forget_('settings');
 }
 
 function getEmployees_() {
-  const sh = sheet_(SHEET.EMPLOYEES);
-  const values = sh.getDataRange().getValues();
-  const h = headerIndex_(sh, values[0]);
-  const get = (r, name) => (h[name] === undefined ? '' : r[h[name]]);
-  return values.slice(1)
-    .map((r, i) => ({ r: r, row: i + 2 }))
-    .filter(x => String(x.r[0]).trim())
-    .map(x => {
-      const r = x.r;
-      return {
-        row: x.row,
-        id: String(r[0]).trim().toUpperCase(),
-        name: String(r[1]).trim(),
-        pin: String(r[2]).trim(),
-        salary: Number(r[3]) || 0,
-        role: parseRole_(r[4]),
-        active: !/^(n|no|false|0|inactive)$/i.test(String(r[5]).trim()),
-        joinDate: toDateStr_(r[6]),
-        pf: {
-          active: /^(y|yes|true|1|on)$/i.test(String(get(r, 'PF Active')).trim()),
-          bankSalary: get(r, 'PF Bank Salary'),
-          employee: get(r, 'PF Employee'),
-          employer: get(r, 'PF Employer'),
-        },
-      };
-    });
+  return memo_('employees', () => {
+    const sh = sheet_(SHEET.EMPLOYEES);
+    const values = sh.getDataRange().getValues();
+    const h = headerIndex_(sh, values[0]);
+    const get = (r, name) => (h[name] === undefined ? '' : r[h[name]]);
+    return values.slice(1)
+      .map((r, i) => ({ r: r, row: i + 2 }))
+      .filter(x => String(x.r[0]).trim())
+      .map(x => {
+        const r = x.r;
+        return {
+          row: x.row,
+          id: String(r[0]).trim().toUpperCase(),
+          name: String(r[1]).trim(),
+          pin: String(r[2]).trim(),
+          salary: Number(r[3]) || 0,
+          role: parseRole_(r[4]),
+          active: !/^(n|no|false|0|inactive)$/i.test(String(r[5]).trim()),
+          joinDate: toDateStr_(r[6]),
+          phone: String(r[7] || ''),
+          pf: {
+            active: /^(y|yes|true|1|on)$/i.test(String(get(r, 'PF Active')).trim()),
+            bankSalary: get(r, 'PF Bank Salary'),
+            employee: get(r, 'PF Employee'),
+            employer: get(r, 'PF Employer'),
+          },
+        };
+      });
+  });
 }
 
-/** { 'Header name': columnIndex (0-based) } */
 function parseRole_(v) {
   const r = String(v || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
   if (r === 'SUPER_ADMIN' || r === 'SUPERADMIN') return 'SUPER_ADMIN';
   return r === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE';
 }
 
+/** { 'Header name': columnIndex (0-based) } */
 function headerIndex_(sh, headerRow) {
   const row = headerRow || sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
   const map = {};
@@ -1150,39 +1914,66 @@ function findEmployee_(empId) {
 }
 
 function readAttendance_() {
-  const sh = sheet_(SHEET.ATTENDANCE);
-  const last = sh.getLastRow();
-  if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, ATT_HEADERS.length).getValues().map((r, i) => {
-    const ov = String(r[COL.OVERRIDE]).trim().toUpperCase().replace(/[\s-]+/g, '_');
-    return {
-      row: i + 2,
-      date: toDateStr_(r[COL.DATE]),
-      empId: String(r[COL.EMP]).trim().replace(/^'/, '').toUpperCase(),
-      in: toTimeStr_(r[COL.IN]),
-      out: toTimeStr_(r[COL.OUT]),
-      inDist: r[COL.IN_DIST],
-      selfie: String(r[COL.SELFIE] || ''),
-      override: OVERRIDE_VALUES.indexOf(ov) >= 0 ? ov : '',
-      note: r[COL.NOTE],
-    };
-  }).filter(a => a.date && a.empId);
+  return memo_('att', () => {
+    const sh = sheet_(SHEET.ATTENDANCE);
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    return sh.getRange(2, 1, last - 1, ATT_HEADERS.length).getValues().map((r, i) => {
+      const ov = String(r[COL.OVERRIDE]).trim().toUpperCase().replace(/[\s-]+/g, '_');
+      const ota = String(r[COL.OT_APPROVED] || '').trim().toUpperCase();
+      return {
+        row: i + 2,
+        date: toDateStr_(r[COL.DATE]),
+        empId: String(r[COL.EMP]).trim().replace(/^'/, '').toUpperCase(),
+        in: toTimeStr_(r[COL.IN]),
+        out: toTimeStr_(r[COL.OUT]),
+        inLat: r[COL.IN_LAT], inLng: r[COL.IN_LNG],
+        inDist: r[COL.IN_DIST], inAcc: r[COL.IN_ACC],
+        selfie: String(r[COL.SELFIE] || ''),
+        override: OVERRIDE_VALUES.indexOf(ov) >= 0 ? ov : '',
+        note: String(r[COL.NOTE] || ''),
+        otApproved: ota === 'YES' || ota === 'NO' ? ota : '',
+        flags: String(r[COL.FLAGS] || '').trim(),
+      };
+    }).filter(a => a.date && a.empId);
+  });
 }
 
+/** First row per date for one employee (a row with a check-in wins over one without). */
 function byDate_(att, empId) {
   const map = {};
-  att.forEach(r => { if (r.empId === empId && !map[r.date]) map[r.date] = r; });
+  att.forEach(r => {
+    if (r.empId !== empId) return;
+    if (!map[r.date] || (!map[r.date].in && r.in)) map[r.date] = r;
+  });
   return map;
+}
+
+function readRequests_() {
+  return memo_('requests', () => {
+    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET.REQUESTS);
+    if (!sh || sh.getLastRow() < 2) return [];
+    return sh.getRange(2, 1, sh.getLastRow() - 1, REQ_HEADERS.length).getValues().map((r, i) => ({
+      row: i + 2, id: String(r[0]), created: r[1] instanceof Date ? Utilities.formatDate(r[1], tz_(), 'yyyy-MM-dd HH:mm') : String(r[1]),
+      empId: String(r[2]).trim().toUpperCase(), name: String(r[3]), type: String(r[4]).toUpperCase(),
+      from: toDateStr_(r[5]), to: toDateStr_(r[6]) || toDateStr_(r[5]), in: toTimeStr_(r[7]), out: toTimeStr_(r[8]),
+      leaveType: String(r[9] || '').toUpperCase(), reason: String(r[10] || ''), status: String(r[11] || '').toUpperCase(),
+      decidedBy: String(r[12] || ''), decidedAt: r[13] instanceof Date ? Utilities.formatDate(r[13], tz_(), 'yyyy-MM-dd HH:mm') : String(r[13] || ''),
+      remark: String(r[14] || ''),
+    })).filter(r => r.id);
+  });
 }
 
 function getHolidays_() {
-  const sh = sheet_(SHEET.HOLIDAYS);
-  const map = {};
-  sh.getDataRange().getValues().slice(1).forEach(r => {
-    const d = toDateStr_(r[0]);
-    if (d) map[d] = String(r[1] || 'Holiday');
+  return memo_('holidays', () => {
+    const sh = sheet_(SHEET.HOLIDAYS);
+    const map = {};
+    sh.getDataRange().getValues().slice(1).forEach(r => {
+      const d = toDateStr_(r[0]);
+      if (d) map[d] = String(r[1] || 'Holiday');
+    });
+    return map;
   });
-  return map;
 }
 
 function offType_(dateStr, s, holidays) {
@@ -1197,6 +1988,10 @@ function sheet_(name) {
   return sh;
 }
 
+function sheetOrCreate_(name, headers) {
+  return getOrCreate_(SpreadsheetApp.getActive(), name, headers);
+}
+
 function getOrCreate_(ss, name, headers) {
   let sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
@@ -1205,6 +2000,14 @@ function getOrCreate_(ss, name, headers) {
     sh.setFrozenRows(1);
   }
   return sh;
+}
+
+/** Deletes every data row matching fn (bottom-up so row numbers stay valid). */
+function deleteRowsWhere_(name, fn) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return;
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  for (let i = vals.length - 1; i >= 0; i--) if (fn(vals[i])) sh.deleteRow(i + 2);
 }
 
 function tz_() {
@@ -1225,6 +2028,12 @@ function toDateStr_(v) {
   return '';
 }
 
+function toYm_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, tz_(), 'yyyy-MM');
+  const m = /^(\d{4})-(\d{1,2})/.exec(String(v || '').trim().replace(/^'/, ''));
+  return m ? m[1] + '-' + pad2_(m[2]) : '';
+}
+
 function toTimeStr_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, tz_(), 'HH:mm');
   const m = /(\d{1,2}):(\d{2})/.exec(String(v || ''));
@@ -1239,6 +2048,17 @@ function toMinutes_(v) {
 
 function minutesToStr_(min) {
   return pad2_(Math.floor(min / 60)) + ':' + pad2_(min % 60);
+}
+
+function addDays_(dateStr, n) {
+  const p = dateStr.split('-').map(Number);
+  const d = new Date(p[0], p[1] - 1, p[2] + n);
+  return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
+}
+
+function nextYm_(ym) {
+  const y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
+  return m === 12 ? (y + 1) + '-01' : y + '-' + pad2_(m + 1);
 }
 
 function validYm_(ym) {

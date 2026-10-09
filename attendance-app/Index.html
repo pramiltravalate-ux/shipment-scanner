@@ -18,7 +18,7 @@
     html, body { margin: 0; background: var(--bg); color: var(--text);
       font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif; }
     button { font: inherit; cursor: pointer; border: 0; }
-    input { font: inherit; }
+    input, select, textarea { font: inherit; }
     .hidden { display: none !important; }
     .wrap { max-width: 520px; margin: 0 auto; padding: 16px 16px 96px; }
 
@@ -27,32 +27,39 @@
     .top .wrap { padding: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .top h1 { font-size: 18px; margin: 0; }
     .top small { opacity: .85; }
-    .top .logout { background: rgba(255,255,255,.18); color: #fff; padding: 8px 12px; border-radius: 10px; font-size: 13px; }
+    .top .hbtn { background: rgba(255,255,255,.18); color: #fff; padding: 8px 12px; border-radius: 10px; font-size: 13px; }
     .pull { margin-top: -44px; }
 
     .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 14px;
       box-shadow: 0 1px 3px rgba(20,30,60,.07); }
     .card h2 { font-size: 16px; margin: 0 0 12px; }
     .muted { color: var(--muted); }
+    .small { font-size: 12px; }
     .center { text-align: center; }
     .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
-    /* Login */
+    /* Login & forms */
     .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
     .login .card { width: 100%; max-width: 380px; padding: 28px 22px; }
     .login h1 { margin: 0 0 4px; font-size: 22px; text-align: center; }
     .field { margin-top: 14px; }
     .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-    .field input { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 17px; }
+    .field input:not([type=checkbox]):not([type=radio]) { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 17px; }
     .field input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+    .inp { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 16px; color: var(--text); }
+    textarea.inp { min-height: 70px; resize: vertical; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 
     .btn { display: block; width: 100%; padding: 15px; border-radius: 14px; font-weight: 600; font-size: 16px;
       background: var(--brand); color: #fff; margin-top: 16px; }
     .btn:disabled { opacity: .55; }
     .btn.green { background: var(--green); }
     .btn.red { background: var(--red); }
+    .btn.soft-red { background: var(--red-soft); color: var(--red); }
     .btn.ghost { background: var(--brand-soft); color: var(--brand); }
     .btn.small { display: inline-block; width: auto; padding: 9px 14px; font-size: 14px; margin: 0; border-radius: 10px; }
+    .btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .btns .btn { flex: 1; margin-top: 0; }
     .big-btn { width: 100%; padding: 22px; border-radius: 18px; font-size: 20px; font-weight: 700; color: #fff; margin-top: 6px; }
 
     .clock { font-size: 40px; font-weight: 700; letter-spacing: 1px; text-align: center; margin: 4px 0; }
@@ -60,6 +67,7 @@
     .msg.err { background: var(--red-soft); color: var(--red); }
     .msg.ok { background: var(--green-soft); color: var(--green); }
     .msg.info { background: var(--blue-soft); color: var(--blue); }
+    .msg.warn { background: var(--amber-soft); color: var(--amber); }
 
     .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .kv div { background: var(--bg); border-radius: 12px; padding: 10px; text-align: center; }
@@ -67,17 +75,17 @@
     .kv span { font-size: 12px; color: var(--muted); }
 
     .chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-    .s-PRESENT { background: var(--green-soft); color: var(--green); }
+    .s-PRESENT, .s-APPROVED { background: var(--green-soft); color: var(--green); }
     .s-WORKING { background: var(--blue-soft); color: var(--blue); }
-    .s-HALF_DAY { background: var(--amber-soft); color: var(--amber); }
-    .s-ABSENT { background: var(--red-soft); color: var(--red); }
+    .s-HALF_DAY, .s-PENDING { background: var(--amber-soft); color: var(--amber); }
+    .s-ABSENT, .s-REJECTED, .s-FLAG { background: var(--red-soft); color: var(--red); }
     .s-LEAVE { background: var(--blue-soft); color: var(--blue); }
-    .s-WEEK_OFF, .s-NOT_MARKED, .s-NOT_JOINED, .s-UPCOMING { background: var(--gray-soft); color: var(--gray); }
+    .s-WEEK_OFF, .s-NOT_MARKED, .s-NOT_JOINED, .s-UPCOMING, .s-CANCELLED, .s-CLOSED { background: var(--gray-soft); color: var(--gray); }
     .s-HOLIDAY { background: var(--pink-soft); color: var(--pink); }
-    .s-OFF_WORK { background: var(--teal-soft); color: var(--teal); }
-    .s-LATE { background: var(--orange-soft); color: var(--orange); }
+    .s-OFF_WORK, .s-ACTIVE { background: var(--teal-soft); color: var(--teal); }
+    .s-LATE, .s-EARLY, .s-PAUSED { background: var(--orange-soft); color: var(--orange); }
     .s-OT { background: var(--ot-soft); color: var(--ot); }
-    .s-PF { background: var(--purple-soft); color: var(--purple); }
+    .s-PF, .s-LOCK { background: var(--purple-soft); color: var(--purple); }
     .k-red b { color: var(--red); } .k-amber b { color: var(--amber); } .k-orange b { color: var(--orange); } .k-ot b { color: var(--ot); }
 
     /* Check-in flow */
@@ -88,40 +96,49 @@
     .flow-step.done .dot { background: var(--green); color: #fff; }
     .flow-step.fail .dot { background: var(--red); color: #fff; }
     .selfie-preview { width: 100%; max-height: 320px; object-fit: cover; border-radius: 14px; margin-top: 10px; }
+    .cam { width: 100%; border-radius: 14px; transform: scaleX(-1); background: #000; }
     .spinner { width: 18px; height: 18px; border: 3px solid var(--brand-soft); border-top-color: var(--brand);
       border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Month */
     .month-nav { display: flex; align-items: center; justify-content: space-between; }
-    .month-nav button { background: var(--brand-soft); color: var(--brand); width: 40px; height: 40px; border-radius: 12px; font-size: 18px; font-weight: 700; }
+    .month-nav button { background: var(--brand-soft); color: var(--brand); width: 40px; height: 40px; border-radius: 12px; font-size: 18px; font-weight: 700; flex: none; }
     .month-nav h2 { margin: 0; font-size: 17px; }
+    .month-select { flex: 1; margin: 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px;
+      font-weight: 700; font-size: 16px; text-align: center; background: #fff; color: var(--text); }
     .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 12px; }
     .cal .h { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
     .cal .d { aspect-ratio: 1 / 1; border-radius: 10px; display: flex; flex-direction: column; align-items: center;
-      justify-content: center; font-size: 14px; font-weight: 600; position: relative; padding: 0; }
+      justify-content: center; font-size: 14px; font-weight: 600; position: relative; padding: 0; transition: opacity .15s; }
     .cal .d small { font-size: 9px; font-weight: 600; }
     .cal .d.today { outline: 2px solid var(--brand); }
     .cal .d .late-dot { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
     .cal .d .ot-dot { position: absolute; top: 4px; left: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--ot); }
-    .cal .d { transition: opacity .15s; }
+    .cal .d .flag-dot { position: absolute; bottom: 3px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
     .cal.f-ABSENT .d:not(.m-ABSENT), .cal.f-HALF_DAY .d:not(.m-HALF_DAY),
     .cal.f-OT .d:not(.m-OT), .cal.f-LATE .d:not(.m-LATE) { opacity: .18; }
     .cal.f-OT .d.m-OT { background: var(--ot-soft); color: var(--ot); }
     .cal.f-LATE .d.m-LATE { background: var(--orange-soft); color: var(--orange); }
-    .month-select { flex: 1; margin: 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px;
-      font: inherit; font-weight: 700; font-size: 16px; text-align: center; background: #fff; color: var(--text); }
     .filters { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; }
     .fchip { padding: 7px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--gray-soft); color: var(--muted); flex: none; }
     .fchip.on { color: #fff; background: var(--brand); }
     .fchip.fc-ABSENT.on { background: var(--red); } .fchip.fc-HALF_DAY.on { background: var(--amber); }
     .fchip.fc-OT.on { background: var(--ot); } .fchip.fc-LATE.on { background: var(--orange); }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .split div { background: var(--green-soft); border-radius: 12px; padding: 12px; }
     .split div:last-child { background: var(--amber-soft); }
     .split span { display: block; font-size: 13px; color: var(--muted); }
     .split b { font-size: 18px; }
-    .switch { position: relative; width: 48px; height: 28px; flex: none; }
+    .pay-line { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
+    .pay-line:first-child { border-top: 0; }
+    .pay-line > :last-child { white-space: nowrap; text-align: right; }
+    .rate-line { font-size: 12px; color: var(--muted); padding: 2px 0 8px; }
+    .pay-line.total { font-size: 18px; font-weight: 700; border-top: 2px solid var(--line); margin-top: 4px; padding-top: 12px; }
+
+    /* Switch, PF grid */
+    .switch { position: relative; width: 48px; height: 28px; flex: none; display: inline-block; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .switch span { position: absolute; inset: 0; background: var(--gray-soft); border-radius: 999px; transition: .2s; }
     .switch span:before { content: ''; position: absolute; width: 22px; height: 22px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
@@ -130,12 +147,6 @@
     .pf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
     .pf-grid label { font-size: 11px; color: var(--muted); }
     .pf-grid input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; }
-    .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-    .pay-line { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px dashed var(--line); }
-    .pay-line:first-child { border-top: 0; }
-    .pay-line > :last-child { white-space: nowrap; text-align: right; }
-    .rate-line { font-size: 12px; color: var(--muted); padding: 2px 0 8px; }
-    .pay-line.total { font-size: 18px; font-weight: 700; border-top: 2px solid var(--line); margin-top: 4px; padding-top: 12px; }
 
     /* Lists */
     .list-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -145,13 +156,9 @@
     .list-item .right { text-align: right; flex: none; }
     .link { background: none; color: var(--brand); padding: 0; font-size: 13px; font-weight: 600; }
 
-    .tabs { display: flex; background: var(--card); border-radius: 14px; padding: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(20,30,60,.07); }
-    .tabs button { flex: 1; padding: 10px; border-radius: 10px; background: none; color: var(--muted); font-weight: 600; }
+    .tabs { display: flex; background: var(--card); border-radius: 14px; padding: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(20,30,60,.07); overflow-x: auto; }
+    .tabs button { flex: 1 0 auto; padding: 10px 14px; border-radius: 10px; background: none; color: var(--muted); font-weight: 600; white-space: nowrap; }
     .tabs button.on { background: var(--brand); color: #fff; }
-    .tabs.scroll { overflow-x: auto; }
-    .tabs.scroll button { flex: 1 0 auto; padding: 10px 14px; white-space: nowrap; }
-    .inp { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font: inherit; font-size: 16px; color: var(--text); }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
     .checklist { max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
     .checklist label, label.check { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; }
     .checklist label + label { border-top: 1px solid var(--line); }
@@ -162,16 +169,18 @@
     .nav { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--line);
       display: flex; justify-content: center; padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
     .nav .in { display: flex; width: 100%; max-width: 520px; }
-    .nav button { flex: 1; background: none; padding: 10px 4px 12px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .nav button { flex: 1; background: none; padding: 10px 4px 12px; color: var(--muted); font-size: 12px; font-weight: 600; position: relative; }
     .nav button .ic { display: block; font-size: 22px; line-height: 1.2; }
     .nav button.on { color: var(--brand); }
+    .badge { position: absolute; top: 4px; left: 55%; background: var(--red); color: #fff; border-radius: 999px; font-size: 10px; padding: 1px 6px; }
 
     /* Modal */
     .modal { position: fixed; inset: 0; background: rgba(15,20,35,.55); display: flex; align-items: flex-end;
       justify-content: center; z-index: 10; }
     .modal .sheet { background: #fff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 20px 16px 28px;
-      max-height: 88vh; overflow: auto; }
+      max-height: 90vh; overflow: auto; }
     .modal img { width: 100%; border-radius: 14px; }
+    .slip { width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 12px; }
 
     .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: #1b2333; color: #fff;
       padding: 12px 18px; border-radius: 12px; font-size: 14px; z-index: 20; max-width: 90%; text-align: center; }
@@ -207,7 +216,10 @@
         <h1 id="hdrName">–</h1>
         <small id="hdrSub"></small>
       </div>
-      <button class="logout" onclick="doLogout()">Logout</button>
+      <div style="display:flex;gap:6px">
+        <button class="hbtn" onclick="openChangePin()">PIN</button>
+        <button class="hbtn" onclick="doLogout()">Logout</button>
+      </div>
     </div>
   </div>
   <div class="wrap pull" id="content"></div>
@@ -216,7 +228,8 @@
     <div class="in">
       <button data-tab="home" onclick="go('home')"><span class="ic">⏱</span>Attendance</button>
       <button data-tab="month" onclick="go('month')"><span class="ic">📅</span>My Month</button>
-      <button data-tab="admin" id="navAdmin" class="hidden" onclick="go('admin')"><span class="ic">🛠</span>Admin</button>
+      <button data-tab="requests" onclick="go('requests')"><span class="ic">📝</span>Requests<span id="reqBadge" class="badge hidden"></span></button>
+      <button data-tab="admin" id="navAdmin" class="hidden" onclick="go('admin')"><span class="ic">🛠</span><span id="navAdminLabel">Admin</span></button>
     </div>
   </div>
 </div>
@@ -233,10 +246,16 @@
   var STATUS = {
     PRESENT: 'Present', WORKING: 'Working', HALF_DAY: 'Half Day', ABSENT: 'Absent', LEAVE: 'Leave',
     WEEK_OFF: 'Week Off', HOLIDAY: 'Holiday', OFF_WORK: 'Worked on Off-day', NOT_MARKED: 'Not Marked',
-    NOT_JOINED: 'Not Joined', UPCOMING: ''
+    NOT_JOINED: 'Not Joined', UPCOMING: '',
+    PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
+    ACTIVE: 'Active', PAUSED: 'Paused', CLOSED: 'Closed'
   };
   var SHORT = { PRESENT: 'P', WORKING: 'IN', HALF_DAY: '½', ABSENT: 'A', LEAVE: 'L', WEEK_OFF: 'WO',
     HOLIDAY: 'H', OFF_WORK: 'OW', NOT_MARKED: '', NOT_JOINED: '–', UPCOMING: '' };
+  var FLAGS = {
+    WEAK_GPS: 'Weak GPS', WEAK_GPS_OUT: 'Weak GPS at check-out', REPEAT_GPS: 'Same GPS as another day',
+    SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie'
+  };
 
   function $(id) { return document.getElementById(id); }
   function esc(v) {
@@ -249,22 +268,35 @@
     return '<span class="chip s-' + status + '">' + STATUS[status] + '</span>' + (extra || '');
   }
   function lateChip(late) { return late ? ' <span class="chip s-LATE">Late</span>' : ''; }
+  function flagChips(flags) {
+    var list = Array.isArray(flags) ? flags : String(flags || '').split(/\s+/).filter(String);
+    return list.map(function (f) { return ' <span class="chip s-FLAG">⚠ ' + esc(FLAGS[f] || f) + '</span>'; }).join('');
+  }
   function money(n, cur) {
-    return (cur || '') + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (cur || '') + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
   function num(n) { return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
   function hrs(n) { n = Number(n || 0); var h = Math.floor(n), m = Math.round((n - h) * 60); return h + 'h ' + (m < 10 ? '0' : '') + m + 'm'; }
+  function mins(n) { n = Math.round(Number(n || 0)); var h = Math.floor(n / 60), m = n % 60; return h ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm'; }
   function store(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function toast(t) {
     var el = document.createElement('div'); el.className = 'toast'; el.textContent = t;
-    document.body.appendChild(el); setTimeout(function () { el.remove(); }, 3200);
+    document.body.appendChild(el); setTimeout(function () { el.remove(); }, 3500);
   }
-  function ymNow() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); }
-  function ymShift(ym, delta) {
-    var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + delta;
-    var d = new Date(y, m, 1); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  function pad(n) { return ('0' + n).slice(-2); }
+  function todayLocal() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()); }
+  function ymNow() { return todayLocal().slice(0, 7); }
+  function ymShift(ym, delta) { var d = new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + delta, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
+  function addDaysLocal(ds, n) { var p = ds.split('-'); var d = new Date(+p[0], +p[1] - 1, +p[2] + n); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function addMinutes(hhmm, add) { var t = +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5) + add; t = Math.min(t, 23 * 60 + 59); return pad(Math.floor(t / 60)) + ':' + pad(t % 60); }
+  function monthName(ym) {
+    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
   }
+  function fmtDate(ds) { return ds ? +ds.slice(8) + ' ' + monthName(ds.slice(0, 7)) : ''; }
+  function checkAll(cls, on) { Array.prototype.forEach.call(document.querySelectorAll('.' + cls), function (c) { c.checked = on; }); }
+  function checkedValues(cls) { return Array.prototype.filter.call(document.querySelectorAll('.' + cls), function (c) { return c.checked; }).map(function (c) { return c.value; }); }
+  function errBox(e) { return '<div class="msg err">' + esc(e.message || e) + '</div>'; }
 
   /** google.script.run as a Promise. Handles expired sessions centrally. */
   function api(fn) {
@@ -280,7 +312,7 @@
     });
   }
 
-  /* ---------------- Login ---------------- */
+  /* ---------------- Login & PIN ---------------- */
   function showLogin() {
     S.token = null; store('att_token', null);
     $('appView').classList.add('hidden'); $('loadingView').classList.add('hidden');
@@ -298,7 +330,7 @@
       store('att_token', r.token); store('att_emp', id.toUpperCase());
       startApp();
     }).catch(function (err) {
-      $('loginMsg').innerHTML = '<div class="msg err">' + esc(err.message) + '</div>';
+      $('loginMsg').innerHTML = errBox(err);
     }).then(function () { $('loginBtn').disabled = false; });
   });
 
@@ -306,6 +338,21 @@
     if (!confirm('Logout?')) return;
     api('logout', S.token).catch(function () {});
     showLogin();
+  }
+
+  function openChangePin() {
+    openModal('<h2 style="margin-top:0">Change PIN</h2>' +
+      '<div class="field"><label>Current PIN</label><input id="cpOld" type="password" inputmode="numeric"></div>' +
+      '<div class="field"><label>New PIN (4–6 digits)</label><input id="cpNew" type="password" inputmode="numeric"></div>' +
+      '<div class="field"><label>Repeat new PIN</label><input id="cpNew2" type="password" inputmode="numeric"></div>' +
+      '<button class="btn" id="cpBtn" onclick="changePin()">Change PIN</button><button class="btn ghost" onclick="closeModal()">Cancel</button><div id="cpMsg"></div>');
+  }
+  function changePin() {
+    if ($('cpNew').value !== $('cpNew2').value) { $('cpMsg').innerHTML = errBox('The new PINs do not match.'); return; }
+    $('cpBtn').disabled = true;
+    api('changePin', S.token, $('cpOld').value, $('cpNew').value)
+      .then(function () { closeModal(); toast('PIN changed'); })
+      .catch(function (e) { $('cpBtn').disabled = false; $('cpMsg').innerHTML = errBox(e); });
   }
 
   function startApp() {
@@ -323,6 +370,7 @@
     window.scrollTo(0, 0);
     if (tab === 'home') loadHome();
     if (tab === 'month') loadMonth(S.month || ymNow());
+    if (tab === 'requests') loadMyRequests();
     if (tab === 'admin') renderAdmin();
   }
 
@@ -330,7 +378,7 @@
     $('content').innerHTML = '<div class="card center"><div class="spinner"></div> <span class="muted">' + esc(msg || 'Loading…') + '</span></div>';
   }
   function setError(err, retry) {
-    $('content').innerHTML = '<div class="card"><div class="msg err">' + esc(err.message || err) + '</div>' +
+    $('content').innerHTML = '<div class="card">' + errBox(err) +
       (retry ? '<button class="btn ghost" onclick="' + retry + '">Try again</button>' : '') + '</div>';
   }
 
@@ -347,7 +395,9 @@
       $('hdrName').textContent = h.profile.name;
       $('hdrSub').textContent = h.profile.id + ' · ' + h.company;
       $('navAdmin').classList.toggle('hidden', h.profile.role === 'EMPLOYEE');
-      $('navAdmin').lastChild.textContent = h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
+      $('navAdminLabel').textContent = h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
+      $('reqBadge').textContent = h.pendingRequests;
+      $('reqBadge').classList.toggle('hidden', !h.pendingRequests);
       renderHome();
     }).catch(function (e) { setError(e, "loadHome()"); });
   }
@@ -355,14 +405,14 @@
   /** True when the phone's clock and time zone match the server (i.e. automatic time is on). */
   function phoneTimeOk() {
     var srv = S.home.server, tol = Math.max(1, S.home.clockTolerance || 3) * 60000;
-    var elapsed = Date.now() - S.homeLoadedAt;                     // time since the server answered
-    var epochDiff = Math.abs(S.homeLoadedPhoneEpoch - srv.epoch);   // includes network delay, well under tolerance
+    var elapsed = Date.now() - S.homeLoadedAt;
+    var epochDiff = Math.abs(S.homeLoadedPhoneEpoch - srv.epoch);
     var wallDiff = Math.abs(wallMs(phoneClock().local) - (wallMs(srv.local) + elapsed));
     return epochDiff <= tol && wallDiff <= tol;
   }
   function phoneClock() {
-    var d = new Date(), p = function (n) { return ('0' + n).slice(-2); };
-    return { epoch: d.getTime(), local: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) };
+    var d = new Date();
+    return { epoch: d.getTime(), local: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) };
   }
   function wallMs(str) {
     var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(str);
@@ -370,10 +420,11 @@
   }
 
   function renderHome() {
-    var h = S.home, r = h.record, d = h.day;
-    var state = !r ? 'in' : (!r.out ? 'out' : 'done');
-    var timeOk = phoneTimeOk();
-    if (!timeOk && state !== 'done') state = 'badtime';
+    var h = S.home, r = h.record, d = h.day, prev = h.openPrevious;
+    var checkedIn = !!(r && r.in);
+    var state = prev && !checkedIn ? 'outPrev' : !checkedIn ? 'in' : (!r.out ? 'out' : 'done');
+    if (!phoneTimeOk() && state !== 'done') state = 'badtime';
+
     var html = '<div class="card center">' +
       '<div class="muted">' + esc(h.todayLabel) + '</div>' +
       '<div class="clock" id="clock">--:--</div>' +
@@ -387,17 +438,23 @@
       '<div><b>' + (d.worked ? hrs(d.worked) : '–') + '</b><span>Worked' + (d.ot ? ' · OT ' + hrs(d.ot) : '') + '</span></div>' +
       '</div>';
 
+    if (r && !checkedIn && r.override && state === 'in') {
+      html += '<div class="msg info">You are marked <b>' + esc(STATUS[r.override]) + '</b> today. If you are at work, checking in will replace it.</div>';
+    }
     if (state === 'in') html += '<button class="big-btn" style="background:var(--green)" onclick="startFlow(\'in\')">CHECK IN</button>';
     if (state === 'out') html += '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT</button>';
+    if (state === 'outPrev') html += '<div class="msg info">You checked in on ' + esc(fmtDate(prev.date)) + ' at <b>' + esc(prev.in) + '</b> and have not checked out yet.</div>' +
+      '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT (night shift)</button>';
     if (state === 'done') html += '<div class="msg ok center">✓ Attendance complete for today</div>';
     if (state === 'badtime') html += '<div class="msg err"><b>⚠ Your phone time is not correct.</b><br>Open phone <b>Settings → Date &amp; time</b> and turn ON ' +
       '<b>"Automatic date &amp; time"</b> and <b>"Automatic time zone"</b>. Then tap Reload.</div>' +
       '<button class="btn" onclick="loadHome()">Reload</button>';
     html += '</div><div id="flow"></div>';
 
+    if (h.pendingRequests) html += '<div class="card"><div class="row"><span>📝 You have <b>' + h.pendingRequests + '</b> pending request(s).</span><button class="link" onclick="go(\'requests\')">View</button></div></div>';
     html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">📍 You must be within <b>' +
       esc(h.office.radius) + ' m</b> of the office to mark attendance. Keep GPS / Location ON and allow location access when asked.' +
-      (h.selfieRequired ? ' A selfie is required at check-in.' : '') + '</p></div>';
+      (h.selfieRequired ? ' A selfie is required at check-in.' : '') + ' Forgot to check in or out? Use <b>Requests</b>.</p></div>';
 
     $('content').innerHTML = html;
     tickClock();
@@ -407,7 +464,7 @@
   function tickClock() {
     var el = $('clock'); if (!el) return;
     var d = new Date();
-    el.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+    el.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
 
   /** Step 1: get GPS. Step 2 (check-in): selfie. Step 3: submit. */
@@ -437,15 +494,13 @@
     var locOk = f.pos && !f.error;
     var html = '<div class="card"><h2>' + (f.mode === 'in' ? 'Check In' : 'Check Out') + '</h2>';
 
-    // Step 1 - location
     html += '<div class="flow-step ' + (locOk ? 'done' : (f.error ? 'fail' : '')) + '"><div class="dot">' + (locOk ? '✓' : (f.error ? '!' : '1')) + '</div><div style="flex:1">' +
       '<b>Location</b><br>';
     if (f.locating) html += '<span class="spinner"></span> <span class="muted">Getting your location… keep this screen open</span>';
     else if (f.pos) html += '<span class="muted">' + Math.round(f.pos.distance) + ' m from office · accuracy ±' + Math.round(f.pos.accuracy) + ' m</span>';
-    if (f.error) html += '<div class="msg err">' + esc(f.error) + '</div><button class="btn ghost" onclick="startFlow(\'' + f.mode + '\')">Retry location</button>';
+    if (f.error) html += errBox(f.error) + '<button class="btn ghost" onclick="startFlow(\'' + f.mode + '\')">Retry</button>';
     html += '</div></div>';
 
-    // Step 2 - selfie
     if (needSelfie) {
       html += '<div class="flow-step ' + (f.selfie ? 'done' : '') + '"><div class="dot">' + (f.selfie ? '✓' : '2') + '</div><div style="flex:1"><b>Selfie</b><br>';
       if (f.selfie) html += '<img class="selfie-preview" src="' + f.selfie + '"><button class="btn ghost" onclick="takeSelfie()">Retake</button>';
@@ -454,7 +509,6 @@
       html += '</div></div>';
     }
 
-    // Step 3 - submit
     var ready = locOk && (!needSelfie || f.selfie);
     html += '<button class="btn ' + (f.mode === 'in' ? 'green' : 'red') + '" ' + (ready && !f.busy ? '' : 'disabled') + ' onclick="submitFlow()">' +
       (f.busy ? '<span class="spinner"></span> Saving…' : (f.mode === 'in' ? 'Confirm Check-In' : 'Confirm Check-Out')) + '</button>';
@@ -464,7 +518,41 @@
 
   function cancelFlow() { S.flow = null; $('flow').innerHTML = ''; }
 
-  function takeSelfie() { $('selfieInput').value = ''; $('selfieInput').click(); }
+  /** Live front camera first; the phone's camera app (file input) only if live camera is not available and allowed. */
+  function takeSelfie() {
+    var live = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    if (!live) return fallbackSelfie('Live camera is not supported in this browser.');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 } }, audio: false }).then(function (stream) {
+      S.camStream = stream;
+      openModal('<h2 style="margin-top:0">Selfie</h2><video id="camVideo" class="cam" autoplay playsinline muted></video>' +
+        '<button class="btn green" onclick="snapSelfie()">📸 Capture</button><button class="btn ghost" onclick="closeModal()">Cancel</button>');
+      $('camVideo').srcObject = stream;
+    }).catch(function () { fallbackSelfie('Camera permission was not given.'); });
+  }
+  function fallbackSelfie(why) {
+    if (S.home.liveCameraOnly) {
+      S.flow.error = why + ' Allow camera access for this site in your browser settings and try again.';
+      renderFlow();
+      return;
+    }
+    $('selfieInput').value = ''; $('selfieInput').click();
+  }
+  function snapSelfie() {
+    var v = $('camVideo');
+    if (!v || !v.videoWidth) return toast('Camera is starting, try again');
+    var scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+    var c = document.createElement('canvas');
+    c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+    var ctx = c.getContext('2d');
+    ctx.translate(c.width, 0); ctx.scale(-1, 1); // mirror like the preview
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    S.flow.selfie = c.toDataURL('image/jpeg', 0.72);
+    closeModal();
+    renderFlow();
+  }
+  function stopCamera() {
+    if (S.camStream) { S.camStream.getTracks().forEach(function (t) { t.stop(); }); S.camStream = null; }
+  }
 
   $('selfieInput').addEventListener('change', function () {
     var file = this.files && this.files[0];
@@ -548,7 +636,6 @@
     setLoading();
     api('getMyMonth', S.token, ym).then(function (m) {
       $('content').innerHTML = monthHtml(m, 'loadMonth');
-      S.lastMonth = m;
     }).catch(function (e) { setError(e, "loadMonth('" + ym + "')"); });
   }
 
@@ -558,7 +645,6 @@
     var call = function (ym) { return navFn + '(' + (navArg ? "'" + navArg + "'," : '') + "'" + ym + "')"; };
     var callSel = navFn + '(' + (navArg ? "'" + navArg + "'," : '') + 'this.value)';
 
-    // Month filter: arrows + dropdown of the last 24 months
     var opts = '', cur0 = ymNow();
     for (var k = 0; k < 24; k++) {
       var ym = ymShift(cur0, -k);
@@ -569,24 +655,24 @@
       '<button onclick="' + call(ymShift(m.ym, -1)) + '">‹</button>' +
       '<select class="month-select" onchange="' + callSel + '">' + opts + '</select>' +
       '<button onclick="' + call(ymShift(m.ym, 1)) + '">›</button></div>';
-    if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span></p>' +
-      (m.canEdit ? '<p class="center muted" style="font-size:12px;margin:4px 0 0">Tap any day to add or change its entry</p>' : '');
+    if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span>' +
+      (m.locked ? ' <span class="chip s-LOCK">🔒 Locked</span>' : '') + '</p>' +
+      (m.canEdit ? '<p class="center muted small" style="margin:4px 0 0">Tap any day to add or change its entry</p>' : '');
 
-    // Highlight filter
     var f = S.calFilter || 'ALL';
     html += '<div class="filters">' + [['ALL', 'All'], ['ABSENT', 'Absent'], ['HALF_DAY', 'Half Day'], ['OT', 'OT'], ['LATE', 'Late']]
       .map(function (x) { return '<button class="fchip fc-' + x[0] + (f === x[0] ? ' on' : '') + '" onclick="setCalFilter(\'' + x[0] + '\')">' + x[1] + '</button>'; }).join('') + '</div>';
 
-    // Calendar
     html += '<div class="cal f-' + f + '" id="cal">';
     ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (d) { html += '<div class="h">' + d + '</div>'; });
     for (var i = 0; i < m.days[0].dow; i++) html += '<div></div>';
-    var now = new Date(), todayStr = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+    var todayStr = todayLocal();
     m.days.forEach(function (d, i) {
       var cls = 'd s-' + d.status + ' m-' + d.status + (d.otMin ? ' m-OT' : '') + (d.late ? ' m-LATE' : '') + (d.date === todayStr ? ' today' : '');
       html += '<button class="' + cls + '" onclick="showDay(' + i + ')">' + d.day +
         '<small>' + (SHORT[d.status] || '') + '</small>' +
-        (d.otMin ? '<span class="ot-dot"></span>' : '') + (d.late ? '<span class="late-dot"></span>' : '') + '</button>';
+        (d.otMin || d.otPending ? '<span class="ot-dot"' + (d.otPending ? ' style="opacity:.4"' : '') + '></span>' : '') +
+        (d.late ? '<span class="late-dot"></span>' : '') + (navArg && d.flags ? '<span class="flag-dot"></span>' : '') + '</button>';
     });
     html += '</div><div class="legend">' +
       ['PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'WEEK_OFF', 'HOLIDAY', 'OFF_WORK'].map(function (s) { return chip(s); }).join('') +
@@ -598,58 +684,71 @@
       '<div class="k-red"><b>' + (t.absent + t.notJoined) + '</b><span>Absent (Leaves)</span></div>' +
       '<div class="k-amber"><b>' + t.halfDay + '</b><span>Half Days</span></div>' +
       '<div class="k-orange"><b>' + t.late + '</b><span>Late · ' + mins(t.lateMin) + '</span></div>' +
+      '<div class="k-orange"><b>' + mins(t.earlyMin) + '</b><span>Early leaving</span></div>' +
       '<div class="k-ot"><b>' + mins(t.otMin) + '</b><span>Net OT</span></div>' +
-      '<div><b>' + (t.leave + t.weekOff + t.holiday) + '</b><span>Paid Leave / Off</span></div>' +
-      '</div>' +
-      (m.rules.lateReducesOt && (t.otMinGross || t.lateMin) ? '<p class="muted" style="font-size:12px;margin:10px 0 0">Net OT = OT ' + mins(t.otMinGross) + ' − Late ' + mins(t.lateMin) + ' = <b>' + mins(t.otMin) + '</b></p>' : '') +
+      '<div><b>' + t.leave + '</b><span>Paid Leave</span></div>' +
+      '<div><b>' + (t.weekOff + t.holiday) + '</b><span>Week Off / Holiday</span></div>' +
+      '<div><b>' + num(t.workedHours) + 'h</b><span>Worked</span></div>' +
       '</div>';
+    var cuts = [];
+    if (m.rules.lateReducesOt && t.lateMin) cuts.push('Late ' + mins(t.lateMin));
+    if (m.rules.earlyReducesOt && t.earlyMin) cuts.push('Early ' + mins(t.earlyMin));
+    if (cuts.length) html += '<p class="muted small" style="margin:10px 0 0">Net OT = OT ' + mins(t.otMinGross) + ' − ' + cuts.join(' − ') + ' = <b>' + mins(t.otMin) + '</b></p>';
+    if (t.otPendingMin) html += '<div class="msg warn">' + mins(t.otPendingMin) + ' OT is waiting for admin approval (not counted yet).</div>';
+    html += '</div>';
 
     // Salary (hidden for admins without "View Payroll")
-    if (p) html += '<div class="card"><h2>Salary ' + (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '') +
-      (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
-      payLine('Total Salary', money(p.salary, cur), '', true) +
-      '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
-        money(p.perDay, cur) + '/day · ' + money(p.hourly, cur) + '/hr · ' + money(p.perMin, cur) + '/min</div>' +
-      payLine('OT <span class="muted">(' + mins(t.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
-      payLine('Leaves <span class="muted">(' + (t.absent + t.notJoined) + ' days)</span>', '− ' + money(p.leaveDed, cur), 'red') +
-      payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
-      (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '');
-    if (p && p.pf) {
-      html += payLine('PF Employee <span class="muted">(bank salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
-        payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue') +
-        '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
-        '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>' +
-        '<div class="pay-line total"><span>Take-home</span><span>' + money(p.net, cur) + '</span></div>';
-    } else if (p) {
-      html += '<div class="pay-line total"><span>Net Salary</span><span>' + money(p.net, cur) + '</span></div>';
+    if (p) {
+      html += '<div class="card"><h2>Salary ' + (m.locked ? '<span class="chip s-LOCK">🔒 Final</span>' : (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '')) +
+        (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
+        payLine('Total Salary', money(p.salary, cur), '', true) +
+        '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
+          money(p.perDay, cur) + '/day · ' + money(p.hourly, cur) + '/hr · ' + money(p.perMin, cur) + '/min</div>' +
+        payLine('OT <span class="muted">(' + mins(t.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
+        payLine('Leaves <span class="muted">(' + (t.absent + t.notJoined) + ' days)</span>', '− ' + money(p.leaveDed, cur), 'red') +
+        payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
+        (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '') +
+        (p.advance ? payLine('Advance recovery', '− ' + money(p.advance, cur), 'red') : '');
+      if (p.pf) {
+        html += payLine('PF Employee <span class="muted">(bank salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
+          payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue') +
+          '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
+          '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>' +
+          '<div class="pay-line total"><span>Take-home</span><span>' + money(p.net, cur) + '</span></div>';
+      } else {
+        html += '<div class="pay-line total"><span>Net Salary</span><span>' + money(p.net, cur) + '</span></div>';
+      }
+      (m.advances || []).forEach(function (a) {
+        html += '<p class="muted small" style="margin:8px 0 0">Advance ' + money(a.amount, cur) + (a.note ? ' (' + esc(a.note) + ')' : '') +
+          ': balance ' + money(a.balanceAfter, cur) + ' after this month' + (a.status !== 'ACTIVE' ? ' · ' + esc(STATUS[a.status] || a.status) : '') + '</p>';
+      });
+      if (m.inProgress && !m.locked) html += '<p class="muted small" style="margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>';
+      if (!navArg || m.canPayslip) html += '<button class="btn ghost" onclick="openPayslip(\'' + m.ym + '\'' + (navArg ? ',\'' + esc(m.employee.id) + '\'' : '') + ')">📄 Payslip</button>';
+      html += '</div>';
     }
-    if (p) html += (m.inProgress ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>' : '') +
-      '</div>';
 
-    // Day list
     var worked = m.days.filter(function (d) { return d.in; });
     if (worked.length) {
       html += '<div class="card"><h2>Daily log</h2>';
       worked.slice().reverse().forEach(function (d) {
-        html += '<div class="list-item"><div><div class="name">' + esc(d.date.slice(8)) + ' ' + esc(m.label.split(' ')[0].slice(0, 3)) + '</div>' +
-          '<div class="sub">' + esc(d.in) + ' → ' + esc(d.out || '—') + ' · ' + hrs(d.worked) +
+        html += '<div class="list-item"><div><div class="name">' + esc(fmtDate(d.date)) + '</div>' +
+          '<div class="sub">' + esc(d.in) + ' → ' + esc(d.out || '—') + (d.overnight ? ' (+1 day)' : '') + ' · ' + hrs(d.worked) +
           (d.otMin ? ' · <span style="color:var(--ot)">OT ' + mins(d.otMin) + '</span>' : '') +
-          (d.lateMin ? ' · <span style="color:var(--orange)">Late ' + mins(d.lateMin) + '</span>' : '') + '</div></div>' +
+          (d.otPending ? ' · <span style="color:var(--amber)">OT ' + mins(d.otPending) + ' pending</span>' : '') +
+          (d.lateMin ? ' · <span style="color:var(--orange)">Late ' + mins(d.lateMin) + '</span>' : '') +
+          (d.earlyMin ? ' · <span style="color:var(--orange)">Early ' + mins(d.earlyMin) + '</span>' : '') + '</div></div>' +
           '<div class="right">' + chip(d.status) + lateChip(d.late) + '</div></div>';
       });
       html += '</div>';
     }
     S.viewMonth = m;
+    S.viewMonthAdmin = !!navArg;
     return html;
   }
 
   function payLine(label, value, color, bold) {
     return '<div class="pay-line"><span>' + label + '</span><' + (bold ? 'b' : 'span') + (color ? ' style="color:var(--' + color + ')"' : '') + '>' +
       value + '</' + (bold ? 'b' : 'span') + '></div>';
-  }
-  function mins(n) { n = Math.round(Number(n || 0)); var h = Math.floor(n / 60), m = n % 60; return h ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm'; }
-  function monthName(ym) {
-    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
   }
   function setCalFilter(f) {
     S.calFilter = f;
@@ -658,26 +757,119 @@
   }
 
   function showDay(i) {
-    var d = S.viewMonth.days[i];
-    var html = '<h2 style="margin-top:0">' + esc(d.date) + '</h2><p>' + (chip(d.status) || '<span class="muted">No record</span>') + lateChip(d.late) + '</p>';
+    var m = S.viewMonth, d = m.days[i];
+    var html = '<h2 style="margin-top:0">' + esc(fmtDate(d.date)) + '</h2><p>' + (chip(d.status) || '<span class="muted">No record</span>') + lateChip(d.late) +
+      (d.planned ? ' <span class="muted small">(approved, upcoming)</span>' : '') + '</p>';
     if (d.holidayName) html += '<p>🎉 ' + esc(d.holidayName) + '</p>';
-    if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
-      '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>Late</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>OT</span></div><div></div></div>';
+    if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + (d.overnight ? '<small> +1</small>' : '') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
+      '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>Late</span></div><div class="k-orange"><b>' + mins(d.earlyMin) + '</b><span>Early</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>OT</span></div></div>';
+    if (d.otPending) html += '<div class="msg warn">OT ' + mins(d.otPending) + ' waiting for approval</div>';
+    if (d.otRejected) html += '<div class="msg err">OT was not approved for this day</div>';
+    if (S.viewMonthAdmin && d.flags) html += '<p>' + flagChips(d.flags) + '</p>';
     if (d.note) html += '<div class="msg info">Note: ' + esc(d.note) + '</div>';
-    var m = S.viewMonth;
+    if (S.viewMonthAdmin && m.canApproveOt && d.otPending) {
+      html += '<div class="btns"><button class="btn green" onclick="decideOt(\'' + esc(m.employee.id) + '\',\'' + d.date + '\',true)">Approve OT</button>' +
+        '<button class="btn soft-red" onclick="decideOt(\'' + esc(m.employee.id) + '\',\'' + d.date + '\',false)">Reject OT</button></div>';
+    }
     if (m.canEdit && d.date <= todayLocal() && d.date >= m.minDate) {
       html += '<button class="btn" onclick="openEntryEditor(\'' + esc(m.employee.id) + '\',\'' + d.date + '\')">✏️ ' + (d.in || d.status === 'LEAVE' ? 'Edit' : 'Add') + ' entry</button>';
     }
     html += '<button class="btn ghost" onclick="closeModal()">Close</button>';
     openModal(html);
   }
-  function todayLocal() { var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); }
+
+  /* ---------------- Payslip ---------------- */
+  function openPayslip(ym, empId) {
+    openModal('<div class="center"><div class="spinner"></div></div>');
+    api('getPayslip', S.token, ym, empId || null, false).then(function (r) {
+      S.slip = { ym: ym, empId: empId || null, fileName: r.fileName };
+      openModal('<iframe id="slipFrame" class="slip"></iframe>' +
+        '<div class="btns"><button class="btn" id="slipPdf" onclick="downloadPayslip()">⬇ Download PDF</button>' +
+        '<button class="btn ghost" onclick="printPayslip()">🖨 Print</button></div>' +
+        '<button class="btn ghost" onclick="closeModal()">Close</button>');
+      $('slipFrame').srcdoc = r.html;
+    }).catch(function (e) { openModal(errBox(e) + '<button class="btn ghost" onclick="closeModal()">Close</button>'); });
+  }
+  function printPayslip() {
+    try { $('slipFrame').contentWindow.focus(); $('slipFrame').contentWindow.print(); }
+    catch (e) { toast('Printing is not available here. Use Download PDF.'); }
+  }
+  function downloadPayslip() {
+    var sl = S.slip; $('slipPdf').disabled = true;
+    api('getPayslip', S.token, sl.ym, sl.empId, true).then(function (r) {
+      var bin = atob(r.pdf), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      var a = document.createElement('a'); a.href = url; a.download = r.fileName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+    }).catch(function (e) { toast(e.message); }).then(function () { var b = $('slipPdf'); if (b) b.disabled = false; });
+  }
+
+  /* ---------------- Employee requests ---------------- */
+  function loadMyRequests() {
+    setLoading();
+    api('myRequests', S.token).then(renderMyRequests).catch(function (e) { setError(e, 'loadMyRequests()'); });
+  }
+
+  function renderMyRequests(list) {
+    var today = todayLocal();
+    var html = '<div class="card"><h2>New request</h2>' +
+      '<div class="field"><label>Type</label><select id="rqType" class="inp" onchange="toggleReqType()">' +
+      '<option value="LEAVE">Leave</option><option value="CORRECTION">Attendance correction (forgot check-in / check-out)</option></select></div>' +
+      '<div id="rqLeave"><div class="grid2"><div class="field"><label>From</label><input id="rqFrom" class="inp" type="date" value="' + today + '"></div>' +
+      '<div class="field"><label>To</label><input id="rqTo" class="inp" type="date" value="' + today + '"></div></div>' +
+      '<div class="field"><label>Leave type</label><select id="rqLeaveType" class="inp"><option value="PAID">Paid leave</option><option value="UNPAID">Unpaid leave</option></select></div></div>' +
+      '<div id="rqCorr" class="hidden"><div class="field"><label>Date</label><input id="rqDate" class="inp" type="date" max="' + today + '" value="' + today + '"></div>' +
+      '<div class="grid2"><div class="field"><label>Correct check-in</label><input id="rqIn" class="inp" type="time"></div>' +
+      '<div class="field"><label>Correct check-out</label><input id="rqOut" class="inp" type="time"></div></div>' +
+      '<p class="muted small" style="margin:6px 0 0">Leave a time empty to keep what is already recorded.</p></div>' +
+      '<div class="field"><label>Reason</label><textarea id="rqReason" class="inp" placeholder="Why?"></textarea></div>' +
+      '<button class="btn" id="rqBtn" onclick="sendRequest()">Send request</button><div id="rqMsg"></div></div>';
+
+    html += '<div class="card"><h2>My requests</h2>';
+    if (!list.length) html += '<p class="muted">No requests yet.</p>';
+    list.forEach(function (r) {
+      html += '<div class="list-item"><div><div class="name">' + reqTitle(r) + '</div>' +
+        '<div class="sub">' + esc(r.reason) + '</div>' +
+        (r.remark ? '<div class="sub">Admin: ' + esc(r.remark) + '</div>' : '') + '</div>' +
+        '<div class="right">' + chip(r.status) +
+        (r.status === 'PENDING' ? '<div><button class="link" style="color:var(--red)" onclick="cancelMyRequest(\'' + esc(r.id) + '\')">Cancel</button></div>' : '') + '</div></div>';
+    });
+    html += '</div>';
+    $('content').innerHTML = html;
+  }
+
+  function reqTitle(r) {
+    if (r.type === 'LEAVE') return (r.leaveType === 'UNPAID' ? 'Unpaid' : 'Paid') + ' leave · ' + esc(fmtDate(r.from)) + (r.to !== r.from ? ' – ' + esc(fmtDate(r.to)) : '');
+    return 'Correction · ' + esc(fmtDate(r.from)) + ' · ' + esc(r.in || '—') + ' → ' + esc(r.out || '—');
+  }
+  function toggleReqType() {
+    var leave = $('rqType').value === 'LEAVE';
+    $('rqLeave').classList.toggle('hidden', !leave); $('rqCorr').classList.toggle('hidden', leave);
+  }
+  function sendRequest() {
+    var leave = $('rqType').value === 'LEAVE';
+    var req = leave
+      ? { type: 'LEAVE', from: $('rqFrom').value, to: $('rqTo').value, leaveType: $('rqLeaveType').value, reason: $('rqReason').value }
+      : { type: 'CORRECTION', from: $('rqDate').value, in: $('rqIn').value, out: $('rqOut').value, reason: $('rqReason').value };
+    $('rqBtn').disabled = true;
+    api('submitRequest', S.token, req).then(function (list) { renderMyRequests(list); toast('Request sent'); })
+      .catch(function (e) { $('rqBtn').disabled = false; $('rqMsg').innerHTML = errBox(e); });
+  }
+  function cancelMyRequest(id) {
+    if (!confirm('Cancel this request?')) return;
+    api('cancelRequest', S.token, id).then(renderMyRequests).catch(function (e) { toast(e.message); });
+  }
 
   /* ---------------- Admin ---------------- */
   var ADMIN_TABS = [
     { key: 'today', label: 'Today', perm: 'viewToday', load: function () { loadAdminToday(); } },
     { key: 'payroll', label: 'Payroll', perm: 'viewPayroll', load: function () { loadAdminMonth(S.admin.ym || ymNow()); } },
+    { key: 'requests', label: 'Requests', perm: 'approveRequests', load: function () { loadAdminRequests(); } },
     { key: 'entries', label: 'Entries', perm: 'editAttendance', load: function () { loadEntries(); } },
+    { key: 'staff', label: 'Employees', perm: 'manageEmployees', load: function () { loadStaff(); } },
+    { key: 'advances', label: 'Advances', perm: 'manageAdvances', load: function () { loadAdvances(); } },
     { key: 'pf', label: 'PF Setup', perm: 'editPf', load: function () { loadAdminPf(); } },
     { key: 'admins', label: 'Admins', perm: 'superAdmin', load: function () { loadAdmins(); } },
     { key: 'log', label: 'Activity', perm: 'superAdmin', load: function () { loadAudit(); } }
@@ -689,73 +881,108 @@
     var tabs = ADMIN_TABS.filter(function (t) { return can(t.perm); });
     if (!tabs.length) { setError('You have no admin permissions yet. Ask the super admin.'); return; }
     if (!tabs.some(function (t) { return t.key === a.tab; })) a.tab = tabs[0].key;
-    var html = '<div class="tabs scroll">' + tabs.map(function (t) {
+    var html = '<div class="tabs">' + tabs.map(function (t) {
       return '<button class="' + (a.tab === t.key ? 'on' : '') + '" onclick="adminTab(\'' + t.key + '\')">' + t.label + '</button>';
     }).join('') + '</div><div id="adminBody"></div>';
     $('content').innerHTML = html;
+    var on = document.querySelector('.tabs .on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+    S.reloadAfterEntry = null;
     tabs.filter(function (t) { return t.key === a.tab; })[0].load();
   }
-  function adminErr(e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message || e) + '</div></div>'); }
   function adminTab(t) { S.admin.tab = t; renderAdmin(); }
-
   function adminBody(html) { var el = $('adminBody'); if (el) el.innerHTML = html; }
   function adminLoading() { adminBody('<div class="card center"><div class="spinner"></div></div>'); }
+  function adminErr(e) { adminBody('<div class="card">' + errBox(e) + '</div>'); }
 
+  /* ---------- Today ---------- */
   function loadAdminToday() {
     adminLoading();
     api('adminToday', S.token).then(function (r) {
       var c = r.counts;
-      var html = '<div class="card"><div class="row"><h2 style="margin:0">' + esc(r.date) + '</h2>' + (r.offType ? chip(r.offType) : '') +
+      var html = '<div class="card"><div class="row"><h2 style="margin:0">' + esc(fmtDate(r.date)) + '</h2>' + (r.offType ? chip(r.offType) : '') +
         '<button class="btn small ghost" onclick="loadAdminToday()">↻</button></div>' +
         '<div class="kv" style="margin-top:12px">' +
         '<div><b>' + c.in + '/' + c.total + '</b><span>Checked in</span></div>' +
-        '<div><b>' + c.late + '</b><span>Late</span></div>' +
-        '<div><b>' + c.notMarked + '</b><span>Not marked</span></div></div></div>';
+        '<div class="k-orange"><b>' + c.late + '</b><span>Late</span></div>' +
+        '<div><b>' + c.notMarked + '</b><span>Not marked</span></div></div>' +
+        (c.flagged ? '<div class="msg err">⚠ ' + c.flagged + ' check-in(s) look suspicious. Check their selfies.</div>' : '') + '</div>';
       html += '<div class="card"><h2>Employees</h2>';
       S.adminToday = r.list;
       r.list.forEach(function (e, i) {
         html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
-          '<div class="sub">' + (e.in ? esc(e.in) + ' → ' + esc(e.out || '—') + (e.distance !== '' ? ' · ' + esc(e.distance) + ' m' : '') : 'No check-in yet') + '</div>' +
+          '<div class="sub">' + (e.in ? esc(e.in) + ' → ' + esc(e.out || '—') + (e.distance !== '' ? ' · ' + esc(e.distance) + ' m' : '') + (e.accuracy !== '' ? ' · ±' + esc(e.accuracy) + ' m' : '') : 'No check-in yet') + '</div>' +
+          (e.flags.length ? '<div>' + flagChips(e.flags) + '</div>' : '') +
           (e.hasSelfie ? '<button class="link" onclick="viewSelfie(' + i + ')">View selfie</button>' : '') +
           '</div><div class="right">' + chip(e.status) + lateChip(e.late) + '</div></div>';
       });
-      html += '</div>';
+      html += '</div><p class="muted small center">⚠ flags: weak GPS, the exact same GPS point as another day or another person (typical of fake-GPS apps), or a missing selfie.</p>';
       adminBody(html);
-    }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+    }).catch(adminErr);
   }
 
   function viewSelfie(i) {
-    var e = S.adminToday[i], row = e.row, name = e.name;
-    openModal('<h2 style="margin-top:0">' + esc(name) + '</h2><div class="center"><div class="spinner"></div></div>');
-    api('adminGetSelfie', S.token, row).then(function (src) {
-      openModal('<h2 style="margin-top:0">' + esc(name) + '</h2><img src="' + src + '"><button class="btn ghost" onclick="closeModal()">Close</button>');
-    }).catch(function (e) {
-      openModal('<div class="msg err">' + esc(e.message) + '</div><button class="btn ghost" onclick="closeModal()">Close</button>');
+    var e = S.adminToday[i];
+    openModal('<h2 style="margin-top:0">' + esc(e.name) + '</h2><div class="center"><div class="spinner"></div></div>');
+    api('adminGetSelfie', S.token, e.row).then(function (src) {
+      openModal('<h2 style="margin-top:0">' + esc(e.name) + ' · ' + esc(e.in) + '</h2><img src="' + src + '">' + (e.flags.length ? '<p>' + flagChips(e.flags) + '</p>' : '') +
+        '<button class="btn ghost" onclick="closeModal()">Close</button>');
+    }).catch(function (err) {
+      openModal(errBox(err) + '<button class="btn ghost" onclick="closeModal()">Close</button>');
     });
   }
 
+  /* ---------- Payroll ---------- */
   function loadAdminMonth(ym) {
     S.admin.ym = ym;
     adminLoading();
-    api('adminMonth', S.token, ym).then(function (r) {
-      var cur = r.currency, total = 0;
-      var html = '<div class="card"><div class="month-nav">' +
-        '<button onclick="loadAdminMonth(\'' + ymShift(ym, -1) + '\')">‹</button><h2>' + esc(r.label) + '</h2>' +
-        '<button onclick="loadAdminMonth(\'' + ymShift(ym, 1) + '\')">›</button></div>' +
-        (can('exportPayroll') ? '<button class="btn" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export payroll to Sheet</button><div id="exportMsg"></div>' : '') + '</div>';
-      html += '<div class="card"><h2>Employees</h2>';
-      r.rows.forEach(function (e) {
-        total += e.net;
-        html += '<div class="list-item" onclick="openEmployee(\'' + esc(e.id) + '\',\'' + ym + '\')" style="cursor:pointer">' +
-          '<div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
-          '<div class="sub">P ' + e.present + ' · ½ ' + e.halfDay + ' · A ' + (e.absent + e.notJoined) + ' · Late ' + e.late + ' · OT ' + mins(e.otMin) + (e.pf ? ' · <span class="chip s-PF">PF</span>' : '') + '</div></div>' +
-          '<div class="right"><b>' + money(e.net, cur) + '</b>' + (e.pf
-            ? '<div class="sub">🏦 ' + money(e.bank, cur) + ' · 💵 ' + money(e.cash, cur) + '</div><div class="sub">PF ' + money(e.pfEmployee, cur) + ' + ' + money(e.pfEmployer, cur) + '</div>'
-            : '<div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div>') + '</div></div>';
-      });
-      html += '<div class="pay-line total"><span>Total payroll</span><span>' + money(total, cur) + '</span></div></div>';
-      adminBody(html);
-    }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+    api('adminMonth', S.token, ym).then(renderAdminMonth).catch(adminErr);
+  }
+
+  function renderAdminMonth(r) {
+    var cur = r.currency, total = 0, ym = r.ym;
+    var html = '<div class="card"><div class="month-nav">' +
+      '<button onclick="loadAdminMonth(\'' + ymShift(ym, -1) + '\')">‹</button><h2>' + esc(r.label) + '</h2>' +
+      '<button onclick="loadAdminMonth(\'' + ymShift(ym, 1) + '\')">›</button></div>';
+    if (r.locked) html += '<div class="msg info">🔒 Locked by ' + esc(r.locked.by) + ' on ' + esc(r.locked.at) + '. Salaries are final and entries cannot change.</div>';
+    html += '<div class="btns">' +
+      (r.canLock ? '<button class="btn" onclick="lockMonth(\'' + ym + '\')">🔒 Lock month</button>' : '') +
+      (r.canUnlock ? '<button class="btn soft-red" onclick="unlockMonth(\'' + ym + '\')">Unlock</button>' : '') +
+      (can('exportPayroll') ? '<button class="btn ghost" id="exportBtn" onclick="exportPayroll(\'' + ym + '\')">Export to Sheet</button>' : '') +
+      '</div><div id="exportMsg"></div></div>';
+    html += '<div class="card"><h2>Employees</h2>';
+    r.rows.forEach(function (e) {
+      total += e.net;
+      html += '<div class="list-item" onclick="openEmployee(\'' + esc(e.id) + '\',\'' + ym + '\')" style="cursor:pointer">' +
+        '<div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
+        '<div class="sub">P ' + e.present + ' · ½ ' + e.halfDay + ' · A ' + (e.absent + e.notJoined) + ' · Late ' + e.late + ' · OT ' + mins(e.otMin) + (e.pf ? ' · <span class="chip s-PF">PF</span>' : '') + '</div>' +
+        (e.advance ? '<div class="sub">Advance − ' + money(e.advance, cur) + '</div>' : '') + '</div>' +
+        '<div class="right"><b>' + money(e.net, cur) + '</b>' + (e.pf
+          ? '<div class="sub">🏦 ' + money(e.bank, cur) + ' · 💵 ' + money(e.cash, cur) + '</div><div class="sub">PF ' + money(e.pfEmployee, cur) + ' + ' + money(e.pfEmployer, cur) + '</div>'
+          : '<div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div>') + '</div></div>';
+    });
+    html += '<div class="pay-line total"><span>Total payroll</span><span>' + money(total, cur) + '</span></div></div>';
+    adminBody(html);
+  }
+
+  function lockMonth(ym) {
+    if (!confirm('Lock ' + monthName(ym) + '? Salaries become final. Attendance, leave and advance changes for this month will be blocked.')) return;
+    adminLoading();
+    api('adminLockMonth', S.token, ym).then(function (r) { renderAdminMonth(r); toast('Month locked'); }).catch(adminErr);
+  }
+  function unlockMonth(ym) {
+    if (!confirm('Unlock ' + monthName(ym) + '? Salaries will be recalculated from current data.')) return;
+    adminLoading();
+    api('superUnlockMonth', S.token, ym).then(function (r) { renderAdminMonth(r); toast('Month unlocked'); }).catch(adminErr);
+  }
+
+  function exportPayroll(ym) {
+    $('exportBtn').disabled = true;
+    api('adminExportPayroll', S.token, ym).then(function (r) {
+      $('exportMsg').innerHTML = '<div class="msg ok">Saved to tab "' + esc(r.sheet) + '". <a href="' + esc(r.url) + '" target="_blank">Open sheet</a></div>';
+    }).catch(function (e) {
+      $('exportMsg').innerHTML = errBox(e);
+    }).then(function () { var b = $('exportBtn'); if (b) b.disabled = false; });
   }
 
   function openEmployee(id, ym) {
@@ -764,13 +991,283 @@
       S.reloadAfterEntry = function () { openEmployee(id, ym); };
       adminBody('<button class="btn small ghost" style="margin-bottom:12px" onclick="renderAdmin()">‹ Back</button>' +
         monthHtml(m, 'openEmployee', id));
-    }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+    }).catch(adminErr);
   }
 
+  /* ---------- Requests & OT approvals ---------- */
+  function loadAdminRequests() {
+    adminLoading();
+    api('adminRequests', S.token).then(renderAdminRequests).catch(adminErr);
+  }
+
+  function renderAdminRequests(r) {
+    S.adminReqs = r;
+    var html = '<div class="card"><h2>Pending requests (' + r.pending.length + ')</h2>';
+    if (!r.pending.length) html += '<p class="muted">Nothing to approve.</p>';
+    r.pending.forEach(function (q, i) {
+      html += '<div class="list-item" style="display:block"><div class="row"><div class="name">' + esc(q.name) + ' <span class="muted" style="font-weight:400">' + esc(q.empId) + '</span></div>' + chip('PENDING') + '</div>' +
+        '<div style="margin-top:4px">' + reqTitle(q) + '</div><div class="sub">' + esc(q.reason) + ' · sent ' + esc(q.created) + '</div>' +
+        (q.type === 'LEAVE' ? '<select id="aqLt-' + i + '" class="inp" style="margin-top:8px"><option value="PAID"' + (q.leaveType !== 'UNPAID' ? ' selected' : '') + '>Approve as Paid leave</option><option value="UNPAID"' + (q.leaveType === 'UNPAID' ? ' selected' : '') + '>Approve as Unpaid leave</option></select>' : '') +
+        '<input id="aqRm-' + i + '" class="inp" style="margin-top:8px" placeholder="Remark (optional)">' +
+        '<div class="btns"><button class="btn green" onclick="decideRequest(' + i + ',true,this)">Approve</button>' +
+        '<button class="btn soft-red" onclick="decideRequest(' + i + ',false,this)">Reject</button></div></div>';
+    });
+    html += '</div>';
+
+    if (r.otApproval) {
+      html += '<div class="card"><h2>OT waiting for approval (' + r.ot.length + ')</h2>';
+      if (!r.ot.length) html += '<p class="muted">No OT to approve.</p>';
+      r.ot.forEach(function (o) {
+        html += '<div class="list-item"><div><div class="name">' + esc(o.name) + '</div><div class="sub">' + esc(fmtDate(o.date)) + ' · ' + esc(o.in) + ' → ' + esc(o.out) + '</div></div>' +
+          '<div class="right"><b style="color:var(--ot)">' + mins(o.otMin) + '</b><div><button class="link" style="color:var(--green)" onclick="decideOt(\'' + esc(o.empId) + '\',\'' + o.date + '\',true)">Approve</button> · ' +
+          '<button class="link" style="color:var(--red)" onclick="decideOt(\'' + esc(o.empId) + '\',\'' + o.date + '\',false)">Reject</button></div></div></div>';
+      });
+      html += '</div>';
+    }
+
+    if (r.recent.length) {
+      html += '<div class="card"><h2>Recently decided</h2>';
+      r.recent.forEach(function (q) {
+        html += '<div class="list-item"><div><div class="name">' + esc(q.name) + '</div><div class="sub">' + reqTitle(q) + '</div>' +
+          '<div class="sub">by ' + esc(q.decidedBy) + ' · ' + esc(q.decidedAt) + (q.remark ? ' · ' + esc(q.remark) : '') + '</div></div><div class="right">' + chip(q.status) + '</div></div>';
+      });
+      html += '</div>';
+    }
+    adminBody(html);
+  }
+
+  function decideRequest(i, approve, btn) {
+    var q = S.adminReqs.pending[i];
+    if (!approve && !confirm('Reject this request?')) return;
+    btn.disabled = true;
+    var lt = $('aqLt-' + i) ? $('aqLt-' + i).value : null;
+    api('adminDecideRequest', S.token, q.id, approve, $('aqRm-' + i).value, lt)
+      .then(function (r) { renderAdminRequests(r); toast(approve ? 'Approved' : 'Rejected'); })
+      .catch(function (e) { btn.disabled = false; toast(e.message); });
+  }
+
+  function decideOt(empId, date, approve) {
+    api('adminDecideOt', S.token, empId, date, approve).then(function () {
+      toast(approve ? 'OT approved' : 'OT rejected');
+      closeModal();
+      if (S.reloadAfterEntry) S.reloadAfterEntry(); else loadAdminRequests();
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ---------- Entries (back-dated attendance) ---------- */
+  function loadEntries() {
+    adminLoading();
+    api('adminEntryOptions', S.token).then(function (o) {
+      S.reloadAfterEntry = null;
+      var empOpts = o.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('');
+      var first = todayLocal().slice(0, 8) + '01', yest = o.bulkMaxDate;
+      if (first < o.minDate) first = o.minDate;
+      if (first > yest) first = yest;
+      var shift = (S.home && S.home.shiftStart) || '09:30';
+      var html = '<div class="card"><h2>One day</h2>' +
+        '<div class="field"><label>Employee</label><select id="enEmp" class="inp">' + empOpts + '</select></div>' +
+        '<div class="field"><label>Date</label><input id="enDate" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + yest + '"></div>' +
+        '<div class="btns"><button class="btn" onclick="openEntryEditor($(\'enEmp\').value, $(\'enDate\').value)">Add / Edit entry</button>' +
+        '<button class="btn ghost" onclick="openEmployee($(\'enEmp\').value, $(\'enDate\').value.slice(0,7))">📅 Calendar</button></div></div>';
+
+      html += '<div class="card"><h2>Fill many days</h2><p class="muted" style="font-size:13px;margin:0">Use this to enter the days before the app started (up to yesterday). ' +
+        'Fill everyone as present, then fix absent / late / half days one by one.</p>' +
+        '<div class="field"><label>Employees <button class="link" onclick="checkAll(\'bulkEmp\', true)">All</button> · <button class="link" onclick="checkAll(\'bulkEmp\', false)">None</button></label>' +
+        '<div class="checklist">' + o.employees.map(function (e) {
+          return '<label><input type="checkbox" class="bulkEmp" value="' + esc(e.id) + '" checked> ' + esc(e.name) + ' <span class="muted">' + esc(e.id) + '</span></label>';
+        }).join('') + '</div></div>' +
+        '<div class="grid2"><div class="field"><label>From</label><input id="bkFrom" class="inp" type="date" min="' + o.minDate + '" max="' + yest + '" value="' + first + '"></div>' +
+        '<div class="field"><label>To</label><input id="bkTo" class="inp" type="date" min="' + o.minDate + '" max="' + yest + '" value="' + yest + '"></div>' +
+        '<div class="field"><label>Check-in</label><input id="bkIn" class="inp" type="time" value="' + shift + '"></div>' +
+        '<div class="field"><label>Check-out</label><input id="bkOut" class="inp" type="time" value="' + addMinutes(shift, ((S.home && S.home.standardHours) || 9) * 60) + '"></div></div>' +
+        '<div class="field"><label>Status</label>' + statusSelect('bkStatus', '') + '</div>' +
+        '<div class="field"><label>Note</label><input id="bkNote" class="inp" placeholder="e.g. Before app start"></div>' +
+        '<label class="check"><input type="checkbox" id="bkSkip" checked> Skip weekly offs &amp; holidays</label>' +
+        '<label class="check"><input type="checkbox" id="bkOver"> Overwrite days that already have an entry</label>' +
+        '<button class="btn" id="bkBtn" onclick="bulkFill()">Fill days</button><div id="bkMsg"></div></div>';
+      adminBody(html);
+    }).catch(adminErr);
+  }
+
+  function statusSelect(id, val) {
+    var o = [['', 'Auto (from times)'], ['PRESENT', 'Present'], ['HALF_DAY', 'Half Day'], ['ABSENT', 'Absent'], ['LEAVE', 'Paid Leave']];
+    return '<select id="' + id + '" class="inp">' + o.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === val ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>';
+  }
+
+  function bulkFill() {
+    var ids = checkedValues('bulkEmp'), from = $('bkFrom').value, to = $('bkTo').value;
+    if (!ids.length) return toast('Select at least one employee');
+    var status = $('bkStatus').value;
+    var what = status ? $('bkStatus').selectedOptions[0].text : $('bkIn').value + '–' + $('bkOut').value;
+    if (!confirm('Fill ' + ids.length + ' employee(s) from ' + from + ' to ' + to + ' as ' + what + '?')) return;
+    $('bkBtn').disabled = true; $('bkMsg').innerHTML = '';
+    api('adminBulkEntry', S.token, {
+      empIds: ids, from: from, to: to, in: status ? '' : $('bkIn').value, out: status ? '' : $('bkOut').value,
+      override: status, note: $('bkNote').value, skipOff: $('bkSkip').checked, overwrite: $('bkOver').checked
+    }).then(function (r) {
+      $('bkMsg').innerHTML = '<div class="msg ok">Done: ' + r.added + ' added, ' + r.updated + ' updated, ' + r.skipped + ' skipped (already had an entry or before joining).</div>';
+    }).catch(function (e) { $('bkMsg').innerHTML = errBox(e); })
+      .then(function () { $('bkBtn').disabled = false; });
+  }
+
+  function openEntryEditor(empId, date) {
+    if (!date) return toast('Choose a date');
+    openModal('<div class="center"><div class="spinner"></div></div>');
+    api('adminGetEntry', S.token, empId, date).then(renderEntryEditor)
+      .catch(function (e) { openModal(errBox(e) + '<button class="btn ghost" onclick="closeModal()">Close</button>'); });
+  }
+
+  function renderEntryEditor(en) {
+    S.entry = en;
+    var html = '<h2 style="margin:0">' + esc(en.name) + ' <span class="muted" style="font-weight:400">' + esc(en.empId) + '</span></h2>' +
+      '<p style="margin:4px 0 0">' + esc(fmtDate(en.date)) + ' ' + (en.offType ? chip(en.offType) : '') + ' ' +
+      (en.exists ? (chip(en.day.status) + lateChip(en.day.late)) : '<span class="chip s-NOT_MARKED">No entry yet</span>') + '</p>' +
+      (en.flags ? '<p>' + flagChips(en.flags) + '</p>' : '') +
+      (en.hasSelfie ? '<p class="muted small">This day was marked from the app (has selfie &amp; location). Changes keep them.</p>' : '') +
+      '<div class="grid2"><div class="field"><label>Check-in</label><input id="edIn" class="inp" type="time" value="' + esc(en.in) + '"></div>' +
+      '<div class="field"><label>Check-out</label><input id="edOut" class="inp" type="time" value="' + esc(en.out) + '"></div></div>' +
+      '<div class="field"><label>Status</label>' + statusSelect('edStatus', en.override) + '</div>' +
+      '<p class="muted small" style="margin:6px 0 0">"Auto" works out Present / Half Day / Late / OT from the times. Present / Half Day keep the late mark; Leave / Absent remove it.</p>' +
+      (en.otNeedsApproval ? '<div class="field"><label>OT approval</label><select id="edOt" class="inp">' +
+        [['', 'Not decided'], ['YES', 'Approved'], ['NO', 'Rejected']].map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === en.otApproved ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select></div>' : '') +
+      '<div class="field"><label>Note</label><input id="edNote" class="inp" value="' + esc(en.note) + '" placeholder="Reason (optional)"></div>' +
+      '<button class="btn" id="edSave" onclick="saveEntry()">Save</button>' +
+      (en.exists ? '<button class="btn soft-red" onclick="deleteEntry()">Delete entry</button>' : '') +
+      '<button class="btn ghost" onclick="closeModal()">Cancel</button><div id="edMsg"></div>';
+    openModal(html);
+  }
+
+  function saveEntry() {
+    var en = S.entry;
+    $('edSave').disabled = true;
+    var data = { empId: en.empId, date: en.date, in: $('edIn').value, out: $('edOut').value, override: $('edStatus').value, note: $('edNote').value };
+    if ($('edOt')) data.otApproved = $('edOt').value;
+    api('adminSaveEntry', S.token, data)
+      .then(function () { closeModal(); toast('Saved ' + en.name + ' · ' + fmtDate(en.date)); if (S.reloadAfterEntry) S.reloadAfterEntry(); })
+      .catch(function (e) { $('edSave').disabled = false; $('edMsg').innerHTML = errBox(e); });
+  }
+
+  function deleteEntry() {
+    var en = S.entry;
+    if (!confirm('Delete the entry of ' + en.name + ' for ' + fmtDate(en.date) + '?')) return;
+    api('adminDeleteEntry', S.token, en.empId, en.date)
+      .then(function () { closeModal(); toast('Entry deleted'); if (S.reloadAfterEntry) S.reloadAfterEntry(); })
+      .catch(function (e) { $('edMsg').innerHTML = errBox(e); });
+  }
+
+  /* ---------- Employees ---------- */
+  function loadStaff() {
+    adminLoading();
+    api('adminStaff', S.token).then(renderStaff).catch(adminErr);
+  }
+
+  function renderStaff(r) {
+    S.staff = r;
+    var html = '<button class="btn" style="margin:0 0 14px" onclick="openStaffForm(-1)">＋ Add employee</button><div class="card"><h2>Employees</h2>';
+    r.list.forEach(function (e, i) {
+      html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
+        '<div class="sub">' + money(e.salary, '₹') + '/month · joined ' + esc(fmtDate(e.joinDate)) + (e.phone ? ' · ' + esc(e.phone) : '') + '</div></div>' +
+        '<div class="right">' + (e.active ? '' : chip('CLOSED').replace('Closed', 'Inactive')) + (e.role !== 'EMPLOYEE' ? ' <span class="chip s-PF">' + esc(e.role.replace('_', ' ')) + '</span>' : '') +
+        '<div><button class="link" onclick="openStaffForm(' + i + ')">Edit</button></div></div></div>';
+    });
+    html += '</div>';
+    adminBody(html);
+  }
+
+  function openStaffForm(i) {
+    var isNew = i < 0, e = isNew ? { id: '', name: '', salary: '', joinDate: todayLocal(), phone: '', active: true, role: 'EMPLOYEE' } : S.staff.list[i];
+    var html = '<h2 style="margin-top:0">' + (isNew ? 'Add employee' : esc(e.name)) + '</h2>' +
+      (isNew ? '<div class="field"><label>Employee ID</label><input id="sfId" class="inp" autocapitalize="characters" placeholder="e.g. E010"></div>' : '') +
+      '<div class="field"><label>Name</label><input id="sfName" class="inp" value="' + esc(e.name) + '"></div>' +
+      '<div class="grid2"><div class="field"><label>Monthly salary</label><input id="sfSalary" class="inp" inputmode="decimal" value="' + esc(e.salary) + '"></div>' +
+      '<div class="field"><label>Join date</label><input id="sfJoin" class="inp" type="date" value="' + esc(e.joinDate) + '"></div></div>' +
+      '<div class="field"><label>Phone</label><input id="sfPhone" class="inp" inputmode="tel" value="' + esc(e.phone) + '"></div>' +
+      (isNew ? '<div class="field"><label>PIN (4–6 digits)</label><input id="sfPin" class="inp" inputmode="numeric"></div>' : '') +
+      (S.staff.canSetRole && e.role !== 'SUPER_ADMIN' ? '<div class="field"><label>Role</label><select id="sfRole" class="inp"><option value="EMPLOYEE"' + (e.role === 'EMPLOYEE' ? ' selected' : '') + '>Employee</option><option value="ADMIN"' + (e.role === 'ADMIN' ? ' selected' : '') + '>Admin</option></select></div>' : '') +
+      (isNew ? '' : '<label class="check" style="margin-top:10px"><input type="checkbox" id="sfActive"' + (e.active ? ' checked' : '') + '> Active (untick when someone leaves the company)</label>') +
+      '<button class="btn" id="sfSave" onclick="saveStaff(' + i + ')">Save</button>' +
+      (isNew ? '' : '<div class="card" style="background:var(--bg);margin-top:16px"><b>Reset PIN</b><div class="row" style="margin-top:8px"><input id="sfNewPin" class="inp" inputmode="numeric" placeholder="New PIN"><button class="btn small" onclick="resetPin(\'' + esc(e.id) + '\')">Reset</button></div></div>') +
+      '<button class="btn ghost" onclick="closeModal()">Cancel</button><div id="sfMsg"></div>';
+    openModal(html);
+  }
+
+  function saveStaff(i) {
+    var isNew = i < 0;
+    var data = { isNew: isNew, id: isNew ? $('sfId').value : S.staff.list[i].id, name: $('sfName').value, salary: $('sfSalary').value,
+      joinDate: $('sfJoin').value, phone: $('sfPhone').value };
+    if (isNew) data.pin = $('sfPin').value; else data.active = $('sfActive').checked;
+    if ($('sfRole')) data.role = $('sfRole').value;
+    $('sfSave').disabled = true;
+    api('adminSaveStaff', S.token, data).then(function (r) { closeModal(); renderStaff(r); toast('Saved'); })
+      .catch(function (e) { $('sfSave').disabled = false; $('sfMsg').innerHTML = errBox(e); });
+  }
+
+  function resetPin(id) {
+    var pin = $('sfNewPin').value;
+    api('adminResetPin', S.token, id, pin).then(function () { toast('PIN reset. Tell the employee their new PIN.'); $('sfNewPin').value = ''; })
+      .catch(function (e) { $('sfMsg').innerHTML = errBox(e); });
+  }
+
+  /* ---------- Advances ---------- */
+  function loadAdvances() {
+    adminLoading();
+    api('adminAdvances', S.token).then(renderAdvances).catch(adminErr);
+  }
+
+  function renderAdvances(r) {
+    S.adv = r;
+    var cur = r.currency;
+    var html = '<div class="card"><h2>Give an advance</h2>' +
+      '<div class="field"><label>Employee</label><select id="avEmp" class="inp">' + r.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('') + '</select></div>' +
+      '<div class="grid2"><div class="field"><label>Amount</label><input id="avAmt" class="inp" inputmode="decimal" placeholder="e.g. 10000"></div>' +
+      '<div class="field"><label>Deduct per month</label><input id="avMon" class="inp" inputmode="decimal" placeholder="e.g. 2000"></div>' +
+      '<div class="field"><label>Start deducting from</label><input id="avStart" class="inp" type="month" value="' + r.currentMonth + '"></div>' +
+      '<div class="field"><label>Date given</label><input id="avDate" class="inp" type="date" value="' + todayLocal() + '"></div></div>' +
+      '<div class="field"><label>Note</label><input id="avNote" class="inp" placeholder="e.g. Medical"></div>' +
+      '<button class="btn" id="avBtn" onclick="saveAdvance()">Save advance</button><div id="avMsg"></div></div>';
+
+    html += '<div class="card"><h2>Advances</h2>';
+    if (!r.list.length) html += '<p class="muted">No advances yet.</p>';
+    r.list.forEach(function (a, i) {
+      var st = a.repaid ? '<span class="chip s-APPROVED">Repaid</span>' : chip(a.status);
+      html += '<div class="list-item" style="display:block"><div class="row"><div class="name">' + esc(a.name) + ' <span class="muted" style="font-weight:400">' + esc(a.empId) + '</span></div>' + st + '</div>' +
+        '<div class="sub">' + money(a.amount, cur) + ' given ' + esc(fmtDate(a.dateGiven)) + (a.note ? ' · ' + esc(a.note) : '') + '</div>' +
+        '<div class="sub">' + money(a.monthly, cur) + '/month from ' + esc(monthName(a.startMonth)) + '</div>' +
+        '<div class="kv" style="margin-top:8px"><div><b>' + money(a.deductedBefore, cur) + '</b><span>Recovered</span></div>' +
+        '<div><b>' + money(a.thisMonth, cur) + '</b><span>This month</span></div>' +
+        '<div class="k-red"><b>' + money(a.balanceAfter, cur) + '</b><span>Balance after</span></div></div>' +
+        (a.repaid || a.status === 'CLOSED' ? '' : '<div class="btns">' +
+          '<button class="btn small ghost" onclick="editAdvance(' + i + ')">Change monthly</button>' +
+          (a.status === 'ACTIVE' ? '<button class="btn small ghost" onclick="advStatus(' + i + ',\'PAUSED\')">Pause</button>' : '<button class="btn small ghost" onclick="advStatus(' + i + ',\'ACTIVE\')">Resume</button>') +
+          '<button class="btn small soft-red" onclick="advStatus(' + i + ',\'CLOSED\')">Close</button></div>') + '</div>';
+    });
+    html += '</div><p class="muted small center">Pause skips deductions until resumed. Close stops it for good (e.g. repaid in cash). Locked months keep what was actually deducted.</p>';
+    adminBody(html);
+  }
+
+  function saveAdvance() {
+    $('avBtn').disabled = true;
+    api('adminSaveAdvance', S.token, { empId: $('avEmp').value, amount: $('avAmt').value, monthly: $('avMon').value,
+      startMonth: $('avStart').value, dateGiven: $('avDate').value, note: $('avNote').value })
+      .then(function (r) { renderAdvances(r); toast('Advance saved'); })
+      .catch(function (e) { $('avBtn').disabled = false; $('avMsg').innerHTML = errBox(e); });
+  }
+  function editAdvance(i) {
+    var a = S.adv.list[i];
+    var v = prompt('New monthly deduction for ' + a.name + ':', a.monthly);
+    if (v === null) return;
+    api('adminSaveAdvance', S.token, { id: a.id, monthly: v, note: a.note }).then(renderAdvances).catch(function (e) { toast(e.message); });
+  }
+  function advStatus(i, status) {
+    var a = S.adv.list[i];
+    if (status === 'CLOSED' && !confirm('Close this advance? No more deductions will be made.')) return;
+    api('adminSetAdvanceStatus', S.token, a.id, status).then(renderAdvances).catch(function (e) { toast(e.message); });
+  }
+
+  /* ---------- PF ---------- */
   function loadAdminPf() {
     adminLoading();
-    api('adminEmployees', S.token).then(renderAdminPf)
-      .catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+    api('adminEmployees', S.token).then(renderAdminPf).catch(adminErr);
   }
 
   function renderAdminPf(r) {
@@ -780,14 +1277,14 @@
       'Leave a box blank to use the default (' + d.bank + '% of salary for Bank Salary, ' + d.employee + '% / ' + d.employer +
       '% of Bank Salary for PF). You can also type a % like <b>12%</b>.<br><b>In Bank</b> = Bank Salary − PF Employee. <b>In Cash</b> = Salary − Bank Salary.</p></div>';
     r.list.forEach(function (e, i) {
-      html += '<div class="card" id="pf-' + i + '"><div class="row"><div><div class="name"><b>' + esc(e.name) + '</b> <span class="muted">' + esc(e.id) + '</span></div>' +
+      html += '<div class="card"><div class="row"><div><div class="name"><b>' + esc(e.name) + '</b> <span class="muted">' + esc(e.id) + '</span></div>' +
         '<div class="sub muted" style="font-size:13px">Salary ' + money(e.salary, cur) + '</div></div>' +
         '<label class="switch"><input type="checkbox" id="pfOn-' + i + '"' + (e.pfActive ? ' checked' : '') + ' onchange="togglePfFields(' + i + ')"><span></span></label></div>' +
         '<div id="pfFields-' + i + '" class="' + (e.pfActive ? '' : 'hidden') + '"><div class="pf-grid">' +
         pfInput(i, 'bank', 'Bank Salary', e.bankSalaryRaw, e.bankSalary) +
         pfInput(i, 'emp', 'PF Employee', e.employeeRaw, e.employee) +
         pfInput(i, 'er', 'PF Employer', e.employerRaw, e.employer) + '</div>' +
-        '<p class="muted" style="font-size:12px;margin:8px 0 0">Currently: In Bank ' + money(e.bankSalary - e.employee, cur) + ' · In Cash ' + money(e.salary - e.bankSalary, cur) + '</p></div>' +
+        '<p class="muted small" style="margin:8px 0 0">Currently: In Bank ' + money(e.bankSalary - e.employee, cur) + ' · In Cash ' + money(e.salary - e.bankSalary, cur) + '</p></div>' +
         '<button class="btn small" style="margin-top:12px" onclick="savePf(' + i + ', this)">Save</button></div>';
     });
     adminBody(html);
@@ -805,107 +1302,6 @@
       .catch(function (err) { btn.disabled = false; toast(err.message); });
   }
 
-  /* ---------- Entries (back-dated attendance) ---------- */
-  function loadEntries() {
-    adminLoading();
-    api('adminEntryOptions', S.token).then(function (o) {
-      S.entryOpts = o;
-      S.reloadAfterEntry = null;
-      var empOpts = o.employees.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('');
-      var first = todayLocal().slice(0, 8) + '01', yest = addDaysLocal(todayLocal(), -1);
-      if (first < o.minDate) first = o.minDate;
-      if (yest < first) yest = first;
-      var shift = (S.home && S.home.shiftStart) || '09:30';
-      var html = '<div class="card"><h2>One day</h2>' +
-        '<div class="field"><label>Employee</label><select id="enEmp" class="inp">' + empOpts + '</select></div>' +
-        '<div class="field"><label>Date</label><input id="enDate" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + yest + '"></div>' +
-        '<div class="row" style="gap:8px"><button class="btn" style="flex:1" onclick="openEntryEditor($(\'enEmp\').value, $(\'enDate\').value)">Add / Edit entry</button>' +
-        '<button class="btn ghost" style="flex:1" onclick="openEmployee($(\'enEmp\').value, $(\'enDate\').value.slice(0,7))">📅 Calendar</button></div></div>';
-
-      html += '<div class="card"><h2>Fill many days</h2><p class="muted" style="font-size:13px;margin:0">Use this to enter the days before the app started. ' +
-        'Fill everyone as present, then fix absent / late / half days one by one.</p>' +
-        '<div class="field"><label>Employees <button class="link" onclick="checkAll(\'bulkEmp\', true)">All</button> · <button class="link" onclick="checkAll(\'bulkEmp\', false)">None</button></label>' +
-        '<div class="checklist">' + o.employees.map(function (e) {
-          return '<label><input type="checkbox" class="bulkEmp" value="' + esc(e.id) + '" checked> ' + esc(e.name) + ' <span class="muted">' + esc(e.id) + '</span></label>';
-        }).join('') + '</div></div>' +
-        '<div class="grid2"><div class="field"><label>From</label><input id="bkFrom" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + first + '"></div>' +
-        '<div class="field"><label>To</label><input id="bkTo" class="inp" type="date" min="' + o.minDate + '" max="' + o.maxDate + '" value="' + yest + '"></div>' +
-        '<div class="field"><label>Check-in</label><input id="bkIn" class="inp" type="time" value="' + shift + '"></div>' +
-        '<div class="field"><label>Check-out</label><input id="bkOut" class="inp" type="time" value="' + addMinutes(shift, ((S.home && S.home.standardHours) || 9) * 60) + '"></div></div>' +
-        '<div class="field"><label>Status</label>' + statusSelect('bkStatus', '') + '</div>' +
-        '<div class="field"><label>Note</label><input id="bkNote" class="inp" placeholder="e.g. Before app start"></div>' +
-        '<label class="check"><input type="checkbox" id="bkSkip" checked> Skip weekly offs &amp; holidays</label>' +
-        '<label class="check"><input type="checkbox" id="bkOver"> Overwrite days that already have an entry</label>' +
-        '<button class="btn" id="bkBtn" onclick="bulkFill()">Fill days</button><div id="bkMsg"></div></div>';
-      adminBody(html);
-    }).catch(adminErr);
-  }
-
-  function statusSelect(id, val) {
-    var o = [['', 'Auto (from times)'], ['PRESENT', 'Present'], ['HALF_DAY', 'Half Day'], ['ABSENT', 'Absent'], ['LEAVE', 'Paid Leave']];
-    return '<select id="' + id + '" class="inp">' + o.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === val ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>';
-  }
-  function checkAll(cls, on) { Array.prototype.forEach.call(document.querySelectorAll('.' + cls), function (c) { c.checked = on; }); }
-  function checkedValues(cls) { return Array.prototype.filter.call(document.querySelectorAll('.' + cls), function (c) { return c.checked; }).map(function (c) { return c.value; }); }
-  function addMinutes(hhmm, add) { var t = +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5) + add; t = Math.min(t, 23 * 60 + 59); return ('0' + Math.floor(t / 60)).slice(-2) + ':' + ('0' + t % 60).slice(-2); }
-  function addDaysLocal(ds, n) { var p = ds.split('-'); var d = new Date(+p[0], +p[1] - 1, +p[2] + n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-
-  function bulkFill() {
-    var ids = checkedValues('bulkEmp'), from = $('bkFrom').value, to = $('bkTo').value;
-    if (!ids.length) return toast('Select at least one employee');
-    var status = $('bkStatus').value;
-    var what = status ? $('bkStatus').selectedOptions[0].text : $('bkIn').value + '–' + $('bkOut').value;
-    if (!confirm('Fill ' + ids.length + ' employee(s) from ' + from + ' to ' + to + ' as ' + what + '?')) return;
-    $('bkBtn').disabled = true; $('bkMsg').innerHTML = '';
-    api('adminBulkEntry', S.token, {
-      empIds: ids, from: from, to: to, in: status ? '' : $('bkIn').value, out: status ? '' : $('bkOut').value,
-      override: status, note: $('bkNote').value, skipOff: $('bkSkip').checked, overwrite: $('bkOver').checked
-    }).then(function (r) {
-      $('bkMsg').innerHTML = '<div class="msg ok">Done: ' + r.added + ' added, ' + r.updated + ' updated, ' + r.skipped + ' skipped (already had an entry or before joining).</div>';
-    }).catch(function (e) { $('bkMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; })
-      .then(function () { $('bkBtn').disabled = false; });
-  }
-
-  function openEntryEditor(empId, date) {
-    if (!date) return toast('Choose a date');
-    openModal('<div class="center"><div class="spinner"></div></div>');
-    api('adminGetEntry', S.token, empId, date).then(renderEntryEditor)
-      .catch(function (e) { openModal('<div class="msg err">' + esc(e.message) + '</div><button class="btn ghost" onclick="closeModal()">Close</button>'); });
-  }
-
-  function renderEntryEditor(en) {
-    S.entry = en;
-    var html = '<h2 style="margin:0">' + esc(en.name) + ' <span class="muted" style="font-weight:400">' + esc(en.empId) + '</span></h2>' +
-      '<p style="margin:4px 0 0">' + esc(en.date) + ' ' + (en.offType ? chip(en.offType) : '') + ' ' +
-      (en.exists ? (chip(en.day.status) + lateChip(en.day.late)) : '<span class="chip s-NOT_MARKED">No entry yet</span>') + '</p>' +
-      (en.hasSelfie ? '<p class="muted" style="font-size:12px">This day was marked from the app (has selfie & location). Changes keep them.</p>' : '') +
-      '<div class="grid2"><div class="field"><label>Check-in</label><input id="edIn" class="inp" type="time" value="' + esc(en.in) + '"></div>' +
-      '<div class="field"><label>Check-out</label><input id="edOut" class="inp" type="time" value="' + esc(en.out) + '"></div></div>' +
-      '<div class="field"><label>Status</label>' + statusSelect('edStatus', en.override) + '</div>' +
-      '<p class="muted" style="font-size:12px;margin:6px 0 0">"Auto" works out Present / Half Day / Late / OT from the times. Choose a status to force it (e.g. Paid Leave needs no times).</p>' +
-      '<div class="field"><label>Note</label><input id="edNote" class="inp" value="' + esc(en.note) + '" placeholder="Reason (optional)"></div>' +
-      '<button class="btn" id="edSave" onclick="saveEntry()">Save</button>' +
-      (en.exists ? '<button class="btn" style="background:var(--red-soft);color:var(--red)" onclick="deleteEntry()">Delete entry</button>' : '') +
-      '<button class="btn ghost" onclick="closeModal()">Cancel</button><div id="edMsg"></div>';
-    openModal(html);
-  }
-
-  function saveEntry() {
-    var en = S.entry;
-    $('edSave').disabled = true;
-    api('adminSaveEntry', S.token, { empId: en.empId, date: en.date, in: $('edIn').value, out: $('edOut').value, override: $('edStatus').value, note: $('edNote').value })
-      .then(function () { closeModal(); toast('Saved ' + en.name + ' · ' + en.date); if (S.reloadAfterEntry) S.reloadAfterEntry(); })
-      .catch(function (e) { $('edSave').disabled = false; $('edMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
-  }
-
-  function deleteEntry() {
-    var en = S.entry;
-    if (!confirm('Delete the entry of ' + en.name + ' for ' + en.date + '?')) return;
-    api('adminDeleteEntry', S.token, en.empId, en.date)
-      .then(function () { closeModal(); toast('Entry deleted'); if (S.reloadAfterEntry) S.reloadAfterEntry(); })
-      .catch(function (e) { $('edMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
-  }
-
   /* ---------- Super admin: admins & permissions ---------- */
   function loadAdmins() {
     adminLoading();
@@ -919,7 +1315,7 @@
       (nonAdmins.length ? '<div class="row" style="gap:8px"><select id="newAdmin" class="inp" style="flex:1">' +
         nonAdmins.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.name) + ' (' + esc(e.id) + ')</option>'; }).join('') +
         '</select><button class="btn small" onclick="setRole($(\'newAdmin\').value, \'ADMIN\')">Make admin</button></div>' : '<p class="muted">Everyone is already an admin.</p>') +
-      '<p class="muted" style="font-size:12px;margin:8px 0 0">Super admins are set in the Employees sheet (Role = SUPER_ADMIN).</p></div>';
+      '<p class="muted small" style="margin:8px 0 0">Super admins are set in the Employees sheet (Role = SUPER_ADMIN). Admins can never see or change super admins.</p></div>';
 
     if (!r.admins.length) html += '<div class="card muted">No admins yet.</div>';
     r.admins.forEach(function (a, i) {
@@ -934,7 +1330,7 @@
         '<div class="field"><label>Employees this admin can manage</label>' +
         '<label class="check"><input type="radio" name="scope-' + i + '" value="ALL"' + (all ? ' checked' : '') + ' onchange="toggleScope(' + i + ')"> All employees</label>' +
         '<label class="check"><input type="radio" name="scope-' + i + '" value="SEL"' + (all ? '' : ' checked') + ' onchange="toggleScope(' + i + ')"> Only selected</label>' +
-        '<div class="checklist' + (all ? ' hidden' : '') + '" id="scopeList-' + i + '">' + r.employees.filter(function (e) { return e.id !== a.id; }).map(function (e) {
+        '<div class="checklist' + (all ? ' hidden' : '') + '" id="scopeList-' + i + '">' + r.employees.filter(function (e) { return e.id !== a.id && e.role !== 'SUPER_ADMIN'; }).map(function (e) {
           return '<label><input type="checkbox" class="scope-' + i + '" value="' + esc(e.id) + '"' + (sel.indexOf(e.id) >= 0 ? ' checked' : '') + '> ' + esc(e.name) + ' <span class="muted">' + esc(e.id) + '</span></label>';
         }).join('') + '</div></div>' +
         '<button class="btn" onclick="savePerms(' + i + ', this)">Save permissions</button></div>';
@@ -973,22 +1369,13 @@
         html += '<div class="list-item"><div><div class="name">' + esc(r.action.replace(/_/g, ' ')) + ' <span class="muted" style="font-weight:400">' + esc(r.emp) + ' ' + esc(r.date) + '</span></div>' +
           '<div class="sub">' + esc(r.details) + '</div><div class="sub">by ' + esc(r.by) + ' · ' + esc(r.at) + '</div></div></div>';
       });
-      adminBody(html + '<p class="muted" style="font-size:12px">Full history is in the "Audit Log" tab of the Sheet.</p></div>');
+      adminBody(html + '<p class="muted small">Full history is in the "Audit Log" tab of the Sheet.</p></div>');
     }).catch(adminErr);
-  }
-
-  function exportPayroll(ym) {
-    $('exportBtn').disabled = true;
-    api('adminExportPayroll', S.token, ym).then(function (r) {
-      $('exportMsg').innerHTML = '<div class="msg ok">Saved to tab "' + esc(r.sheet) + '". <a href="' + esc(r.url) + '" target="_blank">Open sheet</a></div>';
-    }).catch(function (e) {
-      $('exportMsg').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
-    }).then(function () { var b = $('exportBtn'); if (b) b.disabled = false; });
   }
 
   /* ---------------- Modal ---------------- */
   function openModal(html) { $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); }
-  function closeModal() { $('modal').classList.add('hidden'); }
+  function closeModal() { stopCamera(); $('modal').classList.add('hidden'); }
 
   /* ---------------- Boot ---------------- */
   (function boot() {

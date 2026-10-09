@@ -3,11 +3,26 @@
 A mobile-friendly web app that runs on a Google Sheet. It lets employees:
 
 - **Check in and check out** only when they are within **30 m of the office**, checked by GPS.
-- **Take a selfie at check-in.** Photos are saved to a Google Drive folder.
-- **See their month**: pick any month and see a colour-coded calendar (Absent, Half Day, OT, Late). Filter buttons highlight just one type. The month view also shows net OT and the salary breakdown, including PF, In Bank and In Cash for PF employees.
-- **Keep the phone clock on automatic.** If the phone's time or time zone is wrong, the app blocks check-in/out and tells the employee to turn on "Automatic date & time". Recorded times always come from Google's server, not the phone.
+- **Take a selfie at check-in** with the live front camera. Photos are saved to a Google Drive folder.
+- **See their month**: pick any month and see a colour-coded calendar (Absent, Half Day, OT, Late). The month view also shows late and early-leaving minutes, net OT, advance recovery and the salary breakdown, including PF, In Bank and In Cash for PF employees.
+- **Download a payslip** (PDF or print) for any month.
+- **Send requests:** leave (paid or unpaid) and attendance corrections (forgot to check in or out).
+- **Change their own PIN.**
+- **Keep the phone clock on automatic.** If the phone's time or time zone is wrong, the app blocks check-in/out. Recorded times always come from Google's server, not the phone.
 
-An **admin dashboard** shows today's live attendance with selfies, the monthly payroll for every employee (with the In Bank / In Cash split), a calendar for each employee, a **PF Setup** screen to turn PF on or off and set amounts per employee, and a one-tap export of the payroll to a Sheet tab.
+Admins (with the permissions a super admin gives them) get these screens:
+
+| Screen | What it does |
+|---|---|
+| Today | Live attendance with selfies, and **⚠ flags** on suspicious check-ins |
+| Payroll | Every employee's salary, PF and bank/cash split; **lock the month**; export to the Sheet |
+| Requests | Approve or reject leave, corrections and OT |
+| Entries | Back-dated entries for one day, or bulk-fill many days |
+| Employees | Add employees, change salary and details, deactivate, reset PINs |
+| Advances | Give an advance and recover it in monthly instalments |
+| PF Setup | Turn PF on or off per employee and set the amounts |
+| Admins *(super admin only)* | Make admins and choose what each one may do |
+| Activity *(super admin only)* | Everything admins changed |
 
 No Google account is needed for employees. They log in with **Employee ID + PIN**.
 
@@ -23,7 +38,7 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
    - Click **+ → HTML**, name the file **`Index`** (exactly, without `.html`) and paste the contents of [`Index.html`](Index.html).
 5. Open **Project Settings ⚙** and set the **Time zone** to the same zone as the Sheet.
 6. Back in the editor, select the function **`setup`** and click **Run**. Allow the permissions when asked: Sheets, Drive and external pages.
-   This creates the tabs **Settings, Employees, Attendance and Holidays**, plus a Drive folder for selfies.
+   This creates all the tabs (Settings, Employees, Attendance, Holidays, Requests, Advances, Payroll Locks, Payroll Snapshots, Admin Permissions, Audit Log) and a Drive folder for selfies.
 7. Fill in the Sheet (see section 2).
 8. Deploy the app:
    - Click **Deploy → New deployment → ⚙ → Web app**.
@@ -32,7 +47,7 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
    - Click **Deploy** and copy the **Web app URL**.
 9. Send the URL to employees. On their phone, they open it in **Chrome** (Android) or **Safari** (iPhone) and tap **⋮ / Share → Add to Home Screen** to use it like an app.
 
-> After you change the code, go to **Deploy → Manage deployments → ✏ Edit → Version: New version → Deploy**. This keeps the same URL.
+> **Updating from an earlier version:** paste both files, run `setup` again (it only adds what is missing and never deletes data), then go to **Deploy → Manage deployments → ✏ Edit → Version: New version → Deploy**. This keeps the same URL.
 
 ---
 
@@ -42,30 +57,37 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Company Name | My Company | Shown at the top of the app |
-| **Office Latitude / Longitude** | *(empty)* | In Google Maps, **right-click your office → click the coordinates** to copy them. Paste the first number into Latitude and the second into Longitude |
+| Company Name | My Company | Shown in the app and on payslips |
+| **Office Latitude / Longitude** | *(empty)* | In Google Maps, **right-click your office → click the coordinates** to copy them |
 | Allowed Radius (m) | **30** | How close to the office an employee must be |
 | Max GPS Accuracy (m) | 50 | GPS readings less accurate than this are rejected |
+| Flag GPS Accuracy Above (m) | 35 | Less accurate check-ins are flagged for admins |
 | Check Location On Check-Out | Yes | Also require being at the office when checking out |
 | Selfie Required | Yes | A selfie is needed at check-in |
-| Shift Start | 09:30 | Used for late marking |
+| Live Camera Only | No | `Yes` = no gallery photos at all. **Test on your phones first**, then switch on |
+| Shift Start | 09:30 | Used for late marking. Shift end = start + Standard Hours |
 | Late Grace (min) | 10 | A check-in after 09:40 counts as **Late** |
-| Standard Hours | **9** | Hours worked beyond this are **OT** |
-| Salary Days Basis | **30** | Per day = salary ÷ 30, per hour = per day ÷ 9, per minute = per hour ÷ 60 |
-| Full Day Min Hours | 8 | Hours needed for a full day |
-| Half Day Min Hours | 4 | 4–8 h is a **Half Day**; under 4 h is **Absent** |
+| Standard Hours | **9** | Hours beyond this are OT |
+| Full Day / Half Day Min Hours | 8 / 4 | 8 h or more = full day, 4–8 h = **Half Day**, under 4 h = **Absent** |
 | No Check-Out Counts As | HALF_DAY | What happens when someone forgets to check out |
-| OT Multiplier | **1.5** | OT pay = net OT minutes × per-minute rate × 1.5. **Set `1` to pay OT at the normal rate** |
+| Allow Overnight Shift | No | `Yes` = a check-out after midnight closes the previous day |
+| Max Shift Hours | 16 | Longest shift allowed with overnight on |
+| Salary Days Basis | **30** | Per day = salary ÷ 30, per hour = per day ÷ 9, per minute = per hour ÷ 60 |
+| OT Multiplier | **1.5** | OT pay = net OT minutes × per-minute rate × 1.5. **Set `1` for the normal rate** |
 | OT Block (min) | 0 | `0` counts every minute. `30` counts each day's OT only in full 30-minute blocks |
-| Late Minutes Reduce OT | Yes | Net OT = the month's total OT minutes − the month's total late minutes |
+| Max OT Per Day (min) | 0 | Cap on OT per day (`0` = no cap) |
+| OT Needs Approval | No | `Yes` = OT counts only after an admin approves it |
+| Late Minutes Reduce OT | Yes | Net OT = OT − late minutes |
+| Early Leaving Reduces OT | Yes | Net OT = OT − minutes left before shift end |
 | Weekly Off | Sunday | For example `Sunday` or `Saturday,Sunday` |
 | Off-Day Work Is OT | Yes | All hours worked on a weekly off or holiday count as OT |
 | Lates Per Half-Day Cut | 0 | Optional extra penalty: every N late marks deduct half a day (`0` = off) |
 | Phone Time Tolerance (min) | 3 | Check-in is blocked if the phone clock is off by more than this |
-| Default PF Bank Salary % | 90 | Used when an employee's *PF Bank Salary* is blank (90% of 15000 = 13500) |
-| Default PF Employee % / Employer % | 12 / 13 | Used when *PF Employee* / *PF Employer* is blank (% of PF Bank Salary) |
-| OT & Deductions Paid In | CASH | For PF employees: OT is added to, and leave/half-day deductions taken from, the **Cash** part (or `BANK`) |
-| Currency | ₹ | |
+| Default PF Bank Salary % / Employee % / Employer % | 90 / 12 / 13 | Used when the PF boxes are blank |
+| OT & Deductions Paid In | CASH | For PF employees, which part absorbs OT, leave and advance deductions |
+| Round To Rupee | Yes | Salary amounts in whole rupees |
+| Admin Back-Date Limit (days) | 45 | How far back admins can change entries (super admin: no limit) |
+| Request Back-Date Limit (days) | 7 | How far back employees can request corrections or leave |
 
 ### Employees tab
 
@@ -74,11 +96,10 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
 | E001 | Owner Name | 4821 | 30000 | SUPER_ADMIN | Yes | 2026-01-01 | | No | | | |
 | E002 | Ravi Kumar | 1111 | 15000 | EMPLOYEE | Yes | 2026-03-15 | | Yes | 13500 | 1721 | 1755 |
 
-- Fill the **PF** columns here or, more easily, in the app under **Admin → PF Setup**: a switch plus three boxes per employee. A blank box uses the % defaults in Settings, and a value like `12%` also works.
-
-- Role is `EMPLOYEE`, `ADMIN` or `SUPER_ADMIN` (see section 4). Admins and super admins also mark their own attendance.
-- To remove an employee, set **Active = No**. Their history is kept.
-- **Change the sample PINs** (`1234`, `1111`) before going live.
+- You can add employees here or in the app (**Admin → Employees**).
+- **PINs are encrypted (hashed) automatically.** A PIN typed into the sheet works once, and is replaced by a code like `sha256$…` after that employee's first login. To reset a PIN, use **Admin → Employees → Edit → Reset PIN**, or type a new plain PIN into the sheet.
+- Role is `EMPLOYEE`, `ADMIN` or `SUPER_ADMIN` (see section 4).
+- When someone leaves, untick **Active**. Their history is kept.
 
 ### Holidays tab
 Add one row per paid holiday: `2026-10-20 | Diwali`.
@@ -92,80 +113,85 @@ Per day    = Total Salary ÷ 30
 Per hour   = Per day ÷ 9
 Per minute = Per hour ÷ 60
 
-Late minutes = check-in time − Shift Start   (only on days marked Late)
-Net OT mins  = month's total OT minutes − month's total late minutes   (never below 0)
-OT pay       = Net OT mins × Per minute × OT Multiplier
+Late minutes  = check-in − Shift Start         (only on days marked Late)
+Early minutes = shift end − check-out          (on present days)
+Net OT mins   = OT minutes − late minutes − early minutes   (never below 0)
+OT pay        = Net OT mins × Per minute × OT Multiplier
 
 Leaves     = Absent days × Per day
 Half Days  = Half days × ½ × Per day
 Gross      = Total Salary + OT pay − Leaves − Half Days
+Net        = Gross − advance instalment (− PF Employee for PF employees)
 ```
 
-**Employees without PF:** Net Salary = Gross.
-
-**Employees with PF** (both the employee and admin screens show all of these):
+**Employees with PF:**
 
 | | Example: ₹15,000, full month |
 |---|---|
-| 1. Total Salary | 15,000 |
-| 2. OT | + per calculation |
-| 3. Leaves | − per calculation |
-| 4. Half Days | − per calculation |
-| 5. PF Employee | 1,721 (deducted) |
-| 6. PF Employer | 1,755 (company contribution, shown only) |
-| 7. **In Bank** = PF Bank Salary − PF Employee | 13,500 − 1,721 = **11,779** |
-| 8. **In Cash** = Total Salary − PF Bank Salary, + OT − Leaves − Half Days | 15,000 − 13,500 = **1,500** |
+| Total Salary | 15,000 |
+| OT / Leaves / Half Days | per calculation |
+| PF Employee | 1,721 (deducted) |
+| PF Employer | 1,755 (company contribution, shown only) |
+| **In Bank** = PF Bank Salary − PF Employee | 13,500 − 1,721 = **11,779** |
+| **In Cash** = Salary − PF Bank Salary + OT − Leaves − Half Days − Advance | 15,000 − 13,500 = **1,500** |
 
-The bank amount stays fixed, so the PF salary stays the same every month. OT and leave/half-day deductions change the **cash** part. If deductions are larger than the cash part, the rest comes out of the bank part. To put OT and deductions in the bank part instead, set *OT & Deductions Paid In* = `BANK`.
+If the deductions are more than the cash part, the rest comes out of the bank part. (With a ₹2,000 advance instalment: cash 0, bank 11,279.)
 
-**Example with 1 absent day, 1 half day, 3h05m OT and 25 min late:** net OT = 185 − 25 = 160 min. OT pay = 160 × ₹0.926 = ₹148.15. Cash = 1,500 + 148.15 − 500 − 250 = **₹898.15**. Bank stays at **₹11,779**.
+### Locking a month
+At month end, check **Admin → Payroll** and tap **🔒 Lock month**. After that:
+- The salaries become **final**. A copy is saved in *Payroll Snapshots*, so later changes to salary, PF or settings don't affect that month.
+- Attendance entries, leave approvals and corrections for that month are blocked.
+- Payslips no longer say "Provisional".
+- Only a super admin can unlock a month.
 
-> PF and salary are read from the Employees tab every time, so changing them also changes how past months are shown. Click **Export payroll to Sheet** at each month end to keep a fixed record.
+### Advances
+**Admin → Advances → Give an advance**: enter the amount, the deduction per month and the first month to deduct. Each month's salary recovers the instalment until the balance is zero.
+- **Pause** skips months until you resume.
+- **Close** stops recovery for good, for example if the rest was repaid in cash.
+- **Change monthly** changes the instalment from now on. Locked months keep what was actually deducted.
 
-## 4. Roles, permissions and back-dated entries
+---
 
-### Roles (column **Role** in the Employees tab)
+## 4. Roles, permissions and requests
 
 | Role | Can do |
 |---|---|
-| `EMPLOYEE` | Mark their own attendance and see their own month and salary |
-| `ADMIN` | Only what the super admin allows (see below) |
-| `SUPER_ADMIN` | Everything: all employees, any date, plus the **Admins** and **Activity** screens |
+| `EMPLOYEE` | Own attendance, month, payslip, requests and PIN |
+| `ADMIN` | Only what the super admin allows. Admins **never see or change super admins**, and never change their own data unless given *Edit Own Entries* |
+| `SUPER_ADMIN` | Everything, plus the **Admins** and **Activity** screens, and unlocking months |
 
-Make the owner `SUPER_ADMIN` in the sheet. After that, the super admin promotes or removes admins from the app under **Super Admin → Admins**.
+Permissions the super admin can give each admin (**Super Admin → Admins**):
 
-### What a super admin can allow each admin
+- View Today
+- View Payroll
+- Edit Attendance
+- Approve Requests
+- Edit PF
+- Manage Employees
+- Manage Advances
+- Export Payroll
+- Lock Payroll
+- Edit Own Entries
 
-| Permission | Allows |
-|---|---|
-| View Today | Today's live attendance and selfies |
-| View Payroll | Monthly salary, OT and PF screens |
-| Edit Attendance | Add, change and delete entries, including **back-dated** ones |
-| Edit PF | Turn PF on or off and change PF amounts |
-| Export Payroll | Create the payroll tab in the Sheet |
-| Edit Own Entries | Change their own attendance or PF (normally off) |
+Each admin also gets a scope: **All employees** or **Only selected**.
 
-The super admin also chooses which employees each admin manages: **All employees** or **Only selected**. An admin can never act on employees outside that list.
+**Requests** (employee → admin):
+- **Leave:** a date range, paid or unpaid. The admin can change paid/unpaid when approving. Approved leave appears in the calendar and is counted when the day arrives.
+- **Correction:** the right check-in and/or check-out time for a day. Approving it updates that day.
 
-These settings are saved in the **Admin Permissions** tab. A new admin starts with only *View Today* until the super admin saves their permissions. If no super admin exists at all, admins keep full access, as in the earlier version.
+**Back-dated entries** (**Admin → Entries**):
+- **Fill many days** goes up to **yesterday** only, so it can never block a real check-in. Use **One day** for today.
+- **Status:** "Auto" works things out from the times. *Present* and *Half Day* keep the late mark. *Leave* and *Absent* remove it.
+- **Admin marks today as Leave or Absent:** if the employee then checks in, the check-in replaces that status.
 
-### Back-dated entries (**Admin → Entries**)
-
-- **Fill many days:** pick employees and a date range, then enter check-in and check-out times or a status (Present / Half Day / Absent / Paid Leave). Weekly offs and holidays are skipped, and days that already have an entry are left alone unless you tick *Overwrite*. Use this for the days before the app started.
-- **One day:** pick an employee and a date, then add, edit or delete that day's entry. You can also open their **Calendar** and tap any day.
-- "Auto" status works out Present / Half Day / Late / OT from the times. Choosing a status forces it, which is how you record paid leave.
-- Admins can go back **45 days** (*Admin Back-Date Limit (days)* in Settings). Super admins have no limit. Future dates are never allowed.
-- Every change is recorded in the **Audit Log** tab with who, when and the before/after values. The super admin can also see it under **Activity**.
-
-You can still edit the Attendance tab directly in the sheet. The **Override Status** column works the same as the Status field in the app.
+Every change is written to the **Audit Log** tab.
 
 ## 5. Things to know
 
-- **30 m is tight.** Indoor GPS is often only accurate to 10–40 m. If genuine employees get "too far" errors, raise the radius to 50–100 m or raise *Max GPS Accuracy*. Test from different corners of the office first.
-- **Fake-GPS apps** on Android can spoof location, and no web app can fully block them. The **selfie** is your main proof. Admins can view every selfie from the dashboard, and the distance and accuracy are stored for each check-in.
-- **Location permission:** employees must allow location for the site. If they denied it, they need to open browser settings → Site settings → Location → Allow.
-- **Login sessions** last 6 hours (the Apps Script cache limit). After that the app asks for the PIN again, with the Employee ID remembered.
+- **30 m is tight.** Indoor GPS is often only accurate to 10–40 m. If genuine employees get "too far" errors, raise the radius to 50 m or raise *Max GPS Accuracy*. Test from different corners of the office first.
+- **Fake GPS:** no web app can fully block fake-GPS apps. The app flags check-ins with weak GPS, or with the **exact same coordinates** as another day or another person. Fake-GPS apps typically produce identical coordinates, while real GPS always varies a little. Check flagged selfies in **Admin → Today**.
+- **Live camera:** the selfie opens the front camera inside the app. If a phone or browser blocks the camera inside the app, it falls back to the phone's camera, unless *Live Camera Only* = Yes.
+- **Location and camera permission:** employees must allow both for the site. If they denied it, they open browser settings → Site settings → Location / Camera → Allow.
+- **Payslip download:** if the PDF download doesn't start on a phone, use **Print → Save as PDF**.
 - **Five wrong PIN attempts** lock that Employee ID for 15 minutes.
-- PINs are stored in the Sheet, so keep the Sheet private and share it only with admins.
-- Selfies are stored in your Drive folder "*Company* – Attendance Selfies" and use your Drive storage (about 40 KB each).
-- Apps Script quotas comfortably cover a few hundred employees.
+- **The morning rush:** selfies are uploaded before the app waits its turn to write to the sheet, so many people can check in at the same minute.
