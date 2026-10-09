@@ -58,7 +58,7 @@ const COL = {
 };
 
 const REQ_HEADERS = ['ID', 'Created', 'Emp ID', 'Name', 'Type', 'From', 'To', 'In', 'Out', 'Leave Type',
-  'Reason', 'Status', 'Decided By', 'Decided At', 'Remark'];
+  'Reason', 'Status', 'Decided By', 'Decided At', 'Remark', 'Amount', 'Monthly'];
 const ADV_HEADERS = ['ID', 'Emp ID', 'Name', 'Date Given', 'Amount', 'Monthly Deduction', 'Start Month',
   'Status', 'Note', 'Created By', 'Created At', 'Top-ups'];
 const ADV_MONTH_HEADERS = ['Advance ID', 'Emp ID', 'Month', 'Deduct', 'Note', 'By', 'At'];
@@ -272,6 +272,7 @@ function setup() {
   sh.getRange('A:A').setNumberFormat('@');
   getOrCreate_(ss, SHEET.AUDIT, AUDIT_HEADERS);
   sh = getOrCreate_(ss, SHEET.REQUESTS, REQ_HEADERS);
+  ensureHeaders_(sh, REQ_HEADERS);
   ['F:F', 'G:G', 'H:H', 'I:I'].forEach(a => sh.getRange(a).setNumberFormat('@'));
   sh = getOrCreate_(ss, SHEET.ADVANCES, ADV_HEADERS);
   ensureHeaders_(sh, ADV_HEADERS);
@@ -577,6 +578,7 @@ function submitRequest(token, req) {
   req = req || {};
   const type = String(req.type || '').toUpperCase();
   const today = todayStr_();
+  if (type === 'ADVANCE') return submitAdvanceRequest_(emp, req, token);
   const minDate = s.requestBackDays > 0 ? addDays_(today, -s.requestBackDays) : '2000-01-01';
   const from = toDateStr_(req.from);
   const to = type === 'LEAVE' ? toDateStr_(req.to || req.from) : from;
@@ -607,6 +609,28 @@ function submitRequest(token, req) {
   const row = [id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'), emp.id, emp.name, type,
     "'" + from, "'" + to, inT ? "'" + inT : '', outT ? "'" + outT : '', leaveType, reason, 'PENDING', '', '', ''];
   const sh = sheetOrCreate_(SHEET.REQUESTS, REQ_HEADERS);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  forget_('requests');
+  return myRequests(token);
+}
+
+/** Salary advance request: { type: 'ADVANCE', amount, monthly (suggested deduction), reason } */
+function submitAdvanceRequest_(emp, req, token) {
+  const amount = Number(req.amount);
+  const monthly = req.monthly === '' || req.monthly === undefined ? 0 : Number(req.monthly);
+  const reason = String(req.reason || '').trim().slice(0, 300);
+  if (!(amount > 0)) throw new Error('Enter the advance amount you need.');
+  if (!isFinite(monthly) || monthly < 0) throw new Error('Enter a valid monthly deduction (or leave it empty).');
+  if (!reason) throw new Error('Please write a reason.');
+  if (readRequests_().some(r => r.empId === emp.id && r.status === 'PENDING' && r.type === 'ADVANCE')) {
+    throw new Error('You already have a pending advance request.');
+  }
+  const today = todayStr_();
+  const id = 'R' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  const row = [id, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'), emp.id, emp.name, 'ADVANCE',
+    "'" + today, "'" + today, '', '', '', reason, 'PENDING', '', '', '', amount, monthly || ''];
+  const sh = sheetOrCreate_(SHEET.REQUESTS, REQ_HEADERS);
+  ensureHeaders_(sh, REQ_HEADERS);
   sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
   forget_('requests');
   return myRequests(token);
@@ -682,7 +706,7 @@ function payrollRows_(ctx, ym) {
 
   const rows = getEmployees_().filter(e => (e.active || withRecords[e.id]) && canManage_(ctx, e.id)).map(e => {
     const m = buildMonth_(e, ym);
-    return hideSplit_(Object.assign({ id: e.id, name: e.name }, m.totals, m.pay), ctx.perms.viewSplit);
+    return hideSplit_(Object.assign({ id: e.id, name: e.name, advances: m.advances || [] }, m.totals, m.pay), ctx.perms.viewSplit);
   });
   return {
     ym: ym, label: ymLabel_(ym), currency: s.currency, rows: rows,
@@ -728,6 +752,10 @@ function adminSummary(token, ym) {
       id: r.id, name: r.name, present: r.present, absent: r.absent + r.notJoined, halfDay: r.halfDay, leave: r.leave,
       late: r.late, otMin: r.otMin, pf: r.pf, pfEmployee: r.pfEmployee, pfEmployer: r.pfEmployer, advance: r.advance,
       bank: split ? r.bank : undefined, cash: split ? r.cash : undefined, net: r.net, missed: r.missedCheckouts,
+      advances: (r.advances || []).map(a => ({ id: a.id, note: a.note, amount: a.amount, monthly: a.monthly,
+        startMonth: a.startMonth, wanted: a.wanted, deducted: a.deducted, balanceBefore: a.balanceBefore,
+        balanceAfter: a.balanceAfter, changed: a.changed, changeNote: a.changeNote })),
+      canEditAdvance: !!ctx.perms.manageAdvances && !data.locked && canEditEmployee_(ctx, r.id),
     })),
   };
 }
@@ -741,6 +769,7 @@ function adminEmployeeMonth(token, empId, ym) {
   m.canEdit = !!ctx.perms.editAttendance && canEditEmployee_(ctx, emp.id) && !m.locked;
   m.canApproveOt = !!ctx.perms.approveRequests && canEditEmployee_(ctx, emp.id) && !m.locked;
   m.canPayslip = !!ctx.perms.viewPayroll;
+  m.canManageAdvance = !!ctx.perms.manageAdvances && canEditEmployee_(ctx, emp.id) && !m.locked;
   hideSplit_(m, ctx.perms.viewSplit);
   m.minDate = ctx.minDate;
   return m;
@@ -869,16 +898,29 @@ function adminBulkEntry(token, opts) {
 /* ------------------------ Requests & OT approval ------------------- */
 
 function adminRequests(token) {
-  const ctx = authAdmin_(token, 'approveRequests');
+  const ctx = authAdmin_(token, ['approveRequests', 'manageAdvances']);
   const s = getSettings_();
-  const reqs = readRequests_().filter(r => canEditEmployee_(ctx, r.empId));
+  // Leave / corrections need "Approve Requests"; advance requests need "Manage Advances".
+  const allowed = r => (r.type === 'ADVANCE' ? ctx.perms.manageAdvances : ctx.perms.approveRequests);
+  const reqs = readRequests_().filter(r => allowed(r) && canEditEmployee_(ctx, r.empId));
+  const ym = todayStr_().slice(0, 7);
   const out = {
-    pending: reqs.filter(r => r.status === 'PENDING'),
+    pending: reqs.filter(r => r.status === 'PENDING').map(r => {
+      if (r.type !== 'ADVANCE') return r;
+      // Running advances of this employee, so the admin can add the new amount to one of them.
+      const running = readAdvances_().filter(a => a.empId === r.empId && a.status !== 'CLOSED').map(a => {
+        const st = advanceState_(a, ym);
+        return { id: a.id, note: a.note, monthly: a.monthly, balance: st.balanceBefore };
+      }).filter(a => a.balance > 0);
+      return Object.assign({}, r, { running: running });
+    }),
     recent: reqs.filter(r => r.status !== 'PENDING').reverse().slice(0, 20),
-    otApproval: s.otApproval,
+    otApproval: s.otApproval && !!ctx.perms.approveRequests,
+    currentMonth: ym,
+    currency: s.currency,
     ot: [],
   };
-  if (s.otApproval) {
+  if (out.otApproval) {
     const holidays = getHolidays_();
     const emps = {};
     getEmployees_().forEach(e => { emps[e.id] = e; });
@@ -896,12 +938,18 @@ function adminRequests(token) {
   return out;
 }
 
-/** approve: true/false. leaveType overrides the employee's choice for leave requests (PAID / UNPAID). */
-function adminDecideRequest(token, id, approve, remark, leaveType) {
-  const ctx = authAdmin_(token, 'approveRequests');
+/**
+ * approve: true/false. leaveType overrides the employee's choice for leave requests (PAID / UNPAID).
+ * For advance requests, adv = { amount, monthly, startMonth, mode: 'NEW' | 'ADD', advanceId }.
+ */
+function adminDecideRequest(token, id, approve, remark, leaveType, adv) {
+  const ctx = authAdmin_(token, ['approveRequests', 'manageAdvances']);
   const r = readRequests_().filter(x => x.id === id)[0];
   if (!r) throw new Error('Request not found.');
   if (r.status !== 'PENDING') throw new Error('This request was already ' + r.status.toLowerCase() + '.');
+  if (!(r.type === 'ADVANCE' ? ctx.perms.manageAdvances : ctx.perms.approveRequests)) {
+    throw new Error('You do not have permission for this. Ask the super admin.');
+  }
   const emp = managedEmployee_(ctx, r.empId, true);
   remark = String(remark || '').trim().slice(0, 300);
 
@@ -909,7 +957,23 @@ function adminDecideRequest(token, id, approve, remark, leaveType) {
   lock.waitLock(30000);
   try {
     let summary = '';
-    if (approve) {
+    if (approve && r.type === 'ADVANCE') {
+      adv = adv || {};
+      const amount = Number(adv.amount || r.amount);
+      const monthly = Number(adv.monthly || r.monthly);
+      if (!(amount > 0)) throw new Error('Enter the advance amount.');
+      if (!(monthly > 0)) throw new Error('Enter the monthly deduction.');
+      const note = 'Request: ' + r.reason;
+      if (adv.mode === 'ADD') {
+        const a = readAdvances_().filter(x => x.id === adv.advanceId && x.empId === emp.id)[0];
+        if (!a) throw new Error('Choose the running advance to add to.');
+        topUpAdvance_(ctx, a, { add: amount, monthly: monthly, dateGiven: todayStr_(), note: note.slice(0, 100) });
+        summary = 'added ' + amount + ' to advance ' + a.id + ', monthly ' + monthly;
+      } else {
+        const newId = createAdvance_(ctx, emp, { amount: amount, monthly: monthly, startMonth: adv.startMonth, dateGiven: todayStr_(), note: note });
+        summary = 'new advance ' + newId + ': ' + amount + ', monthly ' + monthly;
+      }
+    } else if (approve) {
       const data = entryContext_();
       const s = data.s;
       if (r.type === 'LEAVE') {
@@ -1128,18 +1192,27 @@ function adminSaveAdvance(token, data) {
     forget_('advances');
     audit_(ctx.emp, 'EDIT_ADVANCE', a.empId, a.id, 'monthly ' + a.monthly + ' → ' + monthly);
   } else {
-    const emp = managedEmployee_(ctx, data.empId, true);
-    const amount = Number(data.amount);
-    if (!(amount > 0)) throw new Error('Enter the advance amount.');
-    const start = /^\d{4}-\d{2}$/.test(String(data.startMonth)) ? data.startMonth : todayStr_().slice(0, 7);
-    if (isLocked_(start)) throw new Error('Payroll for ' + ymLabel_(start) + ' is locked. Start from a later month.');
-    const id = 'A' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
-    sh.appendRow([id, emp.id, emp.name, "'" + (toDateStr_(data.dateGiven) || todayStr_()), amount, monthly, "'" + start,
-      'ACTIVE', note, ctx.emp.id + ' ' + ctx.emp.name, Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
-    forget_('advances');
-    audit_(ctx.emp, 'ADD_ADVANCE', emp.id, start, 'amount ' + amount + ', monthly ' + monthly + (note ? ', ' + note : ''));
+    createAdvance_(ctx, managedEmployee_(ctx, data.empId, true), Object.assign({}, data, { monthly: monthly, note: note }));
   }
   return adminAdvances(token);
+}
+
+/** Creates a new advance; returns its id. data = { amount, monthly, startMonth, dateGiven, note } */
+function createAdvance_(ctx, emp, data) {
+  const amount = Number(data.amount);
+  const monthly = Number(data.monthly);
+  if (!(amount > 0)) throw new Error('Enter the advance amount.');
+  if (!(monthly > 0)) throw new Error('Enter the monthly deduction amount.');
+  const note = String(data.note || '').trim().slice(0, 200);
+  const start = /^\d{4}-\d{2}$/.test(String(data.startMonth)) ? data.startMonth : todayStr_().slice(0, 7);
+  if (isLocked_(start)) throw new Error('Payroll for ' + ymLabel_(start) + ' is locked. Start from a later month.');
+  const id = 'A' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  sheetOrCreate_(SHEET.ADVANCES, ADV_HEADERS).appendRow([id, emp.id, emp.name, "'" + (toDateStr_(data.dateGiven) || todayStr_()),
+    amount, monthly, "'" + start, 'ACTIVE', note, ctx.emp.id + ' ' + ctx.emp.name,
+    Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]);
+  forget_('advances');
+  audit_(ctx.emp, 'ADD_ADVANCE', emp.id, start, id + ': amount ' + amount + ', monthly ' + monthly + (note ? ', ' + note : ''));
+  return id;
 }
 
 /**
@@ -1148,10 +1221,14 @@ function adminSaveAdvance(token, data) {
  */
 function adminTopUpAdvance(token, id, data) {
   const ctx = authAdmin_(token, 'manageAdvances');
-  data = data || {};
   const a = readAdvances_().filter(x => x.id === id)[0];
   if (!a) throw new Error('Advance not found.');
   managedEmployee_(ctx, a.empId, true);
+  topUpAdvance_(ctx, a, data || {});
+  return adminAdvances(token);
+}
+
+function topUpAdvance_(ctx, a, data) {
   const add = Number(data.add);
   if (!(add > 0)) throw new Error('Enter the extra amount given.');
   const monthly = data.monthly === '' || data.monthly === undefined || data.monthly === null ? a.monthly : Number(data.monthly);
@@ -1168,7 +1245,6 @@ function adminTopUpAdvance(token, id, data) {
   forget_('advances');
   audit_(ctx.emp, 'TOPUP_ADVANCE', a.empId, date, a.id + ': ' + a.amount + ' + ' + add + ' = ' + (a.amount + add) +
     (monthly !== a.monthly ? ', monthly ' + a.monthly + ' → ' + monthly : '') + (note ? ' | ' + note : ''));
-  return adminAdvances(token);
 }
 
 /**
@@ -2013,7 +2089,8 @@ function advancesForMonth_(empId, ym) {
     const st = advanceState_(a, ym);
     if (st.thisMonth > 0 || st.balanceBefore > 0) {
       items.push({ id: a.id, amount: a.amount, monthly: a.monthly, note: a.note, status: a.status,
-        wanted: st.thisMonth, balanceBefore: st.balanceBefore, changed: st.changed, changeNote: st.changeNote });
+        wanted: st.thisMonth, balanceBefore: st.balanceBefore, changed: st.changed, changeNote: st.changeNote,
+        startMonth: a.startMonth });
       total += st.thisMonth;
     }
   });
@@ -2417,7 +2494,7 @@ function readRequests_() {
       from: toDateStr_(r[5]), to: toDateStr_(r[6]) || toDateStr_(r[5]), in: toTimeStr_(r[7]), out: toTimeStr_(r[8]),
       leaveType: String(r[9] || '').toUpperCase(), reason: String(r[10] || ''), status: String(r[11] || '').toUpperCase(),
       decidedBy: String(r[12] || ''), decidedAt: r[13] instanceof Date ? Utilities.formatDate(r[13], tz_(), 'yyyy-MM-dd HH:mm') : String(r[13] || ''),
-      remark: String(r[14] || ''),
+      remark: String(r[14] || ''), amount: Number(r[15]) || 0, monthly: Number(r[16]) || 0,
     })).filter(r => r.id);
   });
 }

@@ -181,6 +181,8 @@ At month end, check **Admin → Payroll** and tap **🔒 Lock month**. After tha
 
 ### Advances
 **Admin → Advances → Give an advance**: enter the amount, the deduction per month and the first month to deduct. Each month's salary recovers the instalment until the balance is zero.
+- **Employees request advances in the app:** Requests → *Salary advance*, with the amount, a suggested monthly deduction and a reason. Admins with **Manage Advances** see it under Admin → Requests. They can change the amount or deduction and approve it either as a **new separate advance** or **added to an advance already running**. Admins can still enter an advance directly under Advances, e.g. one already given in cash.
+- **Change or skip this month's deduction from anywhere:** besides the Advances tab, a **Change** button appears next to each advance in the **Monthly Summary** (💳 Advances this month) and on an employee's **salary card** in the admin calendar. Only admins with Manage Advances see these buttons; employees only see the result.
 - **More money while an advance is running:** you have two choices.
   - **＋ Add more** on the advance adds the new amount to the same balance, can change the monthly deduction, and logs it as "➕ date +amount".
   - A new advance from **Give an advance** stays separate, with its own monthly deduction, and both are deducted each month. The form warns you when the employee already has an advance running.
