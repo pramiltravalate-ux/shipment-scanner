@@ -181,6 +181,7 @@ At month end, check **Admin → Payroll** and tap **🔒 Lock month**. After tha
 
 ### Advances
 **Admin → Advances → Give an advance**: enter the amount, the deduction per month and the first month to deduct. Each month's salary recovers the instalment until the balance is zero.
+- **Change a month:** for any one month, choose **No deduction** or **Deduct a different amount** (e.g. ₹1,000 or ₹5,000), with an optional note. Only that month changes, and the balance simply takes longer, or less time, to clear. Each change is listed on the advance with an **Undo**, and the employee sees it on their salary card. Locked months can't be changed.
 - **Pause** skips months until you resume.
 - **Close** stops recovery for good, for example if the rest was repaid in cash.
 - **Change monthly** changes the instalment from now on. Locked months keep what was actually deducted.

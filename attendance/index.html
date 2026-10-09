@@ -61,6 +61,7 @@
     .btn.small { display: inline-block; width: auto; padding: 9px 14px; font-size: 14px; margin: 0; border-radius: 10px; }
     .btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .btns .btn { flex: 1; margin-top: 0; }
+    .btns .btn.small { flex: 1 1 calc(50% - 4px); white-space: nowrap; }
     .big-btn { width: 100%; padding: 22px; border-radius: 18px; font-size: 20px; font-weight: 700; color: #fff; margin-top: 6px; }
 
     .clock { font-size: 40px; font-weight: 700; letter-spacing: 1px; text-align: center; margin: 4px 0; }
@@ -853,6 +854,10 @@
         payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
         (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '') +
         (p.advance ? payLine('Advance recovery', '− ' + money(p.advance, cur), 'red') : '');
+      (m.advances || []).forEach(function (a) {
+        if (a.changed && !a.wanted) html += '<p class="muted small" style="margin:6px 0 0">No advance deduction this month' + (a.changeNote ? ' (' + esc(a.changeNote) + ')' : '') + '.</p>';
+        else if (a.changed) html += '<p class="muted small" style="margin:6px 0 0">Advance deduction changed to ' + money(a.wanted, cur) + ' for this month' + (a.changeNote ? ' (' + esc(a.changeNote) + ')' : '') + '.</p>';
+      });
       if (p.pf) {
         html += payLine('PF Employee <span class="muted">(Basic Salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
           payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue');
@@ -1516,14 +1521,21 @@
         '<div class="sub">' + money(a.amount, cur) + ' given ' + esc(fmtDate(a.dateGiven)) + (a.note ? ' · ' + esc(a.note) : '') + '</div>' +
         '<div class="sub">' + money(a.monthly, cur) + '/month from ' + esc(monthName(a.startMonth)) + '</div>' +
         '<div class="kv" style="margin-top:8px"><div><b>' + money(a.deductedBefore, cur) + '</b><span>Recovered</span></div>' +
-        '<div><b>' + money(a.thisMonth, cur) + '</b><span>This month</span></div>' +
+        '<div' + (a.thisMonthChanged ? ' class="k-ot"' : '') + '><b>' + money(a.thisMonth, cur) + '</b><span>This month' + (a.thisMonthChanged ? ' (changed)' : '') + '</span></div>' +
         '<div class="k-red"><b>' + money(a.balanceAfter, cur) + '</b><span>Balance after</span></div></div>' +
-        (a.repaid || a.status === 'CLOSED' ? '' : '<div class="btns">' +
+        (a.changes.length ? '<div style="margin-top:8px">' + a.changes.map(function (c) {
+          return '<div class="row small" style="padding:4px 0"><span>📌 <b>' + esc(monthName(c.month)) + ':</b> ' +
+            (c.amount === 0 ? 'no deduction (skipped)' : 'deduct ' + money(c.amount, cur)) + (c.note ? ' <span class="muted">· ' + esc(c.note) + '</span>' : '') + '</span>' +
+            (c.locked ? '<span class="muted">locked</span>' : '<button class="link" style="color:var(--red)" onclick="clearAdvMonth(' + i + ',\'' + c.month + '\')">Undo</button>') + '</div>';
+        }).join('') + '</div>' : '') +
+        (a.status === 'CLOSED' || (a.repaid && !a.changes.length) ? '' : '<div class="btns">' +
+          '<button class="btn small" onclick="openAdvMonth(' + i + ')">Change a month</button>' +
           '<button class="btn small ghost" onclick="editAdvance(' + i + ')">Change monthly</button>' +
           (a.status === 'ACTIVE' ? '<button class="btn small ghost" onclick="advStatus(' + i + ',\'PAUSED\')">Pause</button>' : '<button class="btn small ghost" onclick="advStatus(' + i + ',\'ACTIVE\')">Resume</button>') +
           '<button class="btn small soft-red" onclick="advStatus(' + i + ',\'CLOSED\')">Close</button></div>') + '</div>';
     });
-    html += '</div><p class="muted small center">Pause skips deductions until resumed. Close stops it for good (e.g. repaid in cash). Locked months keep what was actually deducted.</p>';
+    html += '</div><p class="muted small center"><b>Change a month</b> sets a different amount (or no deduction) for one month only; the balance moves to later months. ' +
+      'Pause skips every month until resumed. Close stops it for good (e.g. repaid in cash). Locked months keep what was actually deducted.</p>';
     adminBody(html);
   }
 
@@ -1540,6 +1552,35 @@
     if (v === null) return;
     api('adminSaveAdvance', S.token, { id: a.id, monthly: v, note: a.note }).then(renderAdvances).catch(function (e) { toast(e.message); });
   }
+  /** Skip the deduction or deduct a different amount for one month. */
+  function openAdvMonth(i) {
+    var a = S.adv.list[i], cur = S.adv.currency;
+    var ym = S.adv.currentMonth < a.startMonth ? a.startMonth : S.adv.currentMonth;
+    openModal('<h2 style="margin-top:0">' + esc(a.name) + ' – advance ' + money(a.amount, cur) + '</h2>' +
+      '<p class="muted small" style="margin-top:-6px">Normal deduction: ' + money(a.monthly, cur) + '/month · balance ' + money(a.balanceAfter + a.thisMonth, cur) + ' before this month</p>' +
+      '<div class="field"><label>Month</label><input id="amMonth" class="inp" type="month" min="' + a.startMonth + '" value="' + ym + '"></div>' +
+      '<label class="check"><input type="radio" name="amKind" value="skip" checked onchange="$(\'amAmt\').disabled=true"> No deduction this month</label>' +
+      '<label class="check"><input type="radio" name="amKind" value="amount" onchange="$(\'amAmt\').disabled=false;$(\'amAmt\').focus()"> Deduct a different amount</label>' +
+      '<input id="amAmt" class="inp" inputmode="decimal" placeholder="e.g. 1000" disabled>' +
+      '<div class="field"><label>Note (optional)</label><input id="amNote" class="inp" placeholder="e.g. Employee asked to skip – festival"></div>' +
+      '<button class="btn" id="amBtn" onclick="saveAdvMonth(' + i + ')">Save</button><button class="btn ghost" onclick="closeModal()">Cancel</button><div id="amMsg"></div>');
+  }
+  function saveAdvMonth(i) {
+    var a = S.adv.list[i];
+    var skip = document.querySelector('input[name="amKind"]:checked').value === 'skip';
+    var amt = skip ? 0 : $('amAmt').value;
+    if (!skip && amt === '') { $('amMsg').innerHTML = errBox('Enter the amount to deduct.'); return; }
+    $('amBtn').disabled = true;
+    api('adminSetAdvanceMonth', S.token, a.id, $('amMonth').value, amt, $('amNote').value)
+      .then(function (r) { closeModal(); renderAdvances(r); toast('Saved'); })
+      .catch(function (e) { $('amBtn').disabled = false; $('amMsg').innerHTML = errBox(e); });
+  }
+  function clearAdvMonth(i, ym) {
+    var a = S.adv.list[i];
+    if (!confirm('Go back to the normal deduction for ' + monthName(ym) + '?')) return;
+    api('adminSetAdvanceMonth', S.token, a.id, ym, '', '').then(renderAdvances).catch(function (e) { toast(e.message); });
+  }
+
   function advStatus(i, status) {
     var a = S.adv.list[i];
     if (status === 'CLOSED' && !confirm('Close this advance? No more deductions will be made.')) return;
