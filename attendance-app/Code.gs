@@ -28,6 +28,7 @@ const ROLES = ['EMPLOYEE', 'ADMIN', 'SUPER_ADMIN'];
 const PERMISSIONS = [
   { key: 'viewToday', label: 'View Today', help: "Today's live attendance, selfies and flags" },
   { key: 'viewPayroll', label: 'View Payroll', help: 'Monthly salary, OT, PF, payslips' },
+  { key: 'viewSummary', label: 'View Monthly Summary', help: 'Totals for all employees: payment, presents/absents, OT, PF' },
   { key: 'editAttendance', label: 'Edit Attendance', help: 'Add / change / delete entries, including back-dated ones' },
   { key: 'approveRequests', label: 'Approve Requests', help: 'Approve leave, corrections and OT' },
   { key: 'editPf', label: 'Edit PF', help: 'Turn PF on/off and change PF amounts' },
@@ -597,9 +598,49 @@ function payrollRows_(ctx, ym) {
   };
 }
 
+/**
+ * Monthly totals for every employee this admin manages: payment (bank / cash with the split permission),
+ * attendance, OT and PF, plus one line per employee.
+ */
+function adminSummary(token, ym) {
+  const ctx = authAdmin_(token, 'viewSummary');
+  ym = validYm_(ym);
+  const data = payrollRows_(ctx, ym);
+  const split = !!ctx.perms.viewSplit;
+  const sum = (rows, k) => round2_(rows.reduce((a, r) => a + (Number(r[k]) || 0), 0));
+  const rows = data.rows;
+  const pfRows = rows.filter(r => r.pf);
+  const totals = {
+    employees: rows.length, pfEmployees: pfRows.length,
+    monthlySalary: sum(rows, 'salary'), otPay: sum(rows, 'otPay'), leaveDed: sum(rows, 'leaveDed'),
+    halfDayDed: sum(rows, 'halfDayDed'), lateCutDed: sum(rows, 'lateCutDed'), advance: sum(rows, 'advance'),
+    total: sum(rows, 'net'),
+    present: sum(rows, 'present'), absent: rows.reduce((a, r) => a + r.absent + r.notJoined, 0), halfDay: sum(rows, 'halfDay'),
+    leave: sum(rows, 'leave'), late: sum(rows, 'late'), lateMin: sum(rows, 'lateMin'), earlyMin: sum(rows, 'earlyMin'),
+    otMin: sum(rows, 'otMin'), otPendingMin: sum(rows, 'otPendingMin'), missedCheckouts: sum(rows, 'missedCheckouts'),
+    pfBasic: sum(pfRows, 'pfBankSalary'), pfEmployee: sum(pfRows, 'pfEmployee'), pfEmployer: sum(pfRows, 'pfEmployer'),
+  };
+  totals.pfTotal = round2_(totals.pfEmployee + totals.pfEmployer);
+  if (split) {
+    // Bank / cash is defined for PF employees; non-PF salaries are shown as their own line.
+    totals.bank = sum(pfRows, 'bank');
+    totals.cash = sum(pfRows, 'cash');
+    totals.nonPfTotal = sum(rows.filter(r => !r.pf), 'net');
+  }
+  return {
+    ym: ym, label: data.label, currency: data.currency, locked: data.locked, showSplit: split,
+    totals: totals,
+    rows: rows.map(r => ({
+      id: r.id, name: r.name, present: r.present, absent: r.absent + r.notJoined, halfDay: r.halfDay, leave: r.leave,
+      late: r.late, otMin: r.otMin, pf: r.pf, pfEmployee: r.pfEmployee, pfEmployer: r.pfEmployer, advance: r.advance,
+      bank: split ? r.bank : undefined, cash: split ? r.cash : undefined, net: r.net, missed: r.missedCheckouts,
+    })),
+  };
+}
+
 /** One employee's calendar. Salary is hidden unless the admin has "View Payroll". */
 function adminEmployeeMonth(token, empId, ym) {
-  const ctx = authAdmin_(token, ['viewPayroll', 'editAttendance', 'approveRequests']);
+  const ctx = authAdmin_(token, ['viewPayroll', 'viewSummary', 'editAttendance', 'approveRequests']);
   const emp = managedEmployee_(ctx, empId);
   const m = buildMonth_(emp, validYm_(ym));
   if (!ctx.perms.viewPayroll) delete m.pay;

@@ -141,6 +141,13 @@
       border-radius: 12px; background: var(--brand-soft); }
     .total-tile span { font-weight: 600; color: var(--brand); }
     .total-tile b { font-size: 22px; }
+    table.sum { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+    table.sum th { text-align: right; color: var(--muted); font-weight: 600; font-size: 12px; padding: 6px; border-bottom: 2px solid var(--line); }
+    table.sum td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.sum th:first-child, table.sum td:first-child { text-align: left; }
+    table.sum tr { cursor: pointer; }
+    table.sum td.red { color: var(--red); }
+    table.sum tr.tot td { font-weight: 700; border-top: 2px solid var(--line); border-bottom: 0; }
     .pay-line { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
     .pay-line:first-child { border-top: 0; }
     .pay-line > :last-child { white-space: nowrap; text-align: right; }
@@ -899,6 +906,7 @@
   /* ---------------- Admin ---------------- */
   var ADMIN_TABS = [
     { key: 'today', label: 'Today', perm: 'viewToday', load: function () { loadAdminToday(); } },
+    { key: 'summary', label: 'Monthly Summary', perm: 'viewSummary', load: function () { loadSummary(S.admin.sumYm || ymNow()); } },
     { key: 'payroll', label: 'Payroll', perm: 'viewPayroll', load: function () { loadAdminMonth(S.admin.ym || ymNow()); } },
     { key: 'requests', label: 'Requests', perm: 'approveRequests', load: function () { loadAdminRequests(); } },
     { key: 'entries', label: 'Entries', perm: 'editAttendance', load: function () { loadEntries(); } },
@@ -996,6 +1004,74 @@
     }).catch(function (err) {
       openModal(errBox(err) + '<button class="btn ghost" onclick="closeModal()">Close</button>');
     });
+  }
+
+  /* ---------- Monthly summary ---------- */
+  function loadSummary(ym) {
+    S.admin.sumYm = ym;
+    adminLoading();
+    api('adminSummary', S.token, ym).then(renderSummary).catch(adminErr);
+  }
+
+  function renderSummary(r) {
+    var t = r.totals, cur = r.currency, ym = r.ym;
+    var html = '<div class="card"><div class="month-nav">' +
+      '<button onclick="loadSummary(\'' + ymShift(ym, -1) + '\')">‹</button><h2>' + esc(r.label) + '</h2>' +
+      '<button onclick="loadSummary(\'' + ymShift(ym, 1) + '\')">›</button></div>' +
+      '<p class="center muted small" style="margin:8px 0 0">' + t.employees + ' employees · ' + t.pfEmployees + ' with PF' +
+      (r.locked ? ' · <span class="chip s-LOCK">🔒 Final</span>' : (ym === ymNow() ? ' · <span class="chip s-WORKING">Month in progress</span>' : ' · <span class="chip s-PENDING">Not locked</span>')) + '</p></div>';
+
+    // Payment
+    html += '<div class="card"><h2>💰 Payment to be made</h2>' +
+      '<div class="total-tile" style="margin-top:0"><span>Total Salary (all employees)</span><b>' + money(t.total, cur) + '</b></div>';
+    if (r.showSplit) {
+      html += '<div class="split"><div><span>🏦 In Bank (PF employees)</span><b>' + money(t.bank, cur) + '</b></div>' +
+        '<div><span>💵 In Cash (PF employees)</span><b>' + money(t.cash, cur) + '</b></div></div>' +
+        (t.nonPfTotal ? payLine('Non-PF employees', money(t.nonPfTotal, cur), '', true) : '');
+    }
+    html += '<div style="margin-top:8px">' +
+      payLine('Monthly salaries', money(t.monthlySalary, cur)) +
+      payLine('OT pay', '+ ' + money(t.otPay, cur), 'green') +
+      payLine('Leave deductions', '− ' + money(t.leaveDed, cur), 'red') +
+      payLine('Half-day deductions', '− ' + money(t.halfDayDed, cur), 'red') +
+      (t.lateCutDed ? payLine('Late-mark deductions', '− ' + money(t.lateCutDed, cur), 'red') : '') +
+      (t.advance ? payLine('Advances recovered', '− ' + money(t.advance, cur), 'red') : '') +
+      (t.pfEmployee ? payLine('PF employee share', '− ' + money(t.pfEmployee, cur), 'red') : '') +
+      '</div></div>';
+
+    // PF
+    html += '<div class="card"><h2>🏛 PF</h2><div class="kv">' +
+      '<div><b>' + money(t.pfEmployee, cur) + '</b><span>Employee share</span></div>' +
+      '<div><b>' + money(t.pfEmployer, cur) + '</b><span>Employer share</span></div>' +
+      '<div class="k-ot"><b>' + money(t.pfTotal, cur) + '</b><span>Total PF deposit</span></div></div>' +
+      '<p class="muted small" style="margin:8px 0 0">' + t.pfEmployees + ' PF employee(s) · Basic Salary total ' + money(t.pfBasic, cur) + '</p></div>';
+
+    // Attendance
+    html += '<div class="card"><h2>📅 Attendance (all employees)</h2><div class="kv">' +
+      '<div><b>' + t.present + '</b><span>Presents</span></div>' +
+      '<div class="k-red"><b>' + t.absent + '</b><span>Absents</span></div>' +
+      '<div class="k-amber"><b>' + t.halfDay + '</b><span>Half Days</span></div>' +
+      '<div><b>' + t.leave + '</b><span>Paid Leave</span></div>' +
+      '<div class="k-orange"><b>' + t.late + '</b><span>Late · ' + mins(t.lateMin) + '</span></div>' +
+      '<div class="k-ot"><b>' + mins(t.otMin) + '</b><span>Net OT</span></div></div>' +
+      (t.otPendingMin ? '<div class="msg warn">' + mins(t.otPendingMin) + ' OT waiting for approval</div>' : '') +
+      (t.missedCheckouts ? '<div class="msg err">⚠ ' + t.missedCheckouts + ' missed check-out(s) not cleared yet</div>' : '') + '</div>';
+
+    // Per employee
+    html += '<div class="card"><h2>Per employee</h2><div style="overflow-x:auto"><table class="sum">' +
+      '<tr><th>Name</th><th>P</th><th>A</th><th>½</th><th>OT</th><th>PF</th>' + (r.showSplit ? '<th>Bank</th><th>Cash</th>' : '') + '<th>Total</th></tr>';
+    r.rows.forEach(function (e) {
+      html += '<tr onclick="openEmployee(\'' + esc(e.id) + '\',\'' + ym + '\')"><td><b>' + esc(e.name) + '</b>' + (e.missed ? ' <span style="color:var(--red)">!</span>' : '') + '<br><span class="muted">' + esc(e.id) + '</span></td>' +
+        '<td>' + e.present + '</td><td class="red">' + e.absent + '</td><td>' + e.halfDay + '</td><td>' + mins(e.otMin) + '</td>' +
+        '<td>' + (e.pf ? money(e.pfEmployee, '') + '<br><span class="muted">+' + money(e.pfEmployer, '') + '</span>' : '–') + '</td>' +
+        (r.showSplit ? '<td>' + (e.pf ? money(e.bank, '') : '–') + '</td><td>' + (e.pf ? money(e.cash, '') : '–') + '</td>' : '') +
+        '<td><b>' + money(e.net, '') + '</b></td></tr>';
+    });
+    html += '<tr class="tot"><td>Total</td><td>' + t.present + '</td><td>' + t.absent + '</td><td>' + t.halfDay + '</td><td>' + mins(t.otMin) + '</td>' +
+      '<td>' + money(t.pfEmployee, '') + '<br><span class="muted">+' + money(t.pfEmployer, '') + '</span></td>' +
+      (r.showSplit ? '<td>' + money(t.bank, '') + '</td><td>' + money(t.cash, '') + '</td>' : '') + '<td>' + money(t.total, '') + '</td></tr>' +
+      '</table></div><p class="muted small" style="margin:8px 0 0">P = present, A = absent, ½ = half days. PF = employee share + employer share. Amounts in ' + esc(cur) + '. Tap a row for the calendar.</p></div>';
+    adminBody(html);
   }
 
   /* ---------- Payroll ---------- */

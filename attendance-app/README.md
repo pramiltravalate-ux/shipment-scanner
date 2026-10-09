@@ -16,6 +16,7 @@ Admins (with the permissions a super admin gives them) get these screens:
 | Screen | What it does |
 |---|---|
 | Today | **Missed check-outs on top**, live attendance with selfies, and **⚠ flags** on suspicious check-ins |
+| Monthly Summary | Month totals for all employees: **total payment (In Bank / In Cash / non-PF)**, presents, absents, half days, late, OT, **PF employee + employer + total deposit**, and a per-employee table |
 | Payroll | Every employee's salary and PF (bank/cash split with permission); **lock the month**; export to the Sheet |
 | Requests | Approve or reject leave, corrections and OT |
 | Entries | Back-dated entries for one day, or bulk-fill many days |
@@ -190,6 +191,7 @@ Permissions the super admin can give each admin (**Super Admin → Admins**):
 - Export Payroll
 - Lock Payroll
 - View Bank / Cash Split
+- View Monthly Summary (the bank/cash totals on it also need *View Bank / Cash Split*)
 - Edit Own Entries
 
 Each admin also gets a scope: **All employees** or **Only selected**.
