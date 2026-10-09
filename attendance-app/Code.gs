@@ -16,7 +16,8 @@ const SHEET = {
   HOLIDAYS: 'Holidays',
 };
 
-const EMP_HEADERS = ['Emp ID', 'Name', 'PIN', 'Monthly Salary', 'Role', 'Active', 'Join Date', 'Phone'];
+const EMP_HEADERS = ['Emp ID', 'Name', 'PIN', 'Monthly Salary', 'Role', 'Active', 'Join Date', 'Phone',
+  'PF Active', 'PF Bank Salary', 'PF Employee', 'PF Employer'];
 
 const ATT_HEADERS = ['Date', 'Emp ID', 'Name', 'Check In', 'Check Out', 'Worked Hrs', 'Status', 'Late',
   'OT Hrs', 'In Lat', 'In Lng', 'In Distance (m)', 'In Accuracy (m)', 'Out Lat', 'Out Lng',
@@ -44,11 +45,18 @@ const DEFAULT_SETTINGS = [
   ['Full Day Min Hours', 8, 'Worked hours needed for a full day'],
   ['Half Day Min Hours', 4, 'At least this (but below Full Day) = Half Day. Less = Absent'],
   ['No Check-Out Counts As', 'HALF_DAY', 'PRESENT / HALF_DAY / ABSENT — when an employee forgets to check out'],
-  ['OT Multiplier', 1.5, 'OT pay = OT hours × hourly rate × this'],
-  ['OT Block (min)', 30, 'OT counted only in complete blocks of this many minutes (0 = exact)'],
+  ['Salary Days Basis', 30, 'Per day = Monthly Salary ÷ this. Per hour = per day ÷ Standard Hours. (0 = days in that month)'],
+  ['OT Multiplier', 1.5,'OT pay = net OT minutes × per-minute rate × this'],
+  ['OT Block (min)', 0, 'Daily OT counted only in complete blocks of this many minutes (0 = every minute)'],
+  ['Late Minutes Reduce OT', 'Yes', 'Monthly OT minutes − total late minutes (minutes after Shift Start on late days)'],
   ['Weekly Off', 'Sunday', 'Comma separated, e.g. Sunday  or  Saturday,Sunday'],
   ['Off-Day Work Is OT', 'Yes', 'All hours worked on a weekly off / holiday count as OT'],
-  ['Lates Per Half-Day Cut', 3, 'Every N late marks in a month deduct half a day (0 = no deduction)'],
+  ['Lates Per Half-Day Cut', 0, 'Every N late marks in a month deduct half a day (0 = no deduction)'],
+  ['Phone Time Tolerance (min)', 3, 'Check-in is blocked if the phone clock differs from real time by more than this'],
+  ['Default PF Bank Salary %', 90, 'Used when an employee\'s "PF Bank Salary" is blank (e.g. 90% of 15000 = 13500)'],
+  ['Default PF Employee %', 12, 'Used when "PF Employee" is blank — % of PF Bank Salary'],
+  ['Default PF Employer %', 13, 'Used when "PF Employer" is blank — % of PF Bank Salary'],
+  ['OT & Deductions Paid In', 'CASH', 'CASH / BANK — for PF employees, which part absorbs OT and leave/half-day deductions'],
   ['Currency', '₹', ''],
   ['Selfie Folder ID', '', 'Filled automatically'],
 ];
@@ -87,15 +95,18 @@ function setup() {
 
   // Employees
   sh = getOrCreate_(ss, SHEET.EMPLOYEES, EMP_HEADERS);
+  ensureHeaders_(sh, EMP_HEADERS);
   sh.getRange('A:A').setNumberFormat('@');
   sh.getRange('C:C').setNumberFormat('@');
   sh.getRange('E2:E').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(['EMPLOYEE', 'ADMIN'], true).build());
-  sh.getRange('F2:F').setDataValidation(SpreadsheetApp.newDataValidation()
-    .requireValueInList(['Yes', 'No'], true).build());
+  const yesNo = SpreadsheetApp.newDataValidation().requireValueInList(['Yes', 'No'], true).build();
+  sh.getRange('F2:F').setDataValidation(yesNo);
+  const pfCol = headerIndex_(sh)['PF Active'] + 1;
+  sh.getRange(2, pfCol, sh.getMaxRows() - 1, 1).setDataValidation(yesNo);
   if (sh.getLastRow() < 2) {
-    sh.appendRow(['E001', 'Admin', '1234', 30000, 'ADMIN', 'Yes', todayStr_(), '']);
-    sh.appendRow(['E002', 'Sample Employee', '1111', 20000, 'EMPLOYEE', 'Yes', todayStr_(), '']);
+    sh.appendRow(['E001', 'Admin', '1234', 30000, 'ADMIN', 'Yes', todayStr_(), '', 'No', '', '', '']);
+    sh.appendRow(['E002', 'Sample Employee', '1111', 15000, 'EMPLOYEE', 'Yes', todayStr_(), '', 'Yes', 13500, 1721, 1755]);
   }
 
   // Attendance
@@ -171,12 +182,15 @@ function getHome(token) {
     checkoutLocation: s.checkoutLocation,
     shiftStart: minutesToStr_(s.shiftStartMin),
     standardHours: s.standardHours,
+    server: serverClock_(),
+    clockTolerance: s.clockTolerance,
   };
 }
 
-function checkIn(token, lat, lng, accuracy, selfieDataUrl) {
+function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
   const emp = auth_(token);
   const s = getSettings_();
+  checkPhoneClock_(s, phoneClock);
   const loc = checkLocation_(s, lat, lng, accuracy);
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -214,9 +228,10 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl) {
   }
 }
 
-function checkOut(token, lat, lng, accuracy) {
+function checkOut(token, lat, lng, accuracy, phoneClock) {
   const emp = auth_(token);
   const s = getSettings_();
+  checkPhoneClock_(s, phoneClock);
   const loc = s.checkoutLocation ? checkLocation_(s, lat, lng, accuracy) : null;
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -298,6 +313,47 @@ function adminEmployeeMonth(token, empId, ym) {
   return buildMonth_(emp, validYm_(ym));
 }
 
+/** Employee list with PF settings for the admin "Employees / PF" screen. */
+function adminEmployees(token) {
+  auth_(token, true);
+  const s = getSettings_();
+  return {
+    currency: s.currency,
+    defaults: { bank: s.pfBankPct, employee: s.pfEmployeePct, employer: s.pfEmployerPct },
+    list: getEmployees_().filter(e => e.active).map(e => {
+      const pf = pfAmounts_(e, s);
+      return {
+        id: e.id, name: e.name, salary: e.salary, pfActive: e.pf.active,
+        bankSalaryRaw: String(e.pf.bankSalary), employeeRaw: String(e.pf.employee), employerRaw: String(e.pf.employer),
+        bankSalary: round2_(pf.bankSalary), employee: round2_(pf.employee), employer: round2_(pf.employer),
+      };
+    }),
+  };
+}
+
+/** Turns PF on/off and sets the amounts for one employee. Blank = use % defaults from Settings. */
+function adminSavePf(token, empId, data) {
+  auth_(token, true);
+  const emp = findEmployee_(String(empId).toUpperCase());
+  if (!emp) throw new Error('Employee not found.');
+  const clean = v => {
+    const str = String(v === undefined || v === null ? '' : v).trim();
+    if (!str) return '';
+    if (/^\d+(\.\d+)?%$/.test(str)) return str;
+    if (isNaN(Number(str)) || Number(str) < 0) throw new Error('Invalid amount: ' + str);
+    return Number(str);
+  };
+  const sh = sheet_(SHEET.EMPLOYEES);
+  ensureHeaders_(sh, EMP_HEADERS);
+  const h = headerIndex_(sh);
+  sh.getRange(emp.row, h['PF Active'] + 1).setValue(data && data.active ? 'Yes' : 'No');
+  sh.getRange(emp.row, h['PF Bank Salary'] + 1).setValue(clean(data && data.bankSalary));
+  sh.getRange(emp.row, h['PF Employee'] + 1).setValue(clean(data && data.employee));
+  sh.getRange(emp.row, h['PF Employer'] + 1).setValue(clean(data && data.employer));
+  SpreadsheetApp.flush();
+  return adminEmployees(token);
+}
+
 /** Returns the check-in selfie as a data URL so admins can view it inside the app. */
 function adminGetSelfie(token, row) {
   auth_(token, true);
@@ -315,12 +371,16 @@ function adminExportPayroll(token, ym) {
   const name = 'Payroll ' + data.ym;
   const sh = ss.getSheetByName(name) || ss.insertSheet(name);
   sh.clear();
-  const header = ['Emp ID', 'Name', 'Days in Month', 'Present', 'Half Days', 'Absent', 'Leave', 'Week Off',
-    'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Cut (days)', 'Deduction Days', 'Payable Days',
-    'Worked Hrs', 'OT Hrs', 'Monthly Salary', 'Per Day', 'Hourly Rate', 'Deduction', 'OT Pay', 'Net Salary'];
-  const rows = data.rows.map(r => [r.id, r.name, r.daysInMonth, r.present, r.halfDay, r.absent, r.leave,
-    r.weekOff, r.holiday, r.offWork, r.late, r.lateCutDays, r.deductDays, r.payableDays, r.workedHours,
-    r.otHours, r.salary, r.perDay, r.hourly, r.deduction, r.otPay, r.net]);
+  const header = ['Emp ID', 'Name', 'Total Salary', 'Present', 'Half Days', 'Absent (Leaves)', 'Paid Leave',
+    'Week Off', 'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Mins', 'OT Mins (gross)', 'OT Mins (net)',
+    'OT Hrs (net)', 'Per Day', 'Per Hour', 'Per Min', 'OT Pay', 'Leave Deduction', 'Half Day Deduction',
+    'Late Cut Deduction', 'Gross Payable', 'PF', 'PF Bank Salary', 'PF Employee', 'PF Employer', 'In Bank',
+    'In Cash', 'Net Salary'];
+  const rows = data.rows.map(r => [r.id, r.name, r.salary, r.present, r.halfDay, r.absent + r.notJoined, r.leave,
+    r.weekOff, r.holiday, r.offWork, r.late, r.lateMin, r.otMinGross, r.otMin, r.otHours, r.perDay, r.hourly,
+    r.perMin, r.otPay, r.leaveDed, r.halfDayDed, r.lateCutDed, r.gross, r.pf ? 'Yes' : 'No',
+    r.pf ? r.pfBankSalary : '', r.pf ? r.pfEmployee : '', r.pf ? r.pfEmployer : '', r.pf ? r.bank : '',
+    r.pf ? r.cash : '', r.net]);
   sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold').setBackground('#e8eefc');
   if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
   sh.setFrozenRows(1);
@@ -343,7 +403,8 @@ function buildMonth_(emp, ym) {
   m.inProgress = ym === todayStr_().slice(0, 7);
   m.rules = {
     shiftStart: minutesToStr_(s.shiftStartMin), lateGrace: s.lateGrace, standardHours: s.standardHours,
-    otMultiplier: s.otMultiplier, latesPerHalfDay: s.latesPerHalfDay,
+    otMultiplier: s.otMultiplier, latesPerHalfDay: s.latesPerHalfDay, salaryDays: s.salaryDays,
+    lateReducesOt: s.lateReducesOt, adjustIn: s.adjustIn,
   };
   return m;
 }
@@ -368,12 +429,15 @@ function evaluateDay_(rec, s, offType, isToday) {
 
   // An admin override replaces the automatic status and clears the late mark.
   d.late = !rec.override && !offType && inMin != null && inMin > s.shiftStartMin + s.lateGrace;
+  d.lateMin = d.late ? inMin - s.shiftStartMin : 0;
 
+  const workedMin = inMin != null && outMin != null && outMin > inMin ? outMin - inMin : 0;
   let otMin = 0;
   if (d.status !== 'ABSENT') {
-    otMin = offType ? (s.offDayOt ? d.worked * 60 : 0) : Math.max(0, d.worked * 60 - s.standardHours * 60);
+    otMin = offType ? (s.offDayOt ? workedMin : 0) : Math.max(0, workedMin - s.standardHours * 60);
   }
   if (s.otBlock > 0) otMin = Math.floor(otMin / s.otBlock) * s.otBlock;
+  d.otMin = otMin;
   d.ot = round2_(otMin / 60);
   return d;
 }
@@ -385,7 +449,8 @@ function monthSummary_(emp, ym, s, attByDate, holidays) {
   const today = todayStr_();
   const t = {
     daysInMonth: dim, present: 0, halfDay: 0, absent: 0, leave: 0, weekOff: 0, holiday: 0, offWork: 0,
-    notJoined: 0, late: 0, workedHours: 0, otHours: 0, deductDays: 0, lateCutDays: 0, payableDays: 0,
+    notJoined: 0, late: 0, lateMin: 0, workedHours: 0, otMinGross: 0, otMin: 0, otHours: 0,
+    deductDays: 0, lateCutDays: 0, payableDays: 0,
   };
   const days = [];
 
@@ -417,26 +482,84 @@ function monthSummary_(emp, ym, s, attByDate, holidays) {
       case 'OFF_WORK': t.offWork++; break;
       case 'NOT_JOINED': t.notJoined++; t.deductDays += 1; break;
     }
-    if (d.late) t.late++;
+    if (d.late) { t.late++; t.lateMin += d.lateMin || 0; }
     t.workedHours += d.worked || 0;
-    t.otHours += d.ot || 0;
+    t.otMinGross += d.otMin || 0;
   }
 
+  // Net OT = all OT minutes in the month − all late minutes in the month (never below zero).
+  t.otMin = Math.max(0, t.otMinGross - (s.lateReducesOt ? t.lateMin : 0));
+  t.otHours = round2_(t.otMin / 60);
+  t.workedHours = round2_(t.workedHours);
   t.lateCutDays = s.latesPerHalfDay > 0 ? Math.floor(t.late / s.latesPerHalfDay) * 0.5 : 0;
   t.deductDays += t.lateCutDays;
   t.payableDays = Math.max(0, dim - t.deductDays);
-  t.workedHours = round2_(t.workedHours);
-  t.otHours = round2_(t.otHours);
 
-  const perDay = emp.salary / dim;
-  const hourly = s.standardHours > 0 ? perDay / s.standardHours : 0;
-  const deduction = Math.min(emp.salary, t.deductDays * perDay);
-  const otPay = t.otHours * hourly * s.otMultiplier;
+  return { totals: t, pay: calcPay_(emp, s, t, dim), days: days };
+}
+
+/**
+ * Salary for the month.
+ *   Per day = salary ÷ Salary Days Basis (30), per hour = per day ÷ Standard Hours, per minute = per hour ÷ 60.
+ *   Gross   = salary + OT pay − leave − half-day − late-cut deductions.
+ * PF employees: Bank = PF Bank Salary − PF Employee, Cash = Salary − PF Bank Salary, and OT/deductions
+ * are applied to Cash (or Bank, per the "OT & Deductions Paid In" setting).
+ */
+function calcPay_(emp, s, t, dim) {
+  const basis = s.salaryDays > 0 ? s.salaryDays : dim;
+  const perDay = emp.salary / basis;
+  const perHour = s.standardHours > 0 ? perDay / s.standardHours : 0;
+  const perMin = perHour / 60;
+
+  const leaveDed = (t.absent + t.notJoined) * perDay;
+  const halfDayDed = t.halfDay * 0.5 * perDay;
+  const lateCutDed = t.lateCutDays * perDay;
+  const deduction = Math.min(emp.salary, leaveDed + halfDayDed + lateCutDed);
+  const otPay = t.otMin * perMin * s.otMultiplier;
+  const gross = emp.salary - deduction + otPay;
+
   const pay = {
-    salary: round2_(emp.salary), perDay: round2_(perDay), hourly: round2_(hourly),
-    deduction: round2_(deduction), otPay: round2_(otPay), net: round2_(emp.salary - deduction + otPay),
+    salary: round2_(emp.salary), perDay: round2_(perDay), hourly: round2_(perHour), perMin: round2_(perMin),
+    leaveDed: round2_(leaveDed), halfDayDed: round2_(halfDayDed), lateCutDed: round2_(lateCutDed),
+    deduction: round2_(deduction), otPay: round2_(otPay), gross: round2_(gross),
+    pf: false, pfBankSalary: 0, pfEmployee: 0, pfEmployer: 0, bank: 0, cash: 0, net: round2_(gross),
   };
-  return { totals: t, pay: pay, days: days };
+  if (!emp.pf.active) return pay;
+
+  const pf = pfAmounts_(emp, s);
+  let bank, cash;
+  if (s.adjustIn === 'BANK') {
+    cash = emp.salary - pf.bankSalary;
+    bank = gross - cash - pf.employee;
+  } else {
+    bank = pf.bankSalary - pf.employee;
+    cash = gross - pf.bankSalary;
+  }
+  // If deductions are bigger than one part, take the rest from the other part.
+  if (cash < 0) { bank += cash; cash = 0; }
+  if (bank < 0) { cash += bank; bank = 0; }
+  cash = Math.max(0, cash);
+
+  return Object.assign(pay, {
+    pf: true, pfBankSalary: round2_(pf.bankSalary), pfEmployee: round2_(pf.employee),
+    pfEmployer: round2_(pf.employer), bank: round2_(bank), cash: round2_(cash), net: round2_(bank + cash),
+  });
+}
+
+/** PF amounts for an employee. Blank cells fall back to the % defaults in Settings; "12%" style is also accepted. */
+function pfAmounts_(emp, s) {
+  const amt = (v, pct, base) => {
+    const str = String(v === undefined || v === null ? '' : v).trim();
+    if (!str) return base * pct / 100;
+    if (/%$/.test(str)) return base * (Number(str.replace('%', '')) || 0) / 100;
+    return Number(str) || 0;
+  };
+  const bankSalary = Math.min(emp.salary, amt(emp.pf.bankSalary, s.pfBankPct, emp.salary));
+  return {
+    bankSalary: bankSalary,
+    employee: amt(emp.pf.employee, s.pfEmployeePct, bankSalary),
+    employer: amt(emp.pf.employer, s.pfEmployerPct, bankSalary),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -454,6 +577,33 @@ function auth_(token, needAdmin) {
 
 function profile_(emp) {
   return { id: emp.id, name: emp.name, role: emp.role };
+}
+
+function serverClock_() {
+  const now = new Date();
+  return { epoch: now.getTime(), local: Utilities.formatDate(now, tz_(), 'yyyy-MM-dd HH:mm:ss') };
+}
+
+/**
+ * Rejects check-in/out when the phone's clock or time zone is wrong — the usual sign that
+ * "Automatic date & time" is switched off. phoneClock = { epoch: Date.now(), local: 'yyyy-MM-dd HH:mm:ss' }.
+ * (Recorded times always come from the server; this check just enforces the policy.)
+ */
+function checkPhoneClock_(s, phoneClock) {
+  const msg = 'Your phone time is not correct. Open phone Settings → Date & time → turn ON ' +
+    '"Automatic date & time" and "Automatic time zone", then reopen the app.';
+  if (!phoneClock || !phoneClock.epoch || !phoneClock.local) throw new Error('Please reload the app and try again.');
+  const tol = Math.max(1, s.clockTolerance) * 60000;
+  const server = serverClock_();
+  if (!(Math.abs(Number(phoneClock.epoch) - server.epoch) <= tol)) throw new Error(msg);
+  if (!(Math.abs(wallMs_(phoneClock.local) - wallMs_(server.local)) <= tol)) throw new Error(msg);
+}
+
+/** 'yyyy-MM-dd HH:mm:ss' wall-clock text → comparable milliseconds. */
+function wallMs_(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(String(str));
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
 }
 
 function checkLocation_(s, lat, lng, acc) {
@@ -535,10 +685,17 @@ function getSettings_() {
     halfDayHours: num('Half Day Min Hours', 4),
     noCheckoutStatus: ['PRESENT', 'HALF_DAY', 'ABSENT'].indexOf(noCheckout) >= 0 ? noCheckout : 'HALF_DAY',
     otMultiplier: num('OT Multiplier', 1.5),
-    otBlock: num('OT Block (min)', 30),
+    otBlock: num('OT Block (min)', 0),
+    salaryDays: num('Salary Days Basis', 30),
+    lateReducesOt: yes('Late Minutes Reduce OT', true),
+    clockTolerance: num('Phone Time Tolerance (min)', 3),
+    pfBankPct: num('Default PF Bank Salary %', 90),
+    pfEmployeePct: num('Default PF Employee %', 12),
+    pfEmployerPct: num('Default PF Employer %', 13),
+    adjustIn: str('OT & Deductions Paid In', 'CASH').toUpperCase() === 'BANK' ? 'BANK' : 'CASH',
     weeklyOff: weeklyOff,
     offDayOt: yes('Off-Day Work Is OT', true),
-    latesPerHalfDay: num('Lates Per Half-Day Cut', 3),
+    latesPerHalfDay: num('Lates Per Half-Day Cut', 0),
     currency: str('Currency', '₹'),
     selfieFolderId: str('Selfie Folder ID', ''),
   };
@@ -556,17 +713,51 @@ function setSetting_(key, value) {
 
 function getEmployees_() {
   const sh = sheet_(SHEET.EMPLOYEES);
-  return sh.getDataRange().getValues().slice(1)
-    .filter(r => String(r[0]).trim())
-    .map(r => ({
-      id: String(r[0]).trim().toUpperCase(),
-      name: String(r[1]).trim(),
-      pin: String(r[2]).trim(),
-      salary: Number(r[3]) || 0,
-      role: String(r[4]).trim().toUpperCase() === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
-      active: !/^(n|no|false|0|inactive)$/i.test(String(r[5]).trim()),
-      joinDate: toDateStr_(r[6]),
-    }));
+  const values = sh.getDataRange().getValues();
+  const h = headerIndex_(sh, values[0]);
+  const get = (r, name) => (h[name] === undefined ? '' : r[h[name]]);
+  return values.slice(1)
+    .map((r, i) => ({ r: r, row: i + 2 }))
+    .filter(x => String(x.r[0]).trim())
+    .map(x => {
+      const r = x.r;
+      return {
+        row: x.row,
+        id: String(r[0]).trim().toUpperCase(),
+        name: String(r[1]).trim(),
+        pin: String(r[2]).trim(),
+        salary: Number(r[3]) || 0,
+        role: String(r[4]).trim().toUpperCase() === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+        active: !/^(n|no|false|0|inactive)$/i.test(String(r[5]).trim()),
+        joinDate: toDateStr_(r[6]),
+        pf: {
+          active: /^(y|yes|true|1|on)$/i.test(String(get(r, 'PF Active')).trim()),
+          bankSalary: get(r, 'PF Bank Salary'),
+          employee: get(r, 'PF Employee'),
+          employer: get(r, 'PF Employer'),
+        },
+      };
+    });
+}
+
+/** { 'Header name': columnIndex (0-based) } */
+function headerIndex_(sh, headerRow) {
+  const row = headerRow || sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+  const map = {};
+  row.forEach((v, i) => { if (String(v).trim()) map[String(v).trim()] = i; });
+  return map;
+}
+
+/** Adds any missing headers to the end of row 1 (used when upgrading an existing sheet). */
+function ensureHeaders_(sh, headers) {
+  const have = headerIndex_(sh);
+  let col = sh.getLastColumn();
+  headers.forEach(name => {
+    if (have[name] === undefined) {
+      col++;
+      sh.getRange(1, col).setValue(name).setFontWeight('bold').setBackground('#e8eefc');
+    }
+  });
 }
 
 function findEmployee_(empId) {

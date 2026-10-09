@@ -11,7 +11,8 @@
       --green: #1f9d55; --green-soft: #e3f6eb; --amber: #c27c0e; --amber-soft: #fdf1dc;
       --red: #d63a3a; --red-soft: #fde6e6; --blue: #2b78c5; --blue-soft: #e2effb;
       --gray: #8a93a5; --gray-soft: #eef0f4; --purple: #7b4cc2; --purple-soft: #efe7fb;
-      --teal: #128a86; --teal-soft: #dff4f3;
+      --teal: #128a86; --teal-soft: #dff4f3; --orange: #e0661b; --orange-soft: #fdeadc;
+      --ot: #4338ca; --ot-soft: #e3e5fd; --pink: #c2417b; --pink-soft: #fce7f1;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; background: var(--bg); color: var(--text);
@@ -72,9 +73,12 @@
     .s-ABSENT { background: var(--red-soft); color: var(--red); }
     .s-LEAVE { background: var(--blue-soft); color: var(--blue); }
     .s-WEEK_OFF, .s-NOT_MARKED, .s-NOT_JOINED, .s-UPCOMING { background: var(--gray-soft); color: var(--gray); }
-    .s-HOLIDAY { background: var(--purple-soft); color: var(--purple); }
+    .s-HOLIDAY { background: var(--pink-soft); color: var(--pink); }
     .s-OFF_WORK { background: var(--teal-soft); color: var(--teal); }
-    .s-LATE { background: var(--amber-soft); color: var(--amber); }
+    .s-LATE { background: var(--orange-soft); color: var(--orange); }
+    .s-OT { background: var(--ot-soft); color: var(--ot); }
+    .s-PF { background: var(--purple-soft); color: var(--purple); }
+    .k-red b { color: var(--red); } .k-amber b { color: var(--amber); } .k-orange b { color: var(--orange); } .k-ot b { color: var(--ot); }
 
     /* Check-in flow */
     .flow-step { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -98,10 +102,39 @@
       justify-content: center; font-size: 14px; font-weight: 600; position: relative; padding: 0; }
     .cal .d small { font-size: 9px; font-weight: 600; }
     .cal .d.today { outline: 2px solid var(--brand); }
-    .cal .d .late-dot { position: absolute; top: 4px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+    .cal .d .late-dot { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
+    .cal .d .ot-dot { position: absolute; top: 4px; left: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--ot); }
+    .cal .d { transition: opacity .15s; }
+    .cal.f-ABSENT .d:not(.m-ABSENT), .cal.f-HALF_DAY .d:not(.m-HALF_DAY),
+    .cal.f-OT .d:not(.m-OT), .cal.f-LATE .d:not(.m-LATE) { opacity: .18; }
+    .cal.f-OT .d.m-OT { background: var(--ot-soft); color: var(--ot); }
+    .cal.f-LATE .d.m-LATE { background: var(--orange-soft); color: var(--orange); }
+    .month-select { flex: 1; margin: 0 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px;
+      font: inherit; font-weight: 700; font-size: 16px; text-align: center; background: #fff; color: var(--text); }
+    .filters { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; }
+    .fchip { padding: 7px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--gray-soft); color: var(--muted); flex: none; }
+    .fchip.on { color: #fff; background: var(--brand); }
+    .fchip.fc-ABSENT.on { background: var(--red); } .fchip.fc-HALF_DAY.on { background: var(--amber); }
+    .fchip.fc-OT.on { background: var(--ot); } .fchip.fc-LATE.on { background: var(--orange); }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .split div { background: var(--green-soft); border-radius: 12px; padding: 12px; }
+    .split div:last-child { background: var(--amber-soft); }
+    .split span { display: block; font-size: 13px; color: var(--muted); }
+    .split b { font-size: 18px; }
+    .switch { position: relative; width: 48px; height: 28px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch span { position: absolute; inset: 0; background: var(--gray-soft); border-radius: 999px; transition: .2s; }
+    .switch span:before { content: ''; position: absolute; width: 22px; height: 22px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .switch input:checked + span { background: var(--green); }
+    .switch input:checked + span:before { transform: translateX(20px); }
+    .pf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .pf-grid label { font-size: 11px; color: var(--muted); }
+    .pf-grid input { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; }
     .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .pay-line { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px dashed var(--line); }
     .pay-line:first-child { border-top: 0; }
+    .pay-line > :last-child { white-space: nowrap; text-align: right; }
+    .rate-line { font-size: 12px; color: var(--muted); padding: 2px 0 8px; }
     .pay-line.total { font-size: 18px; font-weight: 700; border-top: 2px solid var(--line); margin-top: 4px; padding-top: 12px; }
 
     /* Lists */
@@ -297,8 +330,11 @@
 
   function loadHome() {
     setLoading();
+    var sentAt = Date.now();
     api('getHome', S.token).then(function (h) {
       S.home = h; S.profile = h.profile;
+      S.homeLoadedAt = Date.now();
+      S.homeLoadedPhoneEpoch = Math.round((sentAt + S.homeLoadedAt) / 2); // phone time at the moment the server answered
       $('hdrName').textContent = h.profile.name;
       $('hdrSub').textContent = h.profile.id + ' · ' + h.company;
       $('navAdmin').classList.toggle('hidden', h.profile.role !== 'ADMIN');
@@ -306,9 +342,28 @@
     }).catch(function (e) { setError(e, "loadHome()"); });
   }
 
+  /** True when the phone's clock and time zone match the server (i.e. automatic time is on). */
+  function phoneTimeOk() {
+    var srv = S.home.server, tol = Math.max(1, S.home.clockTolerance || 3) * 60000;
+    var elapsed = Date.now() - S.homeLoadedAt;                     // time since the server answered
+    var epochDiff = Math.abs(S.homeLoadedPhoneEpoch - srv.epoch);   // includes network delay, well under tolerance
+    var wallDiff = Math.abs(wallMs(phoneClock().local) - (wallMs(srv.local) + elapsed));
+    return epochDiff <= tol && wallDiff <= tol;
+  }
+  function phoneClock() {
+    var d = new Date(), p = function (n) { return ('0' + n).slice(-2); };
+    return { epoch: d.getTime(), local: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) };
+  }
+  function wallMs(str) {
+    var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(str);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : NaN;
+  }
+
   function renderHome() {
     var h = S.home, r = h.record, d = h.day;
     var state = !r ? 'in' : (!r.out ? 'out' : 'done');
+    var timeOk = phoneTimeOk();
+    if (!timeOk && state !== 'done') state = 'badtime';
     var html = '<div class="card center">' +
       '<div class="muted">' + esc(h.todayLabel) + '</div>' +
       '<div class="clock" id="clock">--:--</div>' +
@@ -325,6 +380,9 @@
     if (state === 'in') html += '<button class="big-btn" style="background:var(--green)" onclick="startFlow(\'in\')">CHECK IN</button>';
     if (state === 'out') html += '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT</button>';
     if (state === 'done') html += '<div class="msg ok center">✓ Attendance complete for today</div>';
+    if (state === 'badtime') html += '<div class="msg err"><b>⚠ Your phone time is not correct.</b><br>Open phone <b>Settings → Date &amp; time</b> and turn ON ' +
+      '<b>"Automatic date &amp; time"</b> and <b>"Automatic time zone"</b>. Then tap Reload.</div>' +
+      '<button class="btn" onclick="loadHome()">Reload</button>';
     html += '</div><div id="flow"></div>';
 
     html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">📍 You must be within <b>' +
@@ -344,6 +402,7 @@
 
   /** Step 1: get GPS. Step 2 (check-in): selfie. Step 3: submit. */
   function startFlow(mode) {
+    if (!phoneTimeOk()) { renderHome(); return; }
     S.flow = { mode: mode, pos: null, selfie: null, busy: false, error: null, locating: true };
     renderFlow();
     $('flow').scrollIntoView({ behavior: 'smooth' });
@@ -410,8 +469,8 @@
     f.busy = true; renderFlow();
     var p = f.pos;
     var call = f.mode === 'in'
-      ? api('checkIn', S.token, p.lat, p.lng, p.accuracy, f.selfie)
-      : api('checkOut', S.token, p.lat, p.lng, p.accuracy);
+      ? api('checkIn', S.token, p.lat, p.lng, p.accuracy, f.selfie, phoneClock())
+      : api('checkOut', S.token, p.lat, p.lng, p.accuracy, phoneClock());
     call.then(function (r) {
       S.flow = null;
       toast(f.mode === 'in'
@@ -487,43 +546,73 @@
   function monthHtml(m, navFn, navArg) {
     var t = m.totals, p = m.pay, cur = m.currency;
     var call = function (ym) { return navFn + '(' + (navArg ? "'" + navArg + "'," : '') + "'" + ym + "')"; };
+    var callSel = navFn + '(' + (navArg ? "'" + navArg + "'," : '') + 'this.value)';
+
+    // Month filter: arrows + dropdown of the last 24 months
+    var opts = '', cur0 = ymNow();
+    for (var k = 0; k < 24; k++) {
+      var ym = ymShift(cur0, -k);
+      opts += '<option value="' + ym + '"' + (ym === m.ym ? ' selected' : '') + '>' + monthName(ym) + '</option>';
+    }
+    if (m.ym > cur0 || m.ym < ymShift(cur0, -23)) opts = '<option selected>' + esc(m.label) + '</option>' + opts;
     var html = '<div class="card"><div class="month-nav">' +
       '<button onclick="' + call(ymShift(m.ym, -1)) + '">‹</button>' +
-      '<h2>' + esc(m.label) + '</h2>' +
+      '<select class="month-select" onchange="' + callSel + '">' + opts + '</select>' +
       '<button onclick="' + call(ymShift(m.ym, 1)) + '">›</button></div>';
     if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span></p>';
 
+    // Highlight filter
+    var f = S.calFilter || 'ALL';
+    html += '<div class="filters">' + [['ALL', 'All'], ['ABSENT', 'Absent'], ['HALF_DAY', 'Half Day'], ['OT', 'OT'], ['LATE', 'Late']]
+      .map(function (x) { return '<button class="fchip fc-' + x[0] + (f === x[0] ? ' on' : '') + '" onclick="setCalFilter(\'' + x[0] + '\')">' + x[1] + '</button>'; }).join('') + '</div>';
+
     // Calendar
-    html += '<div class="cal">';
+    html += '<div class="cal f-' + f + '" id="cal">';
     ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (d) { html += '<div class="h">' + d + '</div>'; });
     for (var i = 0; i < m.days[0].dow; i++) html += '<div></div>';
     var now = new Date(), todayStr = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
     m.days.forEach(function (d, i) {
-      html += '<button class="d s-' + d.status + (d.date === todayStr ? ' today' : '') + '" onclick="showDay(' + i + ')">' +
-        d.day + '<small>' + (SHORT[d.status] || '') + '</small>' + (d.late ? '<span class="late-dot"></span>' : '') + '</button>';
+      var cls = 'd s-' + d.status + ' m-' + d.status + (d.otMin ? ' m-OT' : '') + (d.late ? ' m-LATE' : '') + (d.date === todayStr ? ' today' : '');
+      html += '<button class="' + cls + '" onclick="showDay(' + i + ')">' + d.day +
+        '<small>' + (SHORT[d.status] || '') + '</small>' +
+        (d.otMin ? '<span class="ot-dot"></span>' : '') + (d.late ? '<span class="late-dot"></span>' : '') + '</button>';
     });
     html += '</div><div class="legend">' +
-      ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE', 'WEEK_OFF', 'HOLIDAY', 'OFF_WORK'].map(function (s) { return chip(s); }).join('') +
-      '<span class="chip s-LATE">● Late</span></div></div>';
+      ['PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'WEEK_OFF', 'HOLIDAY', 'OFF_WORK'].map(function (s) { return chip(s); }).join('') +
+      '<span class="chip s-OT">● OT</span><span class="chip s-LATE">● Late</span></div></div>';
 
     // Attendance summary
     html += '<div class="card"><h2>Attendance</h2><div class="kv">' +
       '<div><b>' + t.present + '</b><span>Present</span></div>' +
-      '<div><b>' + t.halfDay + '</b><span>Half Days</span></div>' +
-      '<div><b>' + t.absent + '</b><span>Absent</span></div>' +
-      '<div><b>' + t.late + '</b><span>Late Marks</span></div>' +
-      '<div><b>' + (t.leave + t.weekOff + t.holiday) + '</b><span>Leave / Off</span></div>' +
-      '<div><b>' + hrs(t.otHours) + '</b><span>Overtime</span></div>' +
-      '</div></div>';
+      '<div class="k-red"><b>' + (t.absent + t.notJoined) + '</b><span>Absent (Leaves)</span></div>' +
+      '<div class="k-amber"><b>' + t.halfDay + '</b><span>Half Days</span></div>' +
+      '<div class="k-orange"><b>' + t.late + '</b><span>Late · ' + mins(t.lateMin) + '</span></div>' +
+      '<div class="k-ot"><b>' + mins(t.otMin) + '</b><span>Net OT</span></div>' +
+      '<div><b>' + (t.leave + t.weekOff + t.holiday) + '</b><span>Paid Leave / Off</span></div>' +
+      '</div>' +
+      (m.rules.lateReducesOt && (t.otMinGross || t.lateMin) ? '<p class="muted" style="font-size:12px;margin:10px 0 0">Net OT = OT ' + mins(t.otMinGross) + ' − Late ' + mins(t.lateMin) + ' = <b>' + mins(t.otMin) + '</b></p>' : '') +
+      '</div>';
 
     // Salary
-    html += '<div class="card"><h2>Salary ' + (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '') + '</h2>' +
-      '<div class="pay-line"><span>Monthly salary</span><b>' + money(p.salary, cur) + '</b></div>' +
-      '<div class="pay-line"><span class="muted">Per day (' + t.daysInMonth + ' days) / per hour</span><span class="muted">' + money(p.perDay, cur) + ' / ' + money(p.hourly, cur) + '</span></div>' +
-      '<div class="pay-line"><span>Deduction <span class="muted">(' + num(t.deductDays) + ' days' + (t.lateCutDays ? ', incl. ' + num(t.lateCutDays) + ' for late marks' : '') + ')</span></span><b style="color:var(--red)">− ' + money(p.deduction, cur) + '</b></div>' +
-      '<div class="pay-line"><span>OT pay <span class="muted">(' + hrs(t.otHours) + ' × ' + m.rules.otMultiplier + '×)</span></span><b style="color:var(--green)">+ ' + money(p.otPay, cur) + '</b></div>' +
-      '<div class="pay-line total"><span>Net salary</span><span>' + money(p.net, cur) + '</span></div>' +
-      (m.inProgress ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>' : '') +
+    html += '<div class="card"><h2>Salary ' + (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '') +
+      (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
+      payLine('Total Salary', money(p.salary, cur), '', true) +
+      '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
+        money(p.perDay, cur) + '/day · ' + money(p.hourly, cur) + '/hr · ' + money(p.perMin, cur) + '/min</div>' +
+      payLine('OT <span class="muted">(' + mins(t.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
+      payLine('Leaves <span class="muted">(' + (t.absent + t.notJoined) + ' days)</span>', '− ' + money(p.leaveDed, cur), 'red') +
+      payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
+      (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '');
+    if (p.pf) {
+      html += payLine('PF Employee <span class="muted">(bank salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
+        payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue') +
+        '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
+        '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>' +
+        '<div class="pay-line total"><span>Take-home</span><span>' + money(p.net, cur) + '</span></div>';
+    } else {
+      html += '<div class="pay-line total"><span>Net Salary</span><span>' + money(p.net, cur) + '</span></div>';
+    }
+    html += (m.inProgress ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>' : '') +
       '</div>';
 
     // Day list
@@ -532,7 +621,9 @@
       html += '<div class="card"><h2>Daily log</h2>';
       worked.slice().reverse().forEach(function (d) {
         html += '<div class="list-item"><div><div class="name">' + esc(d.date.slice(8)) + ' ' + esc(m.label.split(' ')[0].slice(0, 3)) + '</div>' +
-          '<div class="sub">' + esc(d.in) + ' → ' + esc(d.out || '—') + ' · ' + hrs(d.worked) + (d.ot ? ' · OT ' + hrs(d.ot) : '') + '</div></div>' +
+          '<div class="sub">' + esc(d.in) + ' → ' + esc(d.out || '—') + ' · ' + hrs(d.worked) +
+          (d.otMin ? ' · <span style="color:var(--ot)">OT ' + mins(d.otMin) + '</span>' : '') +
+          (d.lateMin ? ' · <span style="color:var(--orange)">Late ' + mins(d.lateMin) + '</span>' : '') + '</div></div>' +
           '<div class="right">' + chip(d.status) + lateChip(d.late) + '</div></div>';
       });
       html += '</div>';
@@ -541,12 +632,26 @@
     return html;
   }
 
+  function payLine(label, value, color, bold) {
+    return '<div class="pay-line"><span>' + label + '</span><' + (bold ? 'b' : 'span') + (color ? ' style="color:var(--' + color + ')"' : '') + '>' +
+      value + '</' + (bold ? 'b' : 'span') + '></div>';
+  }
+  function mins(n) { n = Math.round(Number(n || 0)); var h = Math.floor(n / 60), m = n % 60; return h ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm'; }
+  function monthName(ym) {
+    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
+  }
+  function setCalFilter(f) {
+    S.calFilter = f;
+    var cal = $('cal'); if (cal) cal.className = 'cal f-' + f;
+    Array.prototype.forEach.call(document.querySelectorAll('.fchip'), function (b) { b.classList.toggle('on', b.classList.contains('fc-' + f)); });
+  }
+
   function showDay(i) {
     var d = S.viewMonth.days[i];
     var html = '<h2 style="margin-top:0">' + esc(d.date) + '</h2><p>' + (chip(d.status) || '<span class="muted">No record</span>') + lateChip(d.late) + '</p>';
     if (d.holidayName) html += '<p>🎉 ' + esc(d.holidayName) + '</p>';
     if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
-      (d.ot ? '<p>Overtime: <b>' + hrs(d.ot) + '</b></p>' : '');
+      '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>Late</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>OT</span></div><div></div></div>';
     if (d.note) html += '<div class="msg info">Note: ' + esc(d.note) + '</div>';
     html += '<button class="btn ghost" onclick="closeModal()">Close</button>';
     openModal(html);
@@ -556,9 +661,12 @@
   function renderAdmin() {
     var a = S.admin;
     var html = '<div class="tabs"><button class="' + (a.tab === 'today' ? 'on' : '') + '" onclick="adminTab(\'today\')">Today</button>' +
-      '<button class="' + (a.tab === 'payroll' ? 'on' : '') + '" onclick="adminTab(\'payroll\')">Monthly / Payroll</button></div><div id="adminBody"></div>';
+      '<button class="' + (a.tab === 'payroll' ? 'on' : '') + '" onclick="adminTab(\'payroll\')">Payroll</button>' +
+      '<button class="' + (a.tab === 'pf' ? 'on' : '') + '" onclick="adminTab(\'pf\')">PF Setup</button></div><div id="adminBody"></div>';
     $('content').innerHTML = html;
-    if (a.tab === 'today') loadAdminToday(); else loadAdminMonth(a.ym || ymNow());
+    if (a.tab === 'today') loadAdminToday();
+    else if (a.tab === 'pf') loadAdminPf();
+    else loadAdminMonth(a.ym || ymNow());
   }
   function adminTab(t) { S.admin.tab = t; renderAdmin(); }
 
@@ -612,8 +720,10 @@
         total += e.net;
         html += '<div class="list-item" onclick="openEmployee(\'' + esc(e.id) + '\',\'' + ym + '\')" style="cursor:pointer">' +
           '<div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
-          '<div class="sub">P ' + e.present + ' · ½ ' + e.halfDay + ' · A ' + e.absent + ' · Late ' + e.late + ' · OT ' + hrs(e.otHours) + '</div></div>' +
-          '<div class="right"><b>' + money(e.net, cur) + '</b><div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div></div></div>';
+          '<div class="sub">P ' + e.present + ' · ½ ' + e.halfDay + ' · A ' + (e.absent + e.notJoined) + ' · Late ' + e.late + ' · OT ' + mins(e.otMin) + (e.pf ? ' · <span class="chip s-PF">PF</span>' : '') + '</div></div>' +
+          '<div class="right"><b>' + money(e.net, cur) + '</b>' + (e.pf
+            ? '<div class="sub">🏦 ' + money(e.bank, cur) + ' · 💵 ' + money(e.cash, cur) + '</div><div class="sub">PF ' + money(e.pfEmployee, cur) + ' + ' + money(e.pfEmployer, cur) + '</div>'
+            : '<div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div>') + '</div></div>';
       });
       html += '<div class="pay-line total"><span>Total payroll</span><span>' + money(total, cur) + '</span></div></div>';
       adminBody(html);
@@ -626,6 +736,44 @@
       adminBody('<button class="btn small ghost" style="margin-bottom:12px" onclick="loadAdminMonth(\'' + S.admin.ym + '\')">‹ Back to all</button>' +
         monthHtml(m, 'openEmployee', id));
     }).catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+  }
+
+  function loadAdminPf() {
+    adminLoading();
+    api('adminEmployees', S.token).then(renderAdminPf)
+      .catch(function (e) { adminBody('<div class="card"><div class="msg err">' + esc(e.message) + '</div></div>'); });
+  }
+
+  function renderAdminPf(r) {
+    S.pfList = r.list;
+    var cur = r.currency, d = r.defaults;
+    var html = '<div class="card"><p class="muted" style="margin:0;font-size:13px">Turn PF on/off for each employee and set the amounts. ' +
+      'Leave a box blank to use the default (' + d.bank + '% of salary for Bank Salary, ' + d.employee + '% / ' + d.employer +
+      '% of Bank Salary for PF). You can also type a % like <b>12%</b>.<br><b>In Bank</b> = Bank Salary − PF Employee. <b>In Cash</b> = Salary − Bank Salary.</p></div>';
+    r.list.forEach(function (e, i) {
+      html += '<div class="card" id="pf-' + i + '"><div class="row"><div><div class="name"><b>' + esc(e.name) + '</b> <span class="muted">' + esc(e.id) + '</span></div>' +
+        '<div class="sub muted" style="font-size:13px">Salary ' + money(e.salary, cur) + '</div></div>' +
+        '<label class="switch"><input type="checkbox" id="pfOn-' + i + '"' + (e.pfActive ? ' checked' : '') + ' onchange="togglePfFields(' + i + ')"><span></span></label></div>' +
+        '<div id="pfFields-' + i + '" class="' + (e.pfActive ? '' : 'hidden') + '"><div class="pf-grid">' +
+        pfInput(i, 'bank', 'Bank Salary', e.bankSalaryRaw, e.bankSalary) +
+        pfInput(i, 'emp', 'PF Employee', e.employeeRaw, e.employee) +
+        pfInput(i, 'er', 'PF Employer', e.employerRaw, e.employer) + '</div>' +
+        '<p class="muted" style="font-size:12px;margin:8px 0 0">Currently: In Bank ' + money(e.bankSalary - e.employee, cur) + ' · In Cash ' + money(e.salary - e.bankSalary, cur) + '</p></div>' +
+        '<button class="btn small" style="margin-top:12px" onclick="savePf(' + i + ', this)">Save</button></div>';
+    });
+    adminBody(html);
+  }
+  function pfInput(i, key, label, raw, effective) {
+    return '<div><label>' + label + '</label><input id="pf' + key + '-' + i + '" inputmode="decimal" value="' + esc(raw) + '" placeholder="' + esc(effective) + '"></div>';
+  }
+  function togglePfFields(i) { $('pfFields-' + i).classList.toggle('hidden', !$('pfOn-' + i).checked); }
+  function savePf(i, btn) {
+    var e = S.pfList[i];
+    btn.disabled = true;
+    api('adminSavePf', S.token, e.id, {
+      active: $('pfOn-' + i).checked, bankSalary: $('pfbank-' + i).value, employee: $('pfemp-' + i).value, employer: $('pfer-' + i).value
+    }).then(function (r) { renderAdminPf(r); toast('Saved PF for ' + e.name); })
+      .catch(function (err) { btn.disabled = false; toast(err.message); });
   }
 
   function exportPayroll(ym) {

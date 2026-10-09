@@ -4,9 +4,10 @@ A mobile-friendly web app that runs on a Google Sheet. It lets employees:
 
 - **Check in and check out** only when they are within **30 m of the office**, checked by GPS.
 - **Take a selfie at check-in.** Photos are saved to a Google Drive folder.
-- **See their month**: a calendar of Present, Half Day, Absent, Late and Off days, OT hours and a live salary calculation.
+- **See their month**: pick any month and see a colour-coded calendar (Absent, Half Day, OT, Late). Filter buttons highlight just one type. The month view also shows net OT and the salary breakdown, including PF, In Bank and In Cash for PF employees.
+- **Keep the phone clock on automatic.** If the phone's time or time zone is wrong, the app blocks check-in/out and tells the employee to turn on "Automatic date & time". Recorded times always come from Google's server, not the phone.
 
-An **admin dashboard** shows today's live attendance with selfies, the monthly payroll for every employee, a calendar for each employee and a one-tap export of the payroll to a Sheet tab.
+An **admin dashboard** shows today's live attendance with selfies, the monthly payroll for every employee (with the In Bank / In Cash split), a calendar for each employee, a **PF Setup** screen to turn PF on or off and set amounts per employee, and a one-tap export of the payroll to a Sheet tab.
 
 No Google account is needed for employees. They log in with **Employee ID + PIN**.
 
@@ -50,22 +51,30 @@ No Google account is needed for employees. They log in with **Employee ID + PIN*
 | Shift Start | 09:30 | Used for late marking |
 | Late Grace (min) | 10 | A check-in after 09:40 counts as **Late** |
 | Standard Hours | **9** | Hours worked beyond this are **OT** |
+| Salary Days Basis | **30** | Per day = salary ÷ 30, per hour = per day ÷ 9, per minute = per hour ÷ 60 |
 | Full Day Min Hours | 8 | Hours needed for a full day |
 | Half Day Min Hours | 4 | 4–8 h is a **Half Day**; under 4 h is **Absent** |
 | No Check-Out Counts As | HALF_DAY | What happens when someone forgets to check out |
-| OT Multiplier | **1.5** | OT pay = OT hours × hourly rate × 1.5. **Change this if your rate is different** (for example `1` or `2`) |
-| OT Block (min) | 30 | OT is counted in complete 30-minute blocks (`0` = exact minutes) |
+| OT Multiplier | **1.5** | OT pay = net OT minutes × per-minute rate × 1.5. **Set `1` to pay OT at the normal rate** |
+| OT Block (min) | 0 | `0` counts every minute. `30` counts each day's OT only in full 30-minute blocks |
+| Late Minutes Reduce OT | Yes | Net OT = the month's total OT minutes − the month's total late minutes |
 | Weekly Off | Sunday | For example `Sunday` or `Saturday,Sunday` |
 | Off-Day Work Is OT | Yes | All hours worked on a weekly off or holiday count as OT |
-| Lates Per Half-Day Cut | 3 | Every 3 late marks in a month deduct half a day (`0` = off) |
+| Lates Per Half-Day Cut | 0 | Optional extra penalty: every N late marks deduct half a day (`0` = off) |
+| Phone Time Tolerance (min) | 3 | Check-in is blocked if the phone clock is off by more than this |
+| Default PF Bank Salary % | 90 | Used when an employee's *PF Bank Salary* is blank (90% of 15000 = 13500) |
+| Default PF Employee % / Employer % | 12 / 13 | Used when *PF Employee* / *PF Employer* is blank (% of PF Bank Salary) |
+| OT & Deductions Paid In | CASH | For PF employees: OT is added to, and leave/half-day deductions taken from, the **Cash** part (or `BANK`) |
 | Currency | ₹ | |
 
 ### Employees tab
 
-| Emp ID | Name | PIN | Monthly Salary | Role | Active | Join Date | Phone |
-|---|---|---|---|---|---|---|---|
-| E001 | Owner Name | 4821 | 30000 | ADMIN | Yes | 2026-01-01 | |
-| E002 | Ravi Kumar | 1111 | 18000 | EMPLOYEE | Yes | 2026-03-15 | |
+| Emp ID | Name | PIN | Monthly Salary | Role | Active | Join Date | Phone | PF Active | PF Bank Salary | PF Employee | PF Employer |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| E001 | Owner Name | 4821 | 30000 | ADMIN | Yes | 2026-01-01 | | No | | | |
+| E002 | Ravi Kumar | 1111 | 15000 | EMPLOYEE | Yes | 2026-03-15 | | Yes | 13500 | 1721 | 1755 |
+
+- Fill the **PF** columns here or, more easily, in the app under **Admin → PF Setup**: a switch plus three boxes per employee. A blank box uses the % defaults in Settings, and a value like `12%` also works.
 
 - Give the **ADMIN** role to anyone who should see the admin dashboard. Admins can also mark their own attendance.
 - To remove an employee, set **Active = No**. Their history is kept.
@@ -79,25 +88,39 @@ Add one row per paid holiday: `2026-10-20 | Diwali`.
 ## 3. How salary is calculated
 
 ```
-Per-day rate  = Monthly Salary ÷ days in that month
-Hourly rate   = Per-day rate ÷ Standard Hours (9)
+Per day    = Total Salary ÷ 30
+Per hour   = Per day ÷ 9
+Per minute = Per hour ÷ 60
 
-Deduction days = Absent days × 1
-               + Half days × 0.5
-               + days before the Join Date
-               + 0.5 for every 3 late marks
-Deduction      = Deduction days × Per-day rate
+Late minutes = check-in time − Shift Start   (only on days marked Late)
+Net OT mins  = month's total OT minutes − month's total late minutes   (never below 0)
+OT pay       = Net OT mins × Per minute × OT Multiplier
 
-OT hours = (hours worked − 9) on working days, in 30-minute blocks
-         + all hours worked on weekly offs and holidays
-OT pay   = OT hours × Hourly rate × OT Multiplier
-
-Net Salary = Monthly Salary − Deduction + OT pay
+Leaves     = Absent days × Per day
+Half Days  = Half days × ½ × Per day
+Gross      = Total Salary + OT pay − Leaves − Half Days
 ```
 
-Weekly offs, holidays and **LEAVE** days are paid.
-**Example:** ₹30,000 salary in a 30-day month, with 2 absent days, 1 half day, 3 late marks and 13.5 h OT:
-deduction = 3 days × ₹1,000 = ₹3,000, OT pay = 13.5 × ₹111.11 × 1.5 = ₹2,250, **net = ₹29,250**.
+**Employees without PF:** Net Salary = Gross.
+
+**Employees with PF** (both the employee and admin screens show all of these):
+
+| | Example: ₹15,000, full month |
+|---|---|
+| 1. Total Salary | 15,000 |
+| 2. OT | + per calculation |
+| 3. Leaves | − per calculation |
+| 4. Half Days | − per calculation |
+| 5. PF Employee | 1,721 (deducted) |
+| 6. PF Employer | 1,755 (company contribution, shown only) |
+| 7. **In Bank** = PF Bank Salary − PF Employee | 13,500 − 1,721 = **11,779** |
+| 8. **In Cash** = Total Salary − PF Bank Salary, + OT − Leaves − Half Days | 15,000 − 13,500 = **1,500** |
+
+The bank amount stays fixed, so the PF salary stays the same every month. OT and leave/half-day deductions change the **cash** part. If deductions are larger than the cash part, the rest comes out of the bank part. To put OT and deductions in the bank part instead, set *OT & Deductions Paid In* = `BANK`.
+
+**Example with 1 absent day, 1 half day, 3h05m OT and 25 min late:** net OT = 185 − 25 = 160 min. OT pay = 160 × ₹0.926 = ₹148.15. Cash = 1,500 + 148.15 − 500 − 250 = **₹898.15**. Bank stays at **₹11,779**.
+
+> PF and salary are read from the Employees tab every time, so changing them also changes how past months are shown. Click **Export payroll to Sheet** at each month end to keep a fixed record.
 
 ## 4. Admin corrections
 
