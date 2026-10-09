@@ -351,24 +351,45 @@
     }
     var url = serverUrl();
     if (!url) return fail(new Error('App link is incomplete. Open the link your company shared with you.'));
-    return fetch(url, {
-      method: 'POST', credentials: 'omit', redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // a "simple" request: no CORS pre-flight
-      body: JSON.stringify({ fn: fn, args: args })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('Server error (' + r.status + '). Please try again.');
-      return r.json();
-    }, function () {
-      throw new Error('No internet connection, or the server could not be reached. Please try again.');
-    }).then(function (res) {
+    // Google sometimes answers with a 404/5xx page or drops the reply. Retry up to 3 more times; the request
+    // id makes a retry safe (the server returns the first answer instead of repeating a check-in etc.).
+    var body = JSON.stringify({ fn: fn, args: args, rid: newRid() });
+    var attempt = function (n) {
+      return postOnce(url, body).catch(function (err) {
+        if (!err.retry || n >= 3) throw err;
+        return wait([700, 1500, 3000][n]).then(function () { return attempt(n + 1); });
+      });
+    };
+    return attempt(0).then(function (res) {
       if (!res || !res.ok) throw new Error((res && res.error) || 'Something went wrong.');
       return res.result;
     }).catch(fail);
   }
 
+  function postOnce(url, body) {
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 40000) : null;
+    var retryable = function (msg) { var e = new Error(msg); e.retry = true; return e; };
+    return fetch(url, {
+      method: 'POST', credentials: 'omit', redirect: 'follow', signal: ctrl ? ctrl.signal : undefined,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // a "simple" request: no CORS pre-flight
+      body: body
+    }).then(function (r) {
+      if (!r.ok) throw retryable('The server is busy (' + r.status + '). Please try again in a moment.');
+      return r.text().then(function (t) {
+        try { return JSON.parse(t); } catch (e) { throw retryable('The server is busy. Please try again in a moment.'); }
+      });
+    }, function () {
+      throw retryable('No internet connection, or the server could not be reached. Please try again.');
+    }).then(function (res) { clearTimeout(timer); return res; }, function (e) { clearTimeout(timer); throw e; });
+  }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function newRid() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12); }
+
   /* ---------------- Login & PIN ---------------- */
   function showLogin() {
     S.token = null; store('att_token', null);
+    S.home = null; S.monthCache = {}; S.prefetchedHome = null;
     $('appView').classList.add('hidden'); $('loadingView').classList.add('hidden');
     $('loginView').classList.remove('hidden');
     $('empId').value = load('att_emp') || '';
@@ -382,6 +403,7 @@
     api('login', id, pin).then(function (r) {
       S.token = r.token; S.profile = r.profile;
       store('att_token', r.token); store('att_emp', id.toUpperCase());
+      S.prefetchedHome = r.home || null;
       startApp();
     }).catch(function (err) {
       $('loginMsg').innerHTML = errBox(err);
@@ -440,9 +462,16 @@
   var clockTimer = null;
 
   function loadHome() {
-    setLoading();
     var sentAt = Date.now();
-    api('getHome', S.token).then(function (h) {
+    if (S.prefetchedHome) { var pre = S.prefetchedHome; S.prefetchedHome = null; return showHome(pre, sentAt); }
+    // Show the last screen at once (buttons wait), then refresh from the server.
+    if (S.home && S.home.today === todayLocal()) { S.homeStale = true; renderHome(); } else setLoading();
+    api('getHome', S.token).then(function (h) { showHome(h, sentAt); })
+      .catch(function (e) { if (S.home && S.homeStale) { S.homeStale = false; renderHome(); toast(e.message); } else setError(e, "loadHome()"); });
+  }
+
+  function showHome(h, sentAt) {
+      S.homeStale = false;
       S.home = h; S.profile = h.profile;
       S.homeLoadedAt = Date.now();
       S.homeLoadedPhoneEpoch = Math.round((sentAt + S.homeLoadedAt) / 2); // phone time at the moment the server answered
@@ -454,8 +483,7 @@
       $('reqBadge').classList.toggle('hidden', !h.pendingRequests);
       $('adminBadge').textContent = h.adminMissed ? '!' : '';
       $('adminBadge').classList.toggle('hidden', !h.adminMissed);
-      renderHome();
-    }).catch(function (e) { setError(e, "loadHome()"); });
+      if (S.tab === 'home') renderHome();
   }
 
   /** True when the phone's clock and time zone match the server (i.e. automatic time is on). */
@@ -479,7 +507,8 @@
     var h = S.home, r = h.record, d = h.day, prev = h.openPrevious;
     var checkedIn = !!(r && r.in);
     var state = prev && !checkedIn ? 'outPrev' : !checkedIn ? 'in' : (!r.out ? 'out' : 'done');
-    if (!phoneTimeOk() && state !== 'done') state = 'badtime';
+    if (!S.homeStale && !phoneTimeOk() && state !== 'done') state = 'badtime';
+    if (S.homeStale && state !== 'done') state = 'refreshing';
 
     var html = '';
     if (h.missedCheckouts && h.missedCheckouts.length) {
@@ -514,6 +543,7 @@
     if (state === 'outPrev') html += '<div class="msg info">You checked in on ' + esc(fmtDate(prev.date)) + ' at <b>' + esc(prev.in) + '</b> and have not checked out yet.</div>' +
       '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT (night shift)</button>';
     if (state === 'done') html += '<div class="msg ok center">✓ Attendance complete for today</div>';
+    if (state === 'refreshing') html += '<button class="big-btn" style="background:var(--gray)" disabled><span class="spinner"></span> Updating…</button>';
     if (state === 'badtime') html += '<div class="msg err"><b>⚠ Your phone time is not correct.</b><br>Open phone <b>Settings → Date &amp; time</b> and turn ON ' +
       '<b>"Automatic date &amp; time"</b> and <b>"Automatic time zone"</b>. Then tap Reload.</div>' +
       '<button class="btn" onclick="loadHome()">Reload</button>';
@@ -643,7 +673,7 @@
       ? api('checkIn', S.token, p.lat, p.lng, p.accuracy, f.selfie, phoneClock())
       : api('checkOut', S.token, p.lat, p.lng, p.accuracy, phoneClock());
     call.then(function (r) {
-      S.flow = null;
+      S.flow = null; S.monthCache = {};
       toast(f.mode === 'in'
         ? 'Checked in at ' + r.time + (r.late ? ' (Late)' : '')
         : 'Checked out at ' + r.time + ' · Worked ' + hrs(r.worked) + (r.ot ? ' · OT ' + hrs(r.ot) : ''));
@@ -706,10 +736,17 @@
   /* ---------------- My Month ---------------- */
   function loadMonth(ym) {
     S.month = ym;
-    setLoading();
+    S.monthCache = S.monthCache || {};
+    var cached = S.monthCache[ym];
+    if (cached) $('content').innerHTML = monthHtml(cached, 'loadMonth') + '<p class="center muted small" id="monthUpd"><span class="spinner"></span> Updating…</p>';
+    else setLoading();
     api('getMyMonth', S.token, ym).then(function (m) {
-      $('content').innerHTML = monthHtml(m, 'loadMonth');
-    }).catch(function (e) { setError(e, "loadMonth('" + ym + "')"); });
+      S.monthCache[ym] = m;
+      if (S.tab === 'month' && S.month === ym) $('content').innerHTML = monthHtml(m, 'loadMonth');
+    }).catch(function (e) {
+      if (cached) { var u = $('monthUpd'); if (u) u.textContent = 'Could not update: ' + e.message; }
+      else setError(e, "loadMonth('" + ym + "')");
+    });
   }
 
   /** Shared by employee view and admin employee detail. navFn is called with the new 'yyyy-MM'. */
