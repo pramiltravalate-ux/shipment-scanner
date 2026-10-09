@@ -33,6 +33,7 @@ const PERMISSIONS = [
   { key: 'editPf', label: 'Edit PF', help: 'Turn PF on/off and change PF amounts' },
   { key: 'manageEmployees', label: 'Manage Employees', help: 'Add employees, change salary/details, reset PINs' },
   { key: 'manageAdvances', label: 'Manage Advances', help: 'Give advances and set monthly deductions' },
+  { key: 'viewSplit', label: 'View Bank / Cash Split', help: 'See In Bank and In Cash amounts (others only see Total Salary)' },
   { key: 'exportPayroll', label: 'Export Payroll', help: 'Create the payroll tab in the Sheet' },
   { key: 'lockPayroll', label: 'Lock Payroll', help: 'Lock a finished month so nothing can change it' },
   { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF / salary (normally off)' },
@@ -438,7 +439,18 @@ function coordKey_(lat, lng) {
 /** Monthly attendance, OT and salary for the logged-in employee. ym = 'yyyy-MM'. */
 function getMyMonth(token, ym) {
   const emp = auth_(token);
-  return buildMonth_(emp, validYm_(ym));
+  return hideSplit_(buildMonth_(emp, validYm_(ym)), permsFor_(emp).viewSplit);
+}
+
+/**
+ * The In Bank / In Cash split is only for admins with the "View Bank / Cash Split" permission.
+ * Everyone else gets only the total (net) salary.
+ */
+function hideSplit_(m, canSee) {
+  const pay = m && (m.pay || m);
+  if (pay && !canSee) { delete pay.bank; delete pay.cash; }
+  if (m && m.pay) m.showSplit = !!canSee;
+  return m;
 }
 
 /** Payslip as HTML (and optionally PDF). Employees get their own; admins with View Payroll anyone they manage. */
@@ -449,7 +461,7 @@ function getPayslip(token, ym, empId, asPdf) {
     const ctx = authAdmin_(token, 'viewPayroll');
     emp = managedEmployee_(ctx, empId);
   }
-  const m = buildMonth_(emp, validYm_(ym));
+  const m = hideSplit_(buildMonth_(emp, validYm_(ym)), permsFor_(me).viewSplit);
   const html = payslipHtml_(emp, m);
   const out = { html: html, fileName: 'Payslip_' + emp.id + '_' + m.ym + '.pdf' };
   if (asPdf) {
@@ -575,7 +587,7 @@ function payrollRows_(ctx, ym) {
 
   const rows = getEmployees_().filter(e => (e.active || withRecords[e.id]) && canManage_(ctx, e.id)).map(e => {
     const m = buildMonth_(e, ym);
-    return Object.assign({ id: e.id, name: e.name }, m.totals, m.pay);
+    return hideSplit_(Object.assign({ id: e.id, name: e.name }, m.totals, m.pay), ctx.perms.viewSplit);
   });
   return {
     ym: ym, label: ymLabel_(ym), currency: s.currency, rows: rows,
@@ -594,6 +606,7 @@ function adminEmployeeMonth(token, empId, ym) {
   m.canEdit = !!ctx.perms.editAttendance && canEditEmployee_(ctx, emp.id) && !m.locked;
   m.canApproveOt = !!ctx.perms.approveRequests && canEditEmployee_(ctx, emp.id) && !m.locked;
   m.canPayslip = !!ctx.perms.viewPayroll;
+  hideSplit_(m, ctx.perms.viewSplit);
   m.minDate = ctx.minDate;
   return m;
 }
@@ -891,6 +904,7 @@ function adminEmployees(token) {
   const s = getSettings_();
   return {
     currency: s.currency,
+    showSplit: !!ctx.perms.viewSplit,
     defaults: { bank: s.pfBankPct, employee: s.pfEmployeePct, employer: s.pfEmployerPct },
     list: getEmployees_().filter(e => e.active && canEditEmployee_(ctx, e.id)).map(e => {
       const pf = pfAmounts_(e, s);
@@ -1194,16 +1208,17 @@ function adminExportPayroll(token, ym) {
   const name = 'Payroll ' + data.ym;
   const sh = ss.getSheetByName(name) || ss.insertSheet(name);
   sh.clear();
-  const header = ['Emp ID', 'Name', 'Total Salary', 'Present', 'Half Days', 'Absent (Leaves)', 'Paid Leave',
+  const split = !!ctx.perms.viewSplit;
+  const header = ['Emp ID', 'Name', 'Monthly Salary', 'Present', 'Half Days', 'Absent (Leaves)', 'Paid Leave',
     'Week Off', 'Holidays', 'Worked on Off-Day', 'Late Marks', 'Late Mins', 'Early Leaving Mins', 'OT Mins (gross)',
     'OT Mins (net)', 'OT Hrs (net)', 'Per Day', 'Per Hour', 'Per Min', 'OT Pay', 'Leave Deduction',
     'Half Day Deduction', 'Late Cut Deduction', 'Advance Deduction', 'Gross Payable', 'PF', 'PF Bank Salary',
-    'PF Employee', 'PF Employer', 'In Bank', 'In Cash', 'Net Salary', 'Locked'];
+    'PF Employee', 'PF Employer'].concat(split ? ['In Bank', 'In Cash'] : []).concat(['Total Salary', 'Locked']);
   const rows = data.rows.map(r => [r.id, r.name, r.salary, r.present, r.halfDay, r.absent + r.notJoined, r.leave,
     r.weekOff, r.holiday, r.offWork, r.late, r.lateMin, r.earlyMin || 0, r.otMinGross, r.otMin, r.otHours, r.perDay,
     r.hourly, r.perMin, r.otPay, r.leaveDed, r.halfDayDed, r.lateCutDed, r.advance || 0, r.gross,
     r.pf ? 'Yes' : 'No', r.pf ? r.pfBankSalary : '', r.pf ? r.pfEmployee : '', r.pf ? r.pfEmployer : '',
-    r.pf ? r.bank : '', r.pf ? r.cash : '', r.net, data.locked ? 'Yes' : 'No']);
+  ].concat(split ? [r.pf ? r.bank : '', r.pf ? r.cash : ''] : []).concat([r.net, data.locked ? 'Yes' : 'No']));
   sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold').setBackground('#e8eefc');
   if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
   sh.setFrozenRows(1);
@@ -1800,12 +1815,12 @@ function payslipHtml_(emp, m) {
   const e = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const row = (a, b) => '<tr><td>' + a + '</td><td class="r">' + b + '</td></tr>';
 
-  let earn = row('Total Salary', money(p.salary)) + row('OT (' + mins(t.otMin) + ')', money(p.otPay));
+  let earn = row('Monthly Salary', money(p.salary)) + row('OT (' + mins(t.otMin) + ')', money(p.otPay));
   let ded = row('Leaves (' + (t.absent + t.notJoined) + ' days)', money(p.leaveDed)) +
     row('Half Days (' + t.halfDay + ')', money(p.halfDayDed));
   if (p.lateCutDed) ded += row('Late marks', money(p.lateCutDed));
   if (p.advance) ded += row('Advance recovery', money(p.advance));
-  if (p.pf) ded += row('PF Employee', money(p.pfEmployee));
+  if (p.pf) ded += row('PF Employee (Basic Salary ' + money(p.pfBankSalary) + ')', money(p.pfEmployee));
   const totalDed = p.deduction + (p.advance || 0) + (p.pf ? p.pfEmployee : 0);
 
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
@@ -1825,9 +1840,9 @@ function payslipHtml_(emp, m) {
       'Net OT ' + mins(t.otMin)].map(x => '<span class="box">' + x + '</span>').join('') + '</div>' +
     '<h2>Earnings</h2><table>' + earn + '</table>' +
     '<h2>Deductions</h2><table>' + ded + '<tr class="tot"><td>Total deductions</td><td class="r">' + money(totalDed) + '</td></tr></table>' +
-    (p.pf ? '<h2>Payment</h2><table>' + row('In Bank', money(p.bank)) + row('In Cash', money(p.cash)) +
-      row('PF Employer contribution (paid by company)', money(p.pfEmployer)) + '</table>' : '') +
-    '<table style="margin-top:14px"><tr class="tot"><td>Net pay</td><td class="r">' + money(p.net) + '</td></tr></table>' +
+    (p.pf ? '<h2>PF</h2><table>' + row('PF Employer contribution (paid by company)', money(p.pfEmployer)) + '</table>' : '') +
+    (p.pf && p.bank !== undefined ? '<h2>Payment split</h2><table>' + row('In Bank', money(p.bank)) + row('In Cash', money(p.cash)) + '</table>' : '') +
+    '<table style="margin-top:14px"><tr class="tot"><td>Total Salary</td><td class="r">' + money(p.net) + '</td></tr></table>' +
     ((m.advances || []).length ? '<p class="muted">Advance balance after this month: ' +
       money((m.advances || []).reduce((sum, a) => sum + (a.balanceAfter || 0), 0)) + '</p>' : '') +
     '<p class="muted">Generated ' + Utilities.formatDate(new Date(), tz_(), 'dd MMM yyyy HH:mm') + '. This is a computer-generated slip.</p>' +

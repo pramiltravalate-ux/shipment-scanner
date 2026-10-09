@@ -137,6 +137,10 @@
     .split div:last-child { background: var(--amber-soft); }
     .split span { display: block; font-size: 13px; color: var(--muted); }
     .split b { font-size: 18px; }
+    .total-tile { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding: 14px 16px;
+      border-radius: 12px; background: var(--brand-soft); }
+    .total-tile span { font-weight: 600; color: var(--brand); }
+    .total-tile b { font-size: 22px; }
     .pay-line { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
     .pay-line:first-child { border-top: 0; }
     .pay-line > :last-child { white-space: nowrap; text-align: right; }
@@ -728,7 +732,7 @@
     if (p) {
       html += '<div class="card"><h2>Salary ' + (m.locked ? '<span class="chip s-LOCK">🔒 Final</span>' : (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '')) +
         (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
-        payLine('Total Salary', money(p.salary, cur), '', true) +
+        payLine('Monthly Salary', money(p.salary, cur), '', true) +
         '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
           money(p.perDay, cur) + '/day · ' + money(p.hourly, cur) + '/hr · ' + money(p.perMin, cur) + '/min</div>' +
         payLine('OT <span class="muted">(' + mins(t.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
@@ -737,14 +741,15 @@
         (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '') +
         (p.advance ? payLine('Advance recovery', '− ' + money(p.advance, cur), 'red') : '');
       if (p.pf) {
-        html += payLine('PF Employee <span class="muted">(bank salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
-          payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue') +
-          '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
-          '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>' +
-          '<div class="pay-line total"><span>Take-home</span><span>' + money(p.net, cur) + '</span></div>';
-      } else {
-        html += '<div class="pay-line total"><span>Net Salary</span><span>' + money(p.net, cur) + '</span></div>';
+        html += payLine('PF Employee <span class="muted">(Basic Salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
+          payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue');
       }
+      if (p.pf && p.bank !== undefined) {
+        // Only for admins with the "View Bank / Cash Split" permission.
+        html += '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
+          '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>';
+      }
+      html += '<div class="total-tile"><span>Total Salary</span><b>' + money(p.net, cur) + '</b></div>';
       (m.advances || []).forEach(function (a) {
         html += '<p class="muted small" style="margin:8px 0 0">Advance ' + money(a.amount, cur) + (a.note ? ' (' + esc(a.note) + ')' : '') +
           ': balance ' + money(a.balanceAfter, cur) + ' after this month' + (a.status !== 'ACTIVE' ? ' · ' + esc(STATUS[a.status] || a.status) : '') + '</p>';
@@ -1020,7 +1025,7 @@
         (e.advance ? '<div class="sub">Advance − ' + money(e.advance, cur) + '</div>' : '') +
         (e.missedCheckouts ? '<div class="sub" style="color:var(--red)">⚠ ' + e.missedCheckouts + ' missed check-out(s)</div>' : '') + '</div>' +
         '<div class="right"><b>' + money(e.net, cur) + '</b>' + (e.pf
-          ? '<div class="sub">🏦 ' + money(e.bank, cur) + ' · 💵 ' + money(e.cash, cur) + '</div><div class="sub">PF ' + money(e.pfEmployee, cur) + ' + ' + money(e.pfEmployer, cur) + '</div>'
+          ? (e.bank !== undefined ? '<div class="sub">🏦 ' + money(e.bank, cur) + ' · 💵 ' + money(e.cash, cur) + '</div>' : '') + '<div class="sub">PF ' + money(e.pfEmployee, cur) + ' + ' + money(e.pfEmployer, cur) + '</div>'
           : '<div class="sub">− ' + money(e.deduction, cur) + ' / + ' + money(e.otPay, cur) + '</div>') + '</div></div>';
     });
     html += '<div class="pay-line total"><span>Total payroll</span><span>' + money(total, cur) + '</span></div></div>';
@@ -1336,17 +1341,18 @@
     S.pfList = r.list;
     var cur = r.currency, d = r.defaults;
     var html = '<div class="card"><p class="muted" style="margin:0;font-size:13px">Turn PF on/off for each employee and set the amounts. ' +
-      'Leave a box blank to use the default (' + d.bank + '% of salary for Bank Salary, ' + d.employee + '% / ' + d.employer +
-      '% of Bank Salary for PF). You can also type a % like <b>12%</b>.<br><b>In Bank</b> = Bank Salary − PF Employee. <b>In Cash</b> = Salary − Bank Salary.</p></div>';
+      'Leave a box blank to use the default (' + d.bank + '% of salary for Basic Salary, ' + d.employee + '% / ' + d.employer +
+      '% of Basic Salary for PF). You can also type a % like <b>12%</b>.' +
+      (r.showSplit ? '<br><b>In Bank</b> = Basic Salary − PF Employee. <b>In Cash</b> = Salary − Basic Salary.' : '') + '</p></div>';
     r.list.forEach(function (e, i) {
       html += '<div class="card"><div class="row"><div><div class="name"><b>' + esc(e.name) + '</b> <span class="muted">' + esc(e.id) + '</span></div>' +
         '<div class="sub muted" style="font-size:13px">Salary ' + money(e.salary, cur) + '</div></div>' +
         '<label class="switch"><input type="checkbox" id="pfOn-' + i + '"' + (e.pfActive ? ' checked' : '') + ' onchange="togglePfFields(' + i + ')"><span></span></label></div>' +
         '<div id="pfFields-' + i + '" class="' + (e.pfActive ? '' : 'hidden') + '"><div class="pf-grid">' +
-        pfInput(i, 'bank', 'Bank Salary', e.bankSalaryRaw, e.bankSalary) +
+        pfInput(i, 'bank', 'Basic Salary', e.bankSalaryRaw, e.bankSalary) +
         pfInput(i, 'emp', 'PF Employee', e.employeeRaw, e.employee) +
         pfInput(i, 'er', 'PF Employer', e.employerRaw, e.employer) + '</div>' +
-        '<p class="muted small" style="margin:8px 0 0">Currently: In Bank ' + money(e.bankSalary - e.employee, cur) + ' · In Cash ' + money(e.salary - e.bankSalary, cur) + '</p></div>' +
+        (r.showSplit ? '<p class="muted small" style="margin:8px 0 0">Currently: In Bank ' + money(e.bankSalary - e.employee, cur) + ' · In Cash ' + money(e.salary - e.bankSalary, cur) + '</p>' : '') + '</div>' +
         '<button class="btn small" style="margin-top:12px" onclick="savePf(' + i + ', this)">Save</button></div>';
     });
     adminBody(html);

@@ -4,7 +4,7 @@ A mobile-friendly web app that runs on a Google Sheet. It lets employees:
 
 - **Check in and check out** only when they are within **30 m of the office**, checked by GPS.
 - **Take a selfie at check-in** with the live front camera. Photos are saved to a Google Drive folder.
-- **See their month**: pick any month and see a colour-coded calendar (Absent, Half Day, OT, Late). The month view also shows late and early-leaving minutes, net OT, advance recovery and the salary breakdown, including PF, In Bank and In Cash for PF employees.
+- **See their month**: pick any month and see a colour-coded calendar (Absent, Half Day, OT, Late). The month view also shows late and early-leaving minutes, net OT, advance recovery and the salary breakdown with PF and one **Total Salary** figure. The In Bank / In Cash split is shown only to admins who have permission to see it.
 - **Download a payslip** (PDF or print) for any month.
 - **Send requests:** leave (paid or unpaid) and attendance corrections (forgot to check in or out).
 - **Change their own PIN.**
@@ -16,7 +16,7 @@ Admins (with the permissions a super admin gives them) get these screens:
 | Screen | What it does |
 |---|---|
 | Today | **Missed check-outs on top**, live attendance with selfies, and **⚠ flags** on suspicious check-ins |
-| Payroll | Every employee's salary, PF and bank/cash split; **lock the month**; export to the Sheet |
+| Payroll | Every employee's salary and PF (bank/cash split with permission); **lock the month**; export to the Sheet |
 | Requests | Approve or reject leave, corrections and OT |
 | Entries | Back-dated entries for one day, or bulk-fill many days |
 | Employees | Add employees, change salary and details, deactivate, reset PINs |
@@ -133,8 +133,11 @@ Net        = Gross − advance instalment (− PF Employee for PF employees)
 | OT / Leaves / Half Days | per calculation |
 | PF Employee | 1,721 (deducted) |
 | PF Employer | 1,755 (company contribution, shown only) |
-| **In Bank** = PF Bank Salary − PF Employee | 13,500 − 1,721 = **11,779** |
-| **In Cash** = Salary − PF Bank Salary + OT − Leaves − Half Days − Advance | 15,000 − 13,500 = **1,500** |
+| **In Bank** = Basic Salary − PF Employee | 13,500 − 1,721 = **11,779** |
+| **In Cash** = Salary − Basic Salary + OT − Leaves − Half Days − Advance | 15,000 − 13,500 = **1,500** |
+| **Total Salary** = In Bank + In Cash | **13,279** |
+
+Employees, and admins without the *View Bank / Cash Split* permission, see only **Total Salary**: in the app, on payslips and in the payroll export. "Basic Salary" is the *PF Bank Salary* column in the Employees tab.
 
 If the deductions are more than the cash part, the rest comes out of the bank part. (With a ₹2,000 advance instalment: cash 0, bank 11,279.)
 
@@ -186,6 +189,7 @@ Permissions the super admin can give each admin (**Super Admin → Admins**):
 - Manage Advances
 - Export Payroll
 - Lock Payroll
+- View Bank / Cash Split
 - Edit Own Entries
 
 Each admin also gets a scope: **All employees** or **Only selected**.
