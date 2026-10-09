@@ -776,7 +776,10 @@
     if (p) {
       html += '<div class="card"><h2>Salary ' + (m.locked ? '<span class="chip s-LOCK">🔒 Final</span>' : (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '')) +
         (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
-        payLine('Monthly Salary', money(p.salary, cur), '', true) +
+        (p.prorated
+          ? payLine('Monthly Salary', '<span class="muted">' + money(p.salary, cur) + '</span>') +
+            payLine('Salary till ' + (t.elapsedUntil ? esc(fmtDate(t.elapsedUntil)) : 'today') + ' <span class="muted">(' + p.elapsedDays + ' of ' + p.daysInMonth + ' days)</span>', money(p.earned, cur), '', true)
+          : payLine('Monthly Salary', money(p.salary, cur), '', true)) +
         '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
           money(p.perDay, cur) + '/day · ' + money(p.hourly, cur) + '/hr · ' + money(p.perMin, cur) + '/min</div>' +
         payLine('OT <span class="muted">(' + mins(t.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
@@ -798,7 +801,7 @@
         html += '<p class="muted small" style="margin:8px 0 0">Advance ' + money(a.amount, cur) + (a.note ? ' (' + esc(a.note) + ')' : '') +
           ': balance ' + money(a.balanceAfter, cur) + ' after this month' + (a.status !== 'ACTIVE' ? ' · ' + esc(STATUS[a.status] || a.status) : '') + '</p>';
       });
-      if (m.inProgress && !m.locked) html += '<p class="muted small" style="margin:8px 0 0">Remaining days of the month are assumed present. Final amount is calculated at month end.</p>';
+      if (p.prorated) html += '<p class="muted small" style="margin:8px 0 0">Salary, PF and Basic Salary are shown only for the days passed so far. They grow every day until the month ends.</p>';
       if (!navArg || m.canPayslip) html += '<button class="btn ghost" onclick="openPayslip(\'' + m.ym + '\'' + (navArg ? ',\'' + esc(m.employee.id) + '\'' : '') + ')">📄 Payslip</button>';
       html += '</div>';
     }
@@ -1067,7 +1070,8 @@
         (t.nonPfTotal ? payLine('Non-PF employees', money(t.nonPfTotal, cur), '', true) : '');
     }
     html += '<div style="margin-top:8px">' +
-      payLine('Monthly salaries', money(t.monthlySalary, cur)) +
+      (t.prorated ? payLine('Monthly salaries', '<span class="muted">' + money(t.monthlySalary, cur) + '</span>') + payLine('Salary earned till date', money(t.earned, cur), '', true)
+        : payLine('Monthly salaries', money(t.monthlySalary, cur))) +
       payLine('OT pay', '+ ' + money(t.otPay, cur), 'green') +
       payLine('Leave deductions', '− ' + money(t.leaveDed, cur), 'red') +
       payLine('Half-day deductions', '− ' + money(t.halfDayDed, cur), 'red') +
