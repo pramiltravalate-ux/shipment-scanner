@@ -1405,9 +1405,9 @@
     proxySubmit(i, mode, btn, null);
   }
 
-  /* Photo of the employee for a check-in marked by someone else (compulsory). Back camera by default. */
+  /* Photo of the employee for a check-in marked by someone else (compulsory). Front camera first (🔄 switches). */
   function proxyPhoto(i) {
-    S.pxPhoto = { i: i, data: null, facing: S.pxPhoto ? S.pxPhoto.facing : 'environment' };
+    S.pxPhoto = { i: i, data: null, facing: 'user' };
     proxyCamera();
   }
   function proxyCamera() {
@@ -1427,7 +1427,7 @@
   }
   function proxyPhotoFile() {
     var inp = $('selfieInput');
-    inp.setAttribute('capture', 'environment'); inp.value = ''; inp.click();
+    inp.setAttribute('capture', S.pxPhoto.facing); inp.value = ''; inp.click();
   }
   function proxySnap() {
     var v = $('camVideo'), ph = S.pxPhoto;
