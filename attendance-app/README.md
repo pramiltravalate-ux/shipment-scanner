@@ -116,6 +116,10 @@ GPS, the camera and PDF downloads also work better this way, because the page is
 - **PINs are encrypted (hashed) automatically.** A PIN typed into the sheet works once, and is replaced by a code like `sha256$…` after that employee's first login. To reset a PIN, use **Admin → Employees → Edit → Reset PIN**, or type a new plain PIN into the sheet.
 - Role is `EMPLOYEE`, `ADMIN`, `SUPER_ADMIN` or `GUARD` (see section 4). A guard's salary can be left empty.
 - When someone leaves, untick **Active**. Their history is kept.
+- **Mark From Anywhere** (the last column, added automatically): `Yes` lets an employee who works **outstation** check in and out from anywhere. Set it in the app under **Admin → Employees → (employee) → "Can mark from anywhere (outstation)"**.
+  - Their **GPS location is still required and saved** with every check-in and check-out, and the selfie rules are the same. Only the office distance and GPS-accuracy limits are skipped.
+  - When they are away from the office, the entry gets a 📍 *Checked in / out outside office* tag, and Admin → Today shows the distance (e.g. "1146.9 km"). These entries are not counted as suspicious.
+  - Turn it off again when they are back at the office. Guards marking for others must still be at the office.
 
 ### Holidays tab
 Add one row per paid holiday: `2026-10-20 | Diwali`.

@@ -46,7 +46,7 @@ const PERM_HEADERS = ['Emp ID', 'Name'].concat(PERMISSIONS.map(p => p.label))
 const AUDIT_HEADERS = ['Time', 'By', 'Action', 'Emp ID', 'Date', 'Details'];
 
 const EMP_HEADERS = ['Emp ID', 'Name', 'PIN', 'Monthly Salary', 'Role', 'Active', 'Join Date', 'Phone',
-  'PF Active', 'PF Bank Salary', 'PF Employee', 'PF Employer'];
+  'PF Active', 'PF Bank Salary', 'PF Employee', 'PF Employer', 'Mark From Anywhere'];
 
 const ATT_HEADERS = ['Date', 'Emp ID', 'Name', 'Check In', 'Check Out', 'Worked Hrs', 'Status', 'Late',
   'OT Hrs', 'In Lat', 'In Lng', 'In Distance (m)', 'In Accuracy (m)', 'Out Lat', 'Out Lng',
@@ -69,6 +69,7 @@ const SNAP_HEADERS = ['Month', 'Emp ID', 'Name', 'Data (do not edit)'];
 const OVERRIDE_VALUES = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE'];
 /** Flags that count as "suspicious" on the admin Today screen (PROXY = marked by an admin or guard is not). */
 const SUSPICIOUS_FLAGS = ['WEAK_GPS', 'WEAK_GPS_OUT', 'REPEAT_GPS', 'SHARED_GPS', 'NO_SELFIE'];
+// OUTSIDE / OUTSIDE_OUT = marked away from the office by an employee allowed to ("Mark From Anywhere"); not suspicious.
 
 const DEFAULT_SETTINGS = [
   ['Company Name', 'My Company', 'Shown at the top of the app and on payslips'],
@@ -400,6 +401,7 @@ function getHome(token) {
     selfieRequired: s.selfieRequired,
     liveCameraOnly: s.liveCameraOnly,
     checkoutLocation: s.checkoutLocation,
+    anywhere: !!emp.anywhere,
     shiftStart: minutesToStr_(s.shiftStartMin),
     standardHours: s.standardHours,
     server: serverClock_(),
@@ -415,7 +417,7 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
   const emp = auth_(token);
   const s = getSettings_();
   checkPhoneClock_(s, phoneClock);
-  const loc = checkLocation_(s, lat, lng, accuracy);
+  const loc = checkLocation_(s, lat, lng, accuracy, emp.anywhere);
   return checkInCore_(emp, s, loc, selfieDataUrl, null);
 }
 
@@ -447,7 +449,7 @@ function checkInCore_(emp, s, loc, selfieDataUrl, byEmp) {
     const late = !offType && toMinutes_(now) > s.shiftStartMin + s.lateGrace;
     // One phone marks many people from the same spot, so the "same GPS" checks don't apply to proxy marks.
     const flags = byEmp ? ['PROXY'].concat(isFinite(loc.acc) && loc.acc > s.flagAccuracy ? ['WEAK_GPS'] : [])
-      : gpsFlags_(emp.id, today, loc, s);
+      : loc.outside ? ['OUTSIDE'] : gpsFlags_(emp.id, today, loc, s);
     const byNote = byEmp ? 'Check-in marked by ' + byEmp.name + ' (' + byEmp.id + ')' : '';
     const sh = sheet_(SHEET.ATTENDANCE);
 
@@ -488,7 +490,7 @@ function checkOut(token, lat, lng, accuracy, phoneClock) {
   const emp = auth_(token);
   const s = getSettings_();
   checkPhoneClock_(s, phoneClock);
-  const loc = s.checkoutLocation ? checkLocation_(s, lat, lng, accuracy) : null;
+  const loc = s.checkoutLocation || emp.anywhere ? checkLocation_(s, lat, lng, accuracy, emp.anywhere) : null;
   return checkOutCore_(emp, s, loc, null);
 }
 
@@ -518,6 +520,7 @@ function checkOutCore_(emp, s, loc, byEmp) {
     const flags = rec.flags.split(/\s+/).filter(String);
     if (loc && isFinite(loc.acc) && loc.acc > s.flagAccuracy && flags.indexOf('WEAK_GPS_OUT') < 0) flags.push('WEAK_GPS_OUT');
     if (byEmp && flags.indexOf('PROXY_OUT') < 0) flags.push('PROXY_OUT');
+    if (loc && loc.outside && flags.indexOf('OUTSIDE_OUT') < 0) flags.push('OUTSIDE_OUT');
     if (flags.join(' ') !== rec.flags) sh.getRange(rec.row, COL.FLAGS + 1).setValue(flags.join(' '));
     if (byEmp) {
       sh.getRange(rec.row, COL.NOTE + 1).setValue([rec.note, 'Check-out marked by ' + byEmp.name + ' (' + byEmp.id + ')'].filter(String).join(' · '));
@@ -1143,11 +1146,12 @@ function adminStaff(token) {
     canSetRole: ctx.perms.superAdmin,
     list: getPeople_().filter(e => canEditEmployee_(ctx, e.id)).map(e => ({
       id: e.id, name: e.name, salary: e.salary, role: e.role, active: e.active, joinDate: e.joinDate, phone: e.phone,
+      anywhere: e.anywhere,
     })),
   };
 }
 
-/** data = { isNew, id, name, pin (new only), salary, joinDate, phone, active, role (super admin only) } */
+/** data = { isNew, id, name, pin (new only), salary, joinDate, phone, active, anywhere, role (super admin only) } */
 function adminSaveStaff(token, data) {
   const ctx = authAdmin_(token, 'manageEmployees');
   data = data || {};
@@ -1161,7 +1165,10 @@ function adminSaveStaff(token, data) {
   if (!ctx.perms.superAdmin || ['EMPLOYEE', 'ADMIN', 'GUARD'].indexOf(role) < 0) role = null;
   if (role) roleValidation_(); // sheets set up before Guard existed still have the old Role dropdown
 
+  const anywhere = data.anywhere === undefined ? null : !!data.anywhere;
   const sh = sheet_(SHEET.EMPLOYEES);
+  ensureHeaders_(sh, EMP_HEADERS);
+  const anyCol = headerIndex_(sh)['Mark From Anywhere'] + 1;
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -1176,6 +1183,7 @@ function adminSaveStaff(token, data) {
       row[0] = id; row[1] = name; row[2] = hashPin_(pin); row[3] = salary; row[4] = role || 'EMPLOYEE';
       row[5] = 'Yes'; row[6] = "'" + joinDate; row[7] = phone;
       if (h['PF Active'] !== undefined) row[h['PF Active']] = 'No';
+      row[anyCol - 1] = anywhere ? 'Yes' : 'No';
       sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
       forget_('employees');
       audit_(ctx.emp, 'ADD_EMPLOYEE', id, joinDate, name + ', salary ' + salary);
@@ -1188,9 +1196,11 @@ function adminSaveStaff(token, data) {
       sh.getRange(row, 4).setValue(salary);
       if (role && emp.role !== 'SUPER_ADMIN') sh.getRange(row, 5).setValue(role);
       sh.getRange(row, 6, 1, 3).setValues([[active ? 'Yes' : 'No', "'" + joinDate, phone]]);
+      if (anywhere !== null) sh.getRange(row, anyCol).setValue(anywhere ? 'Yes' : 'No');
       forget_('employees');
-      audit_(ctx.emp, 'EDIT_EMPLOYEE', emp.id, '', before + ' → ' +
-        [name, salary, joinDate, phone, active ? 'Active' : 'Inactive', role || emp.role].join(' / '));
+      audit_(ctx.emp, 'EDIT_EMPLOYEE', emp.id, '', before + (emp.anywhere ? ' / anywhere' : '') + ' → ' +
+        [name, salary, joinDate, phone, active ? 'Active' : 'Inactive', role || emp.role].join(' / ') +
+        ((anywhere === null ? emp.anywhere : anywhere) ? ' / anywhere' : ''));
     }
   } finally {
     lock.releaseLock();
@@ -2367,7 +2377,21 @@ function wallMs_(str) {
   return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
 }
 
-function checkLocation_(s, lat, lng, acc) {
+/**
+ * GPS check for check-in / check-out. anywhere = the employee may mark away from the office (outstation):
+ * a location is still required and recorded, but distance and accuracy limits don't apply.
+ */
+function checkLocation_(s, lat, lng, acc, anywhere) {
+  if (anywhere) {
+    lat = Number(lat); lng = Number(lng); acc = Number(acc);
+    if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) {
+      throw new Error('Location not received. Turn on GPS and allow location access.');
+    }
+    const officeSet = isFinite(s.officeLat) && isFinite(s.officeLng);
+    const d = officeSet ? Math.round(distanceM_(lat, lng, s.officeLat, s.officeLng)) : '';
+    return { lat: lat, lng: lng, acc: isFinite(acc) ? Math.round(acc) : '', dist: d,
+      outside: !officeSet || d > s.radius || (isFinite(acc) && acc > s.maxAccuracy) };
+  }
   if (!isFinite(s.officeLat) || !isFinite(s.officeLng)) {
     throw new Error('Office location is not set. Ask the admin to fill Office Latitude/Longitude in Settings.');
   }
@@ -2514,6 +2538,7 @@ function getPeople_() {
           active: !/^(n|no|false|0|inactive)$/i.test(String(r[5]).trim()),
           joinDate: toDateStr_(r[6]),
           phone: String(r[7] || ''),
+          anywhere: /^(y|yes|true|1|on)$/i.test(String(get(r, 'Mark From Anywhere')).trim()),
           pf: {
             active: /^(y|yes|true|1|on)$/i.test(String(get(r, 'PF Active')).trim()),
             bankSalary: get(r, 'PF Bank Salary'),
