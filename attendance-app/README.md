@@ -233,7 +233,8 @@ Every change is written to the **Audit Log** tab.
 
 ### Employees without a smartphone, or who forgot their phone (Admin → Mark Attendance)
 An admin or a **guard** can check employees in and out from their own phone:
-- **This phone's GPS** must be at the office, the same radius check as normal. **No selfie** is needed.
+- **This phone's GPS** must be at the office, the same radius check as normal.
+- **A photo of the employee is compulsory at check-in.** The app opens the back camera (🔄 switches to the front one), shows the photo for a final check, and saves it like a selfie. Admins see it in Admin → Today. Check-out needs only the location, the same as an employee's own check-out. A photo is required even when *Selfie Required* = No.
 - Every entry records who marked it by **real name**. The Mark Attendance list, Today, the calendar and Entries show "👤 Check-in marked by Pramil" for an admin, or "👤 Check-in marked by Guard (Ramesh)" for a guard. It is also written to the Audit Log. These entries are not counted as suspicious.
 - **Setting up a guard:** Super Admin → **Employees → Add**, give them an ID and PIN, leave the salary empty and set **Role = Guard**. You can also type `GUARD` in the Role column of the sheet. After login the guard sees only the Mark Attendance screen, with all employees. They can't mark themselves, admins or super admins. Only super admins can see or change a guard.
 - They can't mark admins, super admins or themselves. Only today's check-in and check-out can be marked here; for other days use Entries.
