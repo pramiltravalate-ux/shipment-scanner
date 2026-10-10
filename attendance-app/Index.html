@@ -682,6 +682,7 @@
       b.classList.toggle('on', b.getAttribute('data-tab') === tab);
     });
     window.scrollTo(0, 0);
+    if (S.home && S.home.guard && tab !== 'admin') return go('admin');
     if (tab === 'home') loadHome();
     if (tab === 'month') loadMonth(S.month || ymNow());
     if (tab === 'requests') loadMyRequests();
@@ -718,7 +719,12 @@
       $('hdrName').textContent = h.profile.name;
       $('hdrSub').textContent = h.profile.id + ' · ' + h.company;
       $('navAdmin').classList.toggle('hidden', h.profile.role === 'EMPLOYEE');
-      $('navAdminLabel').textContent = h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
+      $('navAdminLabel').textContent = h.guard ? 'Mark Attendance' : h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
+      // A guard has no attendance of their own: only the Mark Attendance screen.
+      ['home', 'month', 'requests'].forEach(function (tab) {
+        document.querySelector('.nav button[data-tab="' + tab + '"]').classList.toggle('hidden', !!h.guard);
+      });
+      if (h.guard) { if (S.tab !== 'admin') go('admin'); return; }
       $('reqBadge').textContent = h.pendingRequests;
       $('reqBadge').classList.toggle('hidden', !h.pendingRequests);
       $('adminBadge').textContent = h.adminMissed ? '!' : '';
@@ -1822,7 +1828,7 @@
       '<div class="field"><label>Join date</label><input id="sfJoin" class="inp" type="date" value="' + esc(e.joinDate) + '"></div></div>' +
       '<div class="field"><label>Phone</label><input id="sfPhone" class="inp" inputmode="tel" value="' + esc(e.phone) + '"></div>' +
       (isNew ? '<div class="field"><label>PIN (4–6 digits)</label><input id="sfPin" class="inp" inputmode="numeric"></div>' : '') +
-      (S.staff.canSetRole && e.role !== 'SUPER_ADMIN' ? '<div class="field"><label>Role</label><select id="sfRole" class="inp"><option value="EMPLOYEE"' + (e.role === 'EMPLOYEE' ? ' selected' : '') + '>Employee</option><option value="ADMIN"' + (e.role === 'ADMIN' ? ' selected' : '') + '>Admin</option></select></div>' : '') +
+      (S.staff.canSetRole && e.role !== 'SUPER_ADMIN' ? '<div class="field"><label>Role</label><select id="sfRole" class="inp"><option value="EMPLOYEE"' + (e.role === 'EMPLOYEE' ? ' selected' : '') + '>Employee</option><option value="ADMIN"' + (e.role === 'ADMIN' ? ' selected' : '') + '>Admin</option><option value="GUARD"' + (e.role === 'GUARD' ? ' selected' : '') + '>Guard (only marks others)</option></select></div>' : '') +
       (isNew ? '' : '<label class="check" style="margin-top:10px"><input type="checkbox" id="sfActive"' + (e.active ? ' checked' : '') + '> Active (untick when someone leaves the company)</label>') +
       '<button class="btn" id="sfSave" onclick="saveStaff(' + i + ')">Save</button>' +
       (isNew ? '' : '<div class="card" style="background:var(--bg);margin-top:16px"><b>Reset PIN</b><div class="row" style="margin-top:8px"><input id="sfNewPin" class="inp" inputmode="numeric" placeholder="New PIN"><button class="btn small" onclick="resetPin(\'' + esc(e.id) + '\')">Reset</button></div></div>') +
