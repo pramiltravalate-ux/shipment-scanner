@@ -114,7 +114,7 @@ GPS, the camera and PDF downloads also work better this way, because the page is
 
 - You can add employees here or in the app (**Admin → Employees**).
 - **PINs are encrypted (hashed) automatically.** A PIN typed into the sheet works once, and is replaced by a code like `sha256$…` after that employee's first login. To reset a PIN, use **Admin → Employees → Edit → Reset PIN**, or type a new plain PIN into the sheet.
-- Role is `EMPLOYEE`, `ADMIN` or `SUPER_ADMIN` (see section 4).
+- Role is `EMPLOYEE`, `ADMIN`, `SUPER_ADMIN` or `GUARD` (see section 4). A guard's salary can be left empty.
 - When someone leaves, untick **Active**. Their history is kept.
 
 ### Holidays tab
@@ -200,6 +200,7 @@ At month end, check **Admin → Payroll** and tap **🔒 Lock month**. After tha
 | `EMPLOYEE` | Own attendance, month, payslip, requests and PIN |
 | `ADMIN` | Only what the super admin allows. Admins can **never change another admin or a super admin**, even with *All employees*. Super admins are also hidden from them. Admins change their own data only with *Edit Own Entries*. Admins' own requests and missed check-outs go to a super admin |
 | `SUPER_ADMIN` | Everything, plus the **Admins** and **Activity** screens, and unlocking months |
+| `GUARD` | **Only** checks other employees in and out (Mark Attendance). A guard is not an employee: no attendance, salary, payslip or requests of their own, can't mark themselves, and isn't counted in Today, Payroll, Summary or the Excel export. Guards can change their own PIN |
 
 Permissions the super admin can give each admin (**Super Admin → Admins**):
 
@@ -231,10 +232,10 @@ Each admin also gets a scope: **All employees** or **Only selected**.
 Every change is written to the **Audit Log** tab.
 
 ### Employees without a smartphone, or who forgot their phone (Admin → Mark Attendance)
-An admin, or anyone you appoint (e.g. a **guard**), can check employees in and out from their own phone:
+An admin or a **guard** can check employees in and out from their own phone:
 - **This phone's GPS** must be at the office, the same radius check as normal. **No selfie** is needed.
 - Every entry records who marked it ("Check-in marked by Guard (E007)"). It shows a 👤 tag on the admin screens and is written to the Audit Log. These entries are not counted as suspicious.
-- **Setting up a guard:** add them as an employee and make them an **Admin** under Super Admin → Admins. Give them **only** *Mark Attendance for Others*, and choose *All employees* or only the people they should mark. They then see just the Mark Attendance screen, and can't see salaries or change anything else.
+- **Setting up a guard:** Super Admin → **Employees → Add**, give them an ID and PIN, leave the salary empty and set **Role = Guard**. You can also type `GUARD` in the Role column of the sheet. After login the guard sees only the Mark Attendance screen, with all employees. They can't mark themselves, admins or super admins. Only super admins can see or change a guard.
 - They can't mark admins, super admins or themselves. Only today's check-in and check-out can be marked here; for other days use Entries.
 
 ### Hindi / English (employees only)

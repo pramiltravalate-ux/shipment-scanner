@@ -23,7 +23,7 @@ const SHEET = {
   SNAPSHOTS: 'Payroll Snapshots',
 };
 
-const ROLES = ['EMPLOYEE', 'ADMIN', 'SUPER_ADMIN'];
+const ROLES = ['EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'GUARD'];
 
 /** What a super admin can allow each admin to do. */
 const PERMISSIONS = [
@@ -332,7 +332,7 @@ function logout(token) {
 }
 
 function changePin(token, oldPin, newPin) {
-  const emp = auth_(token);
+  const emp = auth_(token, true);
   if (!verifyPin_(emp.pin, String(oldPin || '').trim())) throw new Error('Current PIN is wrong.');
   newPin = validPin_(newPin);
   writePin_(emp, newPin);
@@ -372,7 +372,11 @@ function writePin_(emp, pin) {
 /* ------------------------------------------------------------------ */
 
 function getHome(token) {
-  const emp = auth_(token);
+  const emp = auth_(token, true);
+  if (emp.role === 'GUARD') {
+    // No attendance of their own: the app opens straight on Mark Attendance.
+    return { profile: profile_(emp), company: getSettings_().company, guard: true, pendingRequests: 0, adminMissed: 0 };
+  }
   sweepOpenEntries_();
   const s = getSettings_();
   const today = todayStr_();
@@ -734,8 +738,10 @@ function proxyCheckOut(token, empId, lat, lng, accuracy, phoneClock) {
 }
 
 function proxyTarget_(ctx, empId) {
+  if (String(empId || '').trim().toUpperCase() === ctx.emp.id) {
+    throw new Error(ctx.emp.role === 'GUARD' ? 'Guards cannot mark their own attendance.' : 'Use your own Attendance screen to mark your own attendance.');
+  }
   const emp = managedEmployee_(ctx, empId, true);
-  if (emp.id === ctx.emp.id) throw new Error('Use your own Attendance screen to mark your own attendance.');
   if (!emp.active) throw new Error(emp.name + ' is not active.');
   return emp;
 }
@@ -1115,7 +1121,7 @@ function adminStaff(token) {
   const ctx = authAdmin_(token, 'manageEmployees');
   return {
     canSetRole: ctx.perms.superAdmin,
-    list: getEmployees_().filter(e => canEditEmployee_(ctx, e.id)).map(e => ({
+    list: getPeople_().filter(e => canEditEmployee_(ctx, e.id)).map(e => ({
       id: e.id, name: e.name, salary: e.salary, role: e.role, active: e.active, joinDate: e.joinDate, phone: e.phone,
     })),
   };
@@ -1132,7 +1138,7 @@ function adminSaveStaff(token, data) {
   if (!name) throw new Error('Enter the name.');
   if (!isFinite(salary) || salary < 0) throw new Error('Enter a valid monthly salary.');
   let role = String(data.role || 'EMPLOYEE').toUpperCase();
-  if (!ctx.perms.superAdmin || ['EMPLOYEE', 'ADMIN'].indexOf(role) < 0) role = null;
+  if (!ctx.perms.superAdmin || ['EMPLOYEE', 'ADMIN', 'GUARD'].indexOf(role) < 0) role = null;
 
   const sh = sheet_(SHEET.EMPLOYEES);
   const lock = LockService.getScriptLock();
@@ -1683,7 +1689,7 @@ function superAuditLog(token) {
 /* ----------------------- Permission helpers ------------------------ */
 
 function authAdmin_(token, need) {
-  const emp = auth_(token);
+  const emp = auth_(token, true);
   const perms = permsFor_(emp);
   const needs = [].concat(need);
   if (!needs.some(k => perms[k])) {
@@ -1706,6 +1712,7 @@ function permsFor_(emp, saved) {
     PERMISSIONS.forEach(p => { all[p.key] = true; });
     return all;
   }
+  if (emp.role === 'GUARD') return Object.assign(none, { markOthers: true, employees: 'ALL' });
   if (emp.role !== 'ADMIN') return none;
 
   saved = saved || readPermissions_();
@@ -1750,7 +1757,7 @@ function canManage_(ctx, empId) {
   if (ctx.perms.superAdmin) return true;
   if (empId === ctx.emp.id) return true; // everyone can see their own data
   const target = findEmployee_(empId);
-  if (target && target.role === 'SUPER_ADMIN') return false;
+  if (target && (target.role === 'SUPER_ADMIN' || target.role === 'GUARD')) return false;
   const list = ctx.perms.employees;
   return list === 'ALL' || (list || []).indexOf(empId) >= 0;
 }
@@ -1766,7 +1773,7 @@ function canEditEmployee_(ctx, empId) {
   if (ctx.perms.superAdmin) return true;
   if (empId === ctx.emp.id) return !!ctx.perms.editOwn;
   const target = findEmployee_(empId);
-  if (target && (target.role === 'ADMIN' || target.role === 'SUPER_ADMIN')) return false;
+  if (target && target.role !== 'EMPLOYEE') return false;
   return canManage_(ctx, empId);
 }
 
@@ -1775,7 +1782,7 @@ function managedEmployee_(ctx, empId, forEdit) {
   if (!emp) throw new Error('Employee not found.');
   const ok = forEdit ? canEditEmployee_(ctx, emp.id) : canManage_(ctx, emp.id);
   if (!ok) {
-    const why = forEdit && emp.id !== ctx.emp.id && emp.role !== 'EMPLOYEE' ? ' Only a super admin can change an admin\'s data.' : '';
+    const why = forEdit && emp.id !== ctx.emp.id && emp.role !== 'EMPLOYEE' ? ' Only a super admin can change ' + (emp.role === 'GUARD' ? 'a guard' : 'an admin') + '\'s data.' : '';
     throw new Error('You are not allowed to ' + (forEdit ? 'change' : 'view') + ' ' + emp.name + '.' + why);
   }
   return emp;
@@ -2295,11 +2302,13 @@ function payslipHtml_(emp, m) {
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-function auth_(token) {
+/** The logged-in person. Guards are refused unless allowGuard (they only use Mark Attendance and their PIN). */
+function auth_(token, allowGuard) {
   const empId = token ? CacheService.getScriptCache().get('tok_' + token) : null;
   if (!empId) throw new Error('SESSION_EXPIRED');
   const emp = findEmployee_(empId);
   if (!emp || !emp.active) throw new Error('SESSION_EXPIRED');
+  if (emp.role === 'GUARD' && !allowGuard) throw new Error('Guards can only mark attendance for others.');
   return emp;
 }
 
@@ -2453,7 +2462,16 @@ function setSetting_(key, value) {
   forget_('settings');
 }
 
+/**
+ * Everyone in the Employees tab who takes part in attendance and payroll. Guards are left out: they only
+ * mark attendance for others and have no attendance, salary or requests of their own.
+ */
 function getEmployees_() {
+  return getPeople_().filter(e => e.role !== 'GUARD');
+}
+
+/** Every row of the Employees tab, guards included (login, PINs, the Employees screen). */
+function getPeople_() {
   return memo_('employees', () => {
     const values = sheetValues_(SHEET.EMPLOYEES);
     if (!values) sheet_(SHEET.EMPLOYEES); // throws the "run setup()" message
@@ -2488,6 +2506,7 @@ function getEmployees_() {
 function parseRole_(v) {
   const r = String(v || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
   if (r === 'SUPER_ADMIN' || r === 'SUPERADMIN') return 'SUPER_ADMIN';
+  if (r === 'GUARD' || r === 'SECURITY') return 'GUARD';
   return r === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE';
 }
 
@@ -2527,7 +2546,7 @@ function empRow_(emp) {
 }
 
 function findEmployee_(empId) {
-  return getEmployees_().filter(e => e.id === empId)[0] || null;
+  return getPeople_().filter(e => e.id === empId)[0] || null;
 }
 
 function readAttendance_() {
