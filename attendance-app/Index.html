@@ -277,7 +277,7 @@
   var FLAGS = {
     WEAK_GPS: 'Weak GPS', WEAK_GPS_OUT: 'Weak GPS at check-out', REPEAT_GPS: 'Same GPS as another day',
     SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie', NO_CHECKOUT: 'Did not check out',
-    PROXY: 'Check-in marked by guard/admin', PROXY_OUT: 'Check-out marked by guard/admin'
+    PROXY: 'Check-in marked by someone else', PROXY_OUT: 'Check-out marked by someone else'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -291,9 +291,13 @@
     return '<span class="chip s-' + status + '">' + t(STATUS[status]) + '</span>' + (extra || '');
   }
   function lateChip(late) { return late ? ' <span class="chip s-LATE">' + t('Late') + '</span>' : ''; }
-  function flagChips(flags) {
+  /** by = { in: 'Name' | 'Guard (Name)', out: ... }: who marked the check-in / check-out for the employee. */
+  function flagChips(flags, by) {
     var list = Array.isArray(flags) ? flags : String(flags || '').split(/\s+/).filter(String);
+    by = by || {};
     return list.map(function (f) {
+      var who = f === 'PROXY' ? by.in : f === 'PROXY_OUT' ? by.out : null;
+      if (who) return ' <span class="chip s-LEAVE">👤 ' + (f === 'PROXY' ? 'Check-in' : 'Check-out') + ' marked by ' + esc(who) + '</span>';
       return /^PROXY/.test(f) ? ' <span class="chip s-LEAVE">👤 ' + esc(FLAGS[f]) + '</span>' : ' <span class="chip s-FLAG">⚠ ' + esc(FLAGS[f] || f) + '</span>';
     }).join('');
   }
@@ -1135,7 +1139,7 @@
     if (d.autoOut) html += '<div class="msg err">' + (S.viewMonthAdmin ? '⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it.' : t('day.missed')) + '</div>';
     if (d.otPending) html += '<div class="msg warn">' + t('OT {m} waiting for approval', { m: mins(d.otPending) }) + '</div>';
     if (d.otRejected) html += '<div class="msg err">' + t('OT was not approved for this day') + '</div>';
-    if (S.viewMonthAdmin && d.flags) html += '<p>' + flagChips(d.flags) + '</p>';
+    if (S.viewMonthAdmin && d.flags) html += '<p>' + flagChips(d.flags, d.markedBy) + '</p>';
     if (d.note) html += '<div class="msg info">' + t('Note: {n}', { n: esc(d.note) }) + '</div>';
     if (S.viewMonthAdmin && m.canApproveOt && d.otPending) {
       html += '<div class="btns"><button class="btn green" onclick="decideOt(\'' + esc(m.employee.id) + '\',\'' + d.date + '\',true)">Approve OT</button>' +
@@ -1337,6 +1341,11 @@
     if (q) { var si = $('pxSearch'); si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
   }
 
+  function proxyByText(by) {
+    by = by || {};
+    if (by.in && by.out && by.in !== by.out) return 'in by ' + esc(by.in) + ', out by ' + esc(by.out);
+    return 'marked by ' + esc(by.in || by.out || 'someone else');
+  }
   function renderProxyList() {
     var r = S.proxy.data, q = (S.proxy.filter || '').toLowerCase().trim();
     var list = r.list.filter(function (e) { return !q || e.name.toLowerCase().indexOf(q) >= 0 || e.id.toLowerCase().indexOf(q) >= 0; });
@@ -1348,7 +1357,7 @@
         : '<span class="chip s-PRESENT">✓ Done</span>';
       html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
         '<div class="sub">' + (e.in ? 'In ' + esc(e.in) + (e.out ? ' · Out ' + esc(e.out) : '') + (e.date !== r.date ? ' (' + esc(fmtDate(e.date)) + ')' : '') : 'Not checked in') +
-        (e.byOther ? ' · 👤 marked by guard/admin' : '') + '</div></div><div class="right">' + btn + '</div></div>';
+        (e.byOther ? ' · 👤 ' + proxyByText(e.markedBy) : '') + '</div></div><div class="right">' + btn + '</div></div>';
     });
     $('pxList').innerHTML = html;
   }
@@ -1388,7 +1397,7 @@
       r.list.forEach(function (e, i) {
         html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
           '<div class="sub">' + (e.in ? esc(e.in) + ' → ' + esc(e.out || '—') + (e.distance !== '' ? ' · ' + esc(e.distance) + ' m' : '') + (e.accuracy !== '' ? ' · ±' + esc(e.accuracy) + ' m' : '') : 'No check-in yet') + '</div>' +
-          (e.flags.length ? '<div>' + flagChips(e.flags) + '</div>' : '') +
+          (e.flags.length ? '<div>' + flagChips(e.flags, e.markedBy) + '</div>' : '') +
           (e.hasSelfie ? '<button class="link" onclick="viewSelfie(' + i + ')">View selfie</button>' : '') +
           '</div><div class="right">' + chip(e.status) + lateChip(e.late) + '</div></div>';
       });
@@ -1429,7 +1438,7 @@
     var e = S.adminToday[i];
     openModal('<h2 style="margin-top:0">' + esc(e.name) + '</h2><div class="center"><div class="spinner"></div></div>');
     api('adminGetSelfie', S.token, e.row).then(function (src) {
-      openModal('<h2 style="margin-top:0">' + esc(e.name) + ' · ' + esc(e.in) + '</h2><img src="' + src + '">' + (e.flags.length ? '<p>' + flagChips(e.flags) + '</p>' : '') +
+      openModal('<h2 style="margin-top:0">' + esc(e.name) + ' · ' + esc(e.in) + '</h2><img src="' + src + '">' + (e.flags.length ? '<p>' + flagChips(e.flags, e.markedBy) + '</p>' : '') +
         '<button class="btn ghost" onclick="closeModal()">Close</button>');
     }).catch(function (err) {
       openModal(errBox(err) + '<button class="btn ghost" onclick="closeModal()">Close</button>');
@@ -1767,7 +1776,7 @@
     var html = '<h2 style="margin:0">' + esc(en.name) + ' <span class="muted" style="font-weight:400">' + esc(en.empId) + '</span></h2>' +
       '<p style="margin:4px 0 0">' + esc(fmtDate(en.date)) + ' ' + (en.offType ? chip(en.offType) : '') + ' ' +
       (en.exists ? (chip(en.day.status) + lateChip(en.day.late)) : '<span class="chip s-NOT_MARKED">No entry yet</span>') + '</p>' +
-      (en.flags ? '<p>' + flagChips(en.flags) + '</p>' : '') +
+      (en.flags ? '<p>' + flagChips(en.flags, en.markedBy) + '</p>' : '') +
       (en.hasSelfie ? '<p class="muted small">This day was marked from the app (has selfie &amp; location). Changes keep them.</p>' : '') +
       '<div class="grid2"><div class="field"><label>Check-in</label><input id="edIn" class="inp" type="time" value="' + esc(en.in) + '"></div>' +
       '<div class="field"><label>Check-out</label><input id="edOut" class="inp" type="time" value="' + esc(en.out) + '"></div></div>' +

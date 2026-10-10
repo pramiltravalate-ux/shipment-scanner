@@ -38,7 +38,7 @@ const PERMISSIONS = [
   { key: 'viewSplit', label: 'View Bank / Cash Split', help: 'See In Bank and In Cash amounts (others only see Total Salary)' },
   { key: 'exportPayroll', label: 'Export Payroll', help: 'Download the monthly payroll as an Excel file' },
   { key: 'lockPayroll', label: 'Lock Payroll', help: 'Lock a finished month so nothing can change it' },
-  { key: 'markOthers', label: 'Mark Attendance for Others', help: 'Check employees in/out from this phone (no smartphone / forgot phone). Location is checked, no selfie. Give only this to a guard' },
+  { key: 'markOthers', label: 'Mark Attendance for Others', help: 'Check employees in/out from this phone (no smartphone / forgot phone). Location is checked, no selfie' },
   { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF / salary (normally off)' },
 ];
 const PERM_HEADERS = ['Emp ID', 'Name'].concat(PERMISSIONS.map(p => p.label))
@@ -67,7 +67,7 @@ const LOCK_HEADERS = ['Month', 'Locked By', 'Locked At'];
 const SNAP_HEADERS = ['Month', 'Emp ID', 'Name', 'Data (do not edit)'];
 
 const OVERRIDE_VALUES = ['PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE'];
-/** Flags that count as "suspicious" on the admin Today screen (PROXY = marked by a guard/admin is not). */
+/** Flags that count as "suspicious" on the admin Today screen (PROXY = marked by an admin or guard is not). */
 const SUSPICIOUS_FLAGS = ['WEAK_GPS', 'WEAK_GPS_OUT', 'REPEAT_GPS', 'SHARED_GPS', 'NO_SELFIE'];
 
 const DEFAULT_SETTINGS = [
@@ -711,7 +711,7 @@ function proxyList(token) {
       return {
         id: e.id, name: e.name, in: r ? r.in : '', out: r ? r.out : '', date: r ? r.date : today,
         status: r ? evaluateDay_(r, s, offType, r.date === today).status : (offType || 'NOT_MARKED'),
-        byOther: !!(r && /PROXY/.test(r.flags)),
+        byOther: !!(r && /PROXY/.test(r.flags)), markedBy: markedBy_(r),
       };
     }).sort((a, b) => a.name.localeCompare(b.name)),
   };
@@ -735,6 +735,23 @@ function proxyCheckOut(token, empId, lat, lng, accuracy, phoneClock) {
   // Location is always required when marking for someone else.
   const r = checkOutCore_(emp, s, checkLocation_(s, lat, lng, accuracy), ctx.emp);
   return Object.assign(r, { list: proxyList(token).list });
+}
+
+/**
+ * Who checked this record in / out for the employee, from the note written at the time
+ * ("Check-in marked by <name> (<id>)"). Guards show as "Guard (<name>)", everyone else by name.
+ */
+function markedBy_(rec) {
+  const out = {};
+  if (!rec || !/PROXY/.test(rec.flags)) return out;
+  const re = /Check-(in|out) marked by (.+?) \(([^)]+)\)/g;
+  let m;
+  while ((m = re.exec(String(rec.note || '')))) {
+    const p = findEmployee_(m[3]);
+    const name = p ? p.name : m[2];
+    out[m[1]] = p && p.role === 'GUARD' ? 'Guard (' + name + ')' : name;
+  }
+  return out;
 }
 
 function proxyTarget_(ctx, empId) {
@@ -770,7 +787,7 @@ function adminToday(token) {
     return {
       id: e.id, name: e.name, in: r ? r.in : '', out: r ? r.out : '', status: d.status,
       late: !!d.late, worked: d.worked || 0, distance: r ? r.inDist : '', accuracy: r ? r.inAcc : '',
-      row: r ? r.row : 0, hasSelfie: !!(r && r.selfie), flags: flags,
+      row: r ? r.row : 0, hasSelfie: !!(r && r.selfie), flags: flags, markedBy: markedBy_(r),
     };
   });
   list.sort((a, b) => (b.flags.length ? 1 : 0) - (a.flags.length ? 1 : 0) ||
@@ -893,7 +910,7 @@ function adminGetEntry(token, empId, date) {
     in: rec ? rec.in : '', out: rec ? rec.out : '', override: rec ? rec.override : '',
     note: rec ? String(rec.note || '') : '', hasSelfie: !!(rec && rec.selfie),
     otApproved: rec ? rec.otApproved : '', otNeedsApproval: s.otApproval,
-    flags: rec ? rec.flags : '',
+    flags: rec ? rec.flags : '', markedBy: markedBy_(rec),
     day: rec ? evaluateDay_(rec, s, off, date === todayStr_()) : null,
   };
 }
@@ -1994,6 +2011,7 @@ function monthSummary_(emp, ym, s, attByDate, holidays, advanceTotal) {
     if (off === 'HOLIDAY') d.holidayName = holidays[ds];
     if (rec && rec.note) d.note = String(rec.note);
     if (rec && rec.flags) d.flags = rec.flags;
+    if (rec && /PROXY/.test(rec.flags)) d.markedBy = markedBy_(rec);
     if (d.autoOut) t.missedCheckouts++;
     days.push(d);
     if (d.planned) continue; // future leave is shown but not counted yet
