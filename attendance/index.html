@@ -416,7 +416,7 @@
     'PF Employee': 'PF कर्मचारी', 'PF Employer': 'PF नियोक्ता', 'Basic Salary {b}': 'बेसिक वेतन {b}', 'company contribution': 'कंपनी का योगदान',
     // guard: Mark Attendance
     'Mark Attendance': 'हाज़िरी लगाएँ', 'Mark attendance for others': 'दूसरों की हाज़िरी लगाएँ',
-    'proxy.info': 'जिन कर्मचारियों के पास स्मार्टफ़ोन नहीं है या जो फ़ोन भूल गए हैं, उनके लिए। यह फ़ोन ऑफिस में होना चाहिए। सेल्फी की ज़रूरत नहीं। हर एंट्री में आपका नाम दर्ज होता है।',
+    'proxy.info': 'जिन कर्मचारियों के पास स्मार्टफ़ोन नहीं है या जो फ़ोन भूल गए हैं, उनके लिए। यह फ़ोन ऑफिस में होना चाहिए। चेक-इन के समय कर्मचारी की फ़ोटो ली जाती है। हर एंट्री में आपका नाम दर्ज होता है।',
     'proxy.badtime': '⚠ इस फ़ोन का समय सही नहीं है। "स्वचालित दिनांक और समय" चालू करें और रीलोड करें।',
     '🔍 Search name or ID': '🔍 नाम या ID खोजें', "Checking this phone's location…": 'इस फ़ोन की लोकेशन जाँची जा रही है…',
     'Retry location': 'लोकेशन फिर से जाँचें', 'At office': 'ऑफिस में', 'Refresh': 'रीफ़्रेश', 'No employees found.': 'कोई कर्मचारी नहीं मिला।',
@@ -427,6 +427,9 @@
     'Check in {n} now?': '{n} का चेक-इन अभी करें?', 'Check out {n} now?': '{n} का चेक-आउट अभी करें?',
     '{n} checked in at {t}': '{n} का चेक-इन {t} बजे हो गया', '{n} checked out at {t} · {w}': '{n} का चेक-आउट {t} बजे हो गया · {w}',
     'Office location is not set yet.': 'ऑफिस की लोकेशन अभी सेट नहीं है।',
+    'Photo of {n}': '{n} की फ़ोटो', '📸 Take Photo': '📸 फ़ोटो लें', '🔄 Switch camera': '🔄 कैमरा बदलें',
+    'Check In {n}': '{n} का चेक-इन करें', 'proxy.photo': 'चेक-इन के लिए कर्मचारी की फ़ोटो ज़रूरी है। चेहरा साफ़ दिखना चाहिए।',
+    'A photo is required to check in.': 'चेक-इन के लिए फ़ोटो ज़रूरी है।',
     'missed.day.note': 'आधी रात को अपने-आप बंद किया गया और एडमिन के ठीक करने तक {status} गिना जाएगा। कैलेंडर में इसे लाल घेरे से दिखाया गया है।'
   };
 
@@ -449,7 +452,8 @@
     'prorated.note': 'Salary, PF and Basic Salary are shown only for the days passed so far. They grow every day until the month ends.',
     'day.missed': '⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it. Send a correction from Requests.',
     'Attendance (summary)': 'Attendance',
-    'proxy.info': 'For employees without a smartphone or who forgot their phone. This phone must be at the office. No selfie needed. Each entry records your name.',
+    'proxy.info': 'For employees without a smartphone or who forgot their phone. This phone must be at the office. A photo of the employee is taken at check-in. Each entry records your name.',
+    'proxy.photo': 'A photo of the employee is required to check in. Their face must be clearly visible.',
     'proxy.badtime': '⚠ This phone\'s time is not correct. Turn ON "Automatic date &amp; time" and reload.'
   };
 
@@ -486,6 +490,7 @@
     [/^(.+) has not checked in today\.$/, '$1 का आज चेक-इन नहीं हुआ है।'],
     [/^(.+) has already checked out today \(at (.+)\)\.$/, '$1 का आज चेक-आउट पहले ही हो चुका है ($2 बजे)।'],
     [/^(.+) is not active\.$/, '$1 सक्रिय नहीं है।'],
+    [/^Take a photo of (.+) to check them in\.$/, 'चेक-इन के लिए $1 की फ़ोटो लें।'],
     [/^Guards cannot mark their own attendance\.$/, 'गार्ड अपनी हाज़िरी नहीं लगा सकते।'],
     [/^Office location is not set\..*$/, 'ऑफिस की लोकेशन सेट नहीं है। एडमिन से संपर्क करें।'],
     [/^Session expired\..*$/, 'सेशन खत्म हो गया। कृपया फिर से लॉगिन करें।'],
@@ -928,6 +933,11 @@
 
   $('selfieInput').addEventListener('change', function () {
     var file = this.files && this.files[0];
+    this.setAttribute('capture', 'user');
+    if (file && S.pxPhoto && !S.pxPhoto.data && $('modal') && !$('modal').classList.contains('hidden')) {
+      compressImage(file, 640, 0.72).then(proxyPhotoReady).catch(function () { toast(t('Could not read the photo. Please try again.')); });
+      return;
+    }
     if (!file || !S.flow) return;
     compressImage(file, 640, 0.72).then(function (dataUrl) {
       S.flow.selfie = dataUrl; renderFlow();
@@ -1390,15 +1400,71 @@
     var e = S.proxy.data.list[i];
     if (!proxyTimeOk()) return toast(t('Phone time is not correct. Turn on automatic date & time.'));
     if (!proxyPosFresh()) { proxyLocate(); return toast(t('Checking location… tap again in a moment')); }
-    if (!confirm(t(mode === 'in' ? 'Check in {n} now?' : 'Check out {n} now?', { n: e.name }))) return;
+    if (mode === 'in') return proxyPhoto(i); // check-in needs a photo of the employee first
+    if (!confirm(t('Check out {n} now?', { n: e.name }))) return;
+    proxySubmit(i, mode, btn, null);
+  }
+
+  /* Photo of the employee for a check-in marked by someone else (compulsory). Front camera first (🔄 switches). */
+  function proxyPhoto(i) {
+    S.pxPhoto = { i: i, data: null, facing: 'user' };
+    proxyCamera();
+  }
+  function proxyCamera() {
+    var ph = S.pxPhoto, e = S.proxy.data.list[ph.i];
+    stopCamera();
+    var head = '<h2 style="margin-top:0">' + t('Photo of {n}', { n: esc(e.name) }) + '</h2><p class="muted small" style="margin:-6px 0 8px">' + t('proxy.photo') + '</p>';
+    var live = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    if (!live) { openModal(head + '<div class="center"><div class="spinner"></div></div>'); return proxyPhotoFile(); }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: ph.facing, width: { ideal: 720 } }, audio: false }).then(function (stream) {
+      S.camStream = stream;
+      openModal(head + '<video id="camVideo" class="cam" autoplay playsinline muted' + (ph.facing === 'user' ? '' : ' style="transform:none"') + '></video>' +
+        '<button class="btn green" onclick="proxySnap()">' + t('📸 Take Photo') + '</button>' +
+        '<div class="btns"><button class="btn ghost" onclick="S.pxPhoto.facing=S.pxPhoto.facing===\'user\'?\'environment\':\'user\';proxyCamera()">' + t('🔄 Switch camera') + '</button>' +
+        '<button class="btn ghost" onclick="closeModal()">' + t('Cancel') + '</button></div>');
+      $('camVideo').srcObject = stream;
+    }).catch(function () { openModal(head + '<div class="center"><div class="spinner"></div></div>'); proxyPhotoFile(); });
+  }
+  function proxyPhotoFile() {
+    var inp = $('selfieInput');
+    inp.setAttribute('capture', S.pxPhoto.facing); inp.value = ''; inp.click();
+  }
+  function proxySnap() {
+    var v = $('camVideo'), ph = S.pxPhoto;
+    if (!v || !v.videoWidth) return toast(t('Camera is starting, try again'));
+    var scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+    var c = document.createElement('canvas');
+    c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+    var ctx = c.getContext('2d');
+    if (ph.facing === 'user') { ctx.translate(c.width, 0); ctx.scale(-1, 1); } // mirror like the preview
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    proxyPhotoReady(c.toDataURL('image/jpeg', 0.72));
+  }
+  function proxyPhotoReady(dataUrl) {
+    var ph = S.pxPhoto, e = S.proxy.data.list[ph.i];
+    ph.data = dataUrl;
+    stopCamera();
+    openModal('<h2 style="margin-top:0">' + t('Photo of {n}', { n: esc(e.name) }) + '</h2><img class="selfie-preview" src="' + dataUrl + '">' +
+      '<button class="btn green" id="pxConfirm" onclick="proxySubmit(S.pxPhoto.i,\'in\',this,S.pxPhoto.data)">' + t('Check In {n}', { n: esc(e.name) }) + '</button>' +
+      '<div class="btns"><button class="btn ghost" onclick="proxyCamera()">' + t('Retake') + '</button><button class="btn ghost" onclick="closeModal()">' + t('Cancel') + '</button></div>');
+  }
+
+  function proxySubmit(i, mode, btn, photo) {
+    var e = S.proxy.data.list[i];
+    if (mode === 'in' && !photo) return toast(t('A photo is required to check in.'));
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
     var p = S.proxy.pos;
-    api(mode === 'in' ? 'proxyCheckIn' : 'proxyCheckOut', S.token, e.id, p.lat, p.lng, p.accuracy, phoneClock()).then(function (r) {
+    var call = mode === 'in' ? api('proxyCheckIn', S.token, e.id, p.lat, p.lng, p.accuracy, phoneClock(), photo)
+      : api('proxyCheckOut', S.token, e.id, p.lat, p.lng, p.accuracy, phoneClock());
+    call.then(function (r) {
+      if (mode === 'in') { S.pxPhoto = null; closeModal(); }
       S.proxy.data.list = r.list;
       renderProxyList();
       toast(mode === 'in' ? t('{n} checked in at {t}', { n: e.name, t: r.time }) + (r.late ? t(' (Late)') : '')
         : t('{n} checked out at {t} · {w}', { n: e.name, t: r.time, w: hrs(r.worked) }));
-    }).catch(function (err) { btn.disabled = false; btn.textContent = t(mode === 'in' ? 'Check In' : 'Check Out'); toast(err.message); });
+    }).catch(function (err) {
+      btn.disabled = false; btn.textContent = mode === 'in' ? t('Check In {n}', { n: e.name }) : t('Check Out'); toast(err.message);
+    });
   }
 
   /* ---------- Today ---------- */

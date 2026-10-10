@@ -38,7 +38,7 @@ const PERMISSIONS = [
   { key: 'viewSplit', label: 'View Bank / Cash Split', help: 'See In Bank and In Cash amounts (others only see Total Salary)' },
   { key: 'exportPayroll', label: 'Export Payroll', help: 'Download the monthly payroll as an Excel file' },
   { key: 'lockPayroll', label: 'Lock Payroll', help: 'Lock a finished month so nothing can change it' },
-  { key: 'markOthers', label: 'Mark Attendance for Others', help: 'Check employees in/out from this phone (no smartphone / forgot phone). Location is checked, no selfie' },
+  { key: 'markOthers', label: 'Mark Attendance for Others', help: 'Check employees in/out from this phone (no smartphone / forgot phone). Location is checked and a photo of the employee is required at check-in' },
   { key: 'editOwn', label: 'Edit Own Entries', help: 'Change their own attendance / PF / salary (normally off)' },
 ];
 const PERM_HEADERS = ['Emp ID', 'Name'].concat(PERMISSIONS.map(p => p.label))
@@ -421,7 +421,7 @@ function checkIn(token, lat, lng, accuracy, selfieDataUrl, phoneClock) {
 
 /**
  * Check-in for emp. byEmp = the person marking it for them (admin / guard), or null when the employee
- * marks it on their own phone. Marked-for-others check-ins need no selfie and are flagged PROXY.
+ * marks it on their own phone. Marked-for-others check-ins carry the marker's photo of the employee and are flagged PROXY.
  */
 function checkInCore_(emp, s, loc, selfieDataUrl, byEmp) {
   const who = byEmp ? emp.name + ' has' : 'You have';
@@ -716,13 +716,17 @@ function proxyList(token) {
   };
 }
 
-/** Check-in for an employee without a phone. The marker's phone must be at the office; no selfie. */
-function proxyCheckIn(token, empId, lat, lng, accuracy, phoneClock) {
+/**
+ * Check-in for an employee without a phone. The marker's phone must be at the office, and a photo of the
+ * employee (taken on the marker's phone) is always required.
+ */
+function proxyCheckIn(token, empId, lat, lng, accuracy, phoneClock, photoDataUrl) {
   const ctx = authAdmin_(token, 'markOthers');
   const emp = proxyTarget_(ctx, empId);
   const s = getSettings_();
   checkPhoneClock_(s, phoneClock);
-  const r = checkInCore_(emp, s, checkLocation_(s, lat, lng, accuracy), null, ctx.emp);
+  if (!/^data:image\//.test(String(photoDataUrl || ''))) throw new Error('Take a photo of ' + emp.name + ' to check them in.');
+  const r = checkInCore_(emp, s, checkLocation_(s, lat, lng, accuracy), photoDataUrl, ctx.emp);
   return Object.assign(r, { list: proxyList(token).list });
 }
 
