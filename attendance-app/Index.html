@@ -1852,7 +1852,18 @@
     if (isNew) data.pin = $('sfPin').value; else data.active = $('sfActive').checked;
     if ($('sfRole')) data.role = $('sfRole').value;
     $('sfSave').disabled = true;
-    api('adminSaveStaff', S.token, data).then(function (r) { closeModal(); renderStaff(r); toast('Saved'); })
+    api('adminSaveStaff', S.token, data).then(function (r) {
+      var saved = (r.list || []).filter(function (e) { return e.id === String(data.id).trim().toUpperCase(); })[0];
+      if (data.role && saved && saved.role !== data.role) {
+        // An older Code.gs ignores roles it doesn't know (e.g. Guard) and keeps Employee.
+        renderStaff(r);
+        $('sfSave').disabled = false;
+        $('sfMsg').innerHTML = errBox('The role was not saved: the Apps Script server is running older code. Paste the latest Code.gs ' +
+          'into Apps Script, then Deploy → Manage deployments → ✏ Edit → New version → Deploy, and save again.');
+        return;
+      }
+      closeModal(); renderStaff(r); toast('Saved');
+    })
       .catch(function (e) { $('sfSave').disabled = false; $('sfMsg').innerHTML = errBox(e); });
   }
 

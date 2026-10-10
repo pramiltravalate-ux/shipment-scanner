@@ -245,8 +245,7 @@ function setup() {
   ensureHeaders_(sh, EMP_HEADERS);
   sh.getRange('A:A').setNumberFormat('@');
   sh.getRange('C:C').setNumberFormat('@');
-  sh.getRange('E2:E').setDataValidation(SpreadsheetApp.newDataValidation()
-    .requireValueInList(ROLES, true).build());
+  roleValidation_(sh);
   const yesNo = SpreadsheetApp.newDataValidation().requireValueInList(['Yes', 'No'], true).build();
   sh.getRange('F2:F').setDataValidation(yesNo);
   const pfCol = headerIndex_(sh)['PF Active'] + 1;
@@ -1156,6 +1155,7 @@ function adminSaveStaff(token, data) {
   if (!isFinite(salary) || salary < 0) throw new Error('Enter a valid monthly salary.');
   let role = String(data.role || 'EMPLOYEE').toUpperCase();
   if (!ctx.perms.superAdmin || ['EMPLOYEE', 'ADMIN', 'GUARD'].indexOf(role) < 0) role = null;
+  if (role) roleValidation_(); // sheets set up before Guard existed still have the old Role dropdown
 
   const sh = sheet_(SHEET.EMPLOYEES);
   const lock = LockService.getScriptLock();
@@ -2519,6 +2519,13 @@ function getPeople_() {
         };
       });
   });
+}
+
+/** Role column dropdown in the Employees tab (EMPLOYEE / ADMIN / SUPER_ADMIN / GUARD). */
+function roleValidation_(sh) {
+  sh = sh || sheet_(SHEET.EMPLOYEES);
+  sh.getRange('E2:E').setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList(ROLES, true).build());
 }
 
 function parseRole_(v) {
