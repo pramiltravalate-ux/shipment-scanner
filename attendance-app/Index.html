@@ -414,6 +414,19 @@
     'Paid leave · {d}': 'सवेतन छुट्टी · {d}', 'Unpaid leave · {d}': 'बिना वेतन छुट्टी · {d}', 'Correction · {d} · {i} → {o}': 'सुधार · {d} · {i} → {o}',
     'today': 'आज', 'Leaves': 'छुट्टियाँ', '{n} days': '{n} दिन', 'Late marks cut': 'देर से आने की कटौती',
     'PF Employee': 'PF कर्मचारी', 'PF Employer': 'PF नियोक्ता', 'Basic Salary {b}': 'बेसिक वेतन {b}', 'company contribution': 'कंपनी का योगदान',
+    // guard: Mark Attendance
+    'Mark Attendance': 'हाज़िरी लगाएँ', 'Mark attendance for others': 'दूसरों की हाज़िरी लगाएँ',
+    'proxy.info': 'जिन कर्मचारियों के पास स्मार्टफ़ोन नहीं है या जो फ़ोन भूल गए हैं, उनके लिए। यह फ़ोन ऑफिस में होना चाहिए। सेल्फी की ज़रूरत नहीं। हर एंट्री में आपका नाम दर्ज होता है।',
+    'proxy.badtime': '⚠ इस फ़ोन का समय सही नहीं है। "स्वचालित दिनांक और समय" चालू करें और रीलोड करें।',
+    '🔍 Search name or ID': '🔍 नाम या ID खोजें', "Checking this phone's location…": 'इस फ़ोन की लोकेशन जाँची जा रही है…',
+    'Retry location': 'लोकेशन फिर से जाँचें', 'At office': 'ऑफिस में', 'Refresh': 'रीफ़्रेश', 'No employees found.': 'कोई कर्मचारी नहीं मिला।',
+    '✓ Done': '✓ पूरा', 'Not checked in': 'चेक-इन नहीं हुआ', 'In {t}': 'अंदर {t}', 'Out {t}': 'बाहर {t}',
+    'marked by {n}': '{n} ने लगाई', 'in by {a}, out by {b}': 'चेक-इन {a}, चेक-आउट {b}', 'someone else': 'किसी और',
+    'Phone time is not correct. Turn on automatic date & time.': 'फ़ोन का समय सही नहीं है। स्वचालित दिनांक और समय चालू करें।',
+    'Checking location… tap again in a moment': 'लोकेशन जाँची जा रही है… थोड़ी देर में फिर से टैप करें',
+    'Check in {n} now?': '{n} का चेक-इन अभी करें?', 'Check out {n} now?': '{n} का चेक-आउट अभी करें?',
+    '{n} checked in at {t}': '{n} का चेक-इन {t} बजे हो गया', '{n} checked out at {t} · {w}': '{n} का चेक-आउट {t} बजे हो गया · {w}',
+    'Office location is not set yet.': 'ऑफिस की लोकेशन अभी सेट नहीं है।',
     'missed.day.note': 'आधी रात को अपने-आप बंद किया गया और एडमिन के ठीक करने तक {status} गिना जाएगा। कैलेंडर में इसे लाल घेरे से दिखाया गया है।'
   };
 
@@ -435,13 +448,15 @@
     'ot.pending': '{m} OT is waiting for admin approval (not counted yet).',
     'prorated.note': 'Salary, PF and Basic Salary are shown only for the days passed so far. They grow every day until the month ends.',
     'day.missed': '⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it. Send a correction from Requests.',
-    'Attendance (summary)': 'Attendance'
+    'Attendance (summary)': 'Attendance',
+    'proxy.info': 'For employees without a smartphone or who forgot their phone. This phone must be at the office. No selfie needed. Each entry records your name.',
+    'proxy.badtime': '⚠ This phone\'s time is not correct. Turn ON "Automatic date &amp; time" and reload.'
   };
 
   /** Hindi is used only for employees who switched to it; admins always see English. */
   function isHi() {
     var role = S.profile ? S.profile.role : (S.token ? load('att_role') : null); // att_role: before the first server answer
-    return load('att_lang') === 'hi' && role === 'EMPLOYEE';
+    return load('att_lang') === 'hi' && (role === 'EMPLOYEE' || role === 'GUARD');
   }
 
   /** Translates an English text (or key) and fills {placeholders}. */
@@ -465,6 +480,13 @@
     [/^Selfie missing\..*$/, 'सेल्फी नहीं है। चेक-इन के लिए सेल्फी लें।'],
     [/^Your phone time is not correct\..*$/, 'आपके फ़ोन का समय सही नहीं है। फ़ोन की सेटिंग्स → दिनांक और समय में "स्वचालित दिनांक और समय" और "स्वचालित समय क्षेत्र" चालू करें, फिर ऐप दोबारा खोलें।'],
     [/^Please reload the app and try again\.$/, 'कृपया ऐप रीलोड करके फिर से कोशिश करें।'],
+    [/^This phone is (\d+) m from the office\. It must be within (\d+) m\.$/, 'यह फ़ोन ऑफिस से $1 मीटर दूर है। इसे $2 मीटर के अंदर होना चाहिए।'],
+    [/^GPS signal is weak \(±(\d+) m\)\.$/, 'GPS सिग्नल कमज़ोर है (±$1 मीटर)। खिड़की के पास या खुली जगह पर जाएँ।'],
+    [/^(.+) has already checked in today\.$/, '$1 का आज चेक-इन पहले ही हो चुका है।'],
+    [/^(.+) has not checked in today\.$/, '$1 का आज चेक-इन नहीं हुआ है।'],
+    [/^(.+) has already checked out today \(at (.+)\)\.$/, '$1 का आज चेक-आउट पहले ही हो चुका है ($2 बजे)।'],
+    [/^(.+) is not active\.$/, '$1 सक्रिय नहीं है।'],
+    [/^Guards cannot mark their own attendance\.$/, 'गार्ड अपनी हाज़िरी नहीं लगा सकते।'],
     [/^Office location is not set\..*$/, 'ऑफिस की लोकेशन सेट नहीं है। एडमिन से संपर्क करें।'],
     [/^Session expired\..*$/, 'सेशन खत्म हो गया। कृपया फिर से लॉगिन करें।'],
     [/^Current PIN is wrong\.$/, 'मौजूदा पिन गलत है।'],
@@ -506,7 +528,7 @@
 
   /** English | हिंदी switch (employees only). */
   function langSwitch() {
-    if (!S.profile || S.profile.role !== 'EMPLOYEE') return '';
+    if (!S.profile || (S.profile.role !== 'EMPLOYEE' && S.profile.role !== 'GUARD')) return '';
     var hi = load('att_lang') === 'hi';
     return '<div class="lang"><button class="' + (hi ? '' : 'on') + '" onclick="setLang(\'en\')">English</button>' +
       '<button class="' + (hi ? 'on' : '') + '" onclick="setLang(\'hi\')">हिंदी</button></div>';
@@ -524,6 +546,7 @@
     $('navHome').textContent = t('Attendance');
     $('navMonth').textContent = t('My Month');
     $('navReq').textContent = t('Requests');
+    if (S.home && S.home.guard) $('navAdminLabel').textContent = t('Mark Attendance');
   }
 
 
@@ -723,7 +746,7 @@
       $('hdrName').textContent = h.profile.name;
       $('hdrSub').textContent = h.profile.id + ' · ' + h.company;
       $('navAdmin').classList.toggle('hidden', h.profile.role === 'EMPLOYEE');
-      $('navAdminLabel').textContent = h.guard ? 'Mark Attendance' : h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
+      $('navAdminLabel').textContent = h.guard ? t('Mark Attendance') : h.profile.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin';
       // A guard has no attendance of their own: only the Mark Attendance screen.
       ['home', 'month', 'requests'].forEach(function (tab) {
         document.querySelector('.nav button[data-tab="' + tab + '"]').classList.toggle('hidden', !!h.guard);
@@ -1268,8 +1291,8 @@
     var tabs = ADMIN_TABS.filter(function (t) { return can(t.perm); });
     if (!tabs.length) { setError('You have no admin permissions yet. Ask the super admin.'); return; }
     if (!tabs.some(function (t) { return t.key === a.tab; })) a.tab = tabs[0].key;
-    var html = '<div class="tabs">' + tabs.map(function (t) {
-      return '<button class="' + (a.tab === t.key ? 'on' : '') + '" onclick="adminTab(\'' + t.key + '\')">' + t.label + '</button>';
+    var html = '<div class="tabs">' + tabs.map(function (tb) {
+      return '<button class="' + (a.tab === tb.key ? 'on' : '') + '" onclick="adminTab(\'' + tb.key + '\')">' + t(tb.label) + '</button>';
     }).join('') + '</div><div id="adminBody"></div>';
     $('content').innerHTML = html;
     var on = document.querySelector('.tabs .on');
@@ -1311,7 +1334,7 @@
     getBestPosition(o.maxAccuracy).then(function (p) {
       p.at = Date.now();
       p.distance = distance(p.lat, p.lng, o.lat, o.lng);
-      if (o.lat == null) p.error = 'Office location is not set yet.';
+      if (o.lat == null) p.error = t('Office location is not set yet.');
       else if (p.accuracy > o.maxAccuracy) p.error = 'GPS signal is weak (±' + Math.round(p.accuracy) + ' m). Move near a window or open area.';
       else if (p.distance > o.radius) p.error = 'This phone is ' + Math.round(p.distance) + ' m from the office. It must be within ' + o.radius + ' m.';
       S.proxy.pos = p; renderProxyLoc();
@@ -1321,19 +1344,20 @@
   function renderProxyLoc() {
     var el = $('pxLoc'); if (!el) return;
     var p = S.proxy.pos || {};
-    el.innerHTML = p.locating ? '<span class="spinner"></span> <span class="muted">Checking this phone\'s location…</span>'
-      : p.error ? errBox(p.error) + '<button class="btn small ghost" style="margin-top:8px" onclick="proxyLocate()">Retry location</button>'
-      : '<div class="row"><span>📍 <b style="color:var(--green)">At office</b> <span class="muted small">' + Math.round(p.distance) + ' m · ±' + Math.round(p.accuracy) + ' m</span></span>' +
-        '<button class="link" onclick="proxyLocate()">Refresh</button></div>';
+    el.innerHTML = p.locating ? '<span class="spinner"></span> <span class="muted">' + t("Checking this phone's location…") + '</span>'
+      : p.error ? errBox(p.error) + '<button class="btn small ghost" style="margin-top:8px" onclick="proxyLocate()">' + t('Retry location') + '</button>'
+      : '<div class="row"><span>📍 <b style="color:var(--green)">' + t('At office') + '</b> <span class="muted small">' + Math.round(p.distance) + ' m · ±' + Math.round(p.accuracy) + ' m</span></span>' +
+        '<button class="link" onclick="proxyLocate()">' + t('Refresh') + '</button></div>';
   }
 
   function renderProxy() {
     var r = S.proxy.data, q = (S.proxy.filter || '').toLowerCase();
-    var html = '<div class="card"><h2>Mark attendance for others</h2>' +
-      '<p class="muted small" style="margin:-6px 0 8px">For employees without a smartphone or who forgot their phone. This phone must be at the office. No selfie needed. Each entry records your name.</p>' +
-      (proxyTimeOk() ? '' : '<div class="msg err">⚠ This phone\'s time is not correct. Turn ON "Automatic date &amp; time" and reload.</div>') +
+    var sw = langSwitch(); // guards only (admins see English)
+    var html = '<div class="card">' + (sw ? '<div class="center">' + sw + '</div>' : '') + '<h2>' + t('Mark attendance for others') + '</h2>' +
+      '<p class="muted small" style="margin:-6px 0 8px">' + t('proxy.info') + '</p>' +
+      (proxyTimeOk() ? '' : '<div class="msg err">' + t('proxy.badtime') + '</div>') +
       '<div id="pxLoc"></div></div>';
-    html += '<div class="card"><input class="inp" id="pxSearch" placeholder="🔍 Search name or ID" value="' + esc(S.proxy.filter || '') + '" oninput="S.proxy.filter=this.value;renderProxyList()">' +
+    html += '<div class="card"><input class="inp" id="pxSearch" placeholder="' + t('🔍 Search name or ID') + '" value="' + esc(S.proxy.filter || '') + '" oninput="S.proxy.filter=this.value;renderProxyList()">' +
       '<div id="pxList" style="margin-top:8px"></div></div>';
     adminBody(html);
     renderProxyLoc();
@@ -1343,20 +1367,20 @@
 
   function proxyByText(by) {
     by = by || {};
-    if (by.in && by.out && by.in !== by.out) return 'in by ' + esc(by.in) + ', out by ' + esc(by.out);
-    return 'marked by ' + esc(by.in || by.out || 'someone else');
+    if (by.in && by.out && by.in !== by.out) return t('in by {a}, out by {b}', { a: esc(by.in), b: esc(by.out) });
+    return t('marked by {n}', { n: esc(by.in || by.out || t('someone else')) });
   }
   function renderProxyList() {
     var r = S.proxy.data, q = (S.proxy.filter || '').toLowerCase().trim();
     var list = r.list.filter(function (e) { return !q || e.name.toLowerCase().indexOf(q) >= 0 || e.id.toLowerCase().indexOf(q) >= 0; });
-    var html = list.length ? '' : '<p class="muted">No employees found.</p>';
+    var html = list.length ? '' : '<p class="muted">' + t('No employees found.') + '</p>';
     list.forEach(function (e) {
       var i = r.list.indexOf(e);
-      var btn = !e.in ? '<button class="btn small green" onclick="proxyMark(' + i + ',\'in\',this)">Check In</button>'
-        : !e.out ? '<button class="btn small red" onclick="proxyMark(' + i + ',\'out\',this)">Check Out</button>'
-        : '<span class="chip s-PRESENT">✓ Done</span>';
+      var btn = !e.in ? '<button class="btn small green" onclick="proxyMark(' + i + ',\'in\',this)">' + t('Check In') + '</button>'
+        : !e.out ? '<button class="btn small red" onclick="proxyMark(' + i + ',\'out\',this)">' + t('Check Out') + '</button>'
+        : '<span class="chip s-PRESENT">' + t('✓ Done') + '</span>';
       html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
-        '<div class="sub">' + (e.in ? 'In ' + esc(e.in) + (e.out ? ' · Out ' + esc(e.out) : '') + (e.date !== r.date ? ' (' + esc(fmtDate(e.date)) + ')' : '') : 'Not checked in') +
+        '<div class="sub">' + (e.in ? t('In {t}', { t: esc(e.in) }) + (e.out ? ' · ' + t('Out {t}', { t: esc(e.out) }) : '') + (e.date !== r.date ? ' (' + esc(fmtDate(e.date)) + ')' : '') : t('Not checked in')) +
         (e.byOther ? ' · 👤 ' + proxyByText(e.markedBy) : '') + '</div></div><div class="right">' + btn + '</div></div>';
     });
     $('pxList').innerHTML = html;
@@ -1364,16 +1388,17 @@
 
   function proxyMark(i, mode, btn) {
     var e = S.proxy.data.list[i];
-    if (!proxyTimeOk()) return toast('Phone time is not correct. Turn on automatic date & time.');
-    if (!proxyPosFresh()) { proxyLocate(); return toast('Checking location… tap again in a moment'); }
-    if (!confirm((mode === 'in' ? 'Check in ' : 'Check out ') + e.name + ' now?')) return;
+    if (!proxyTimeOk()) return toast(t('Phone time is not correct. Turn on automatic date & time.'));
+    if (!proxyPosFresh()) { proxyLocate(); return toast(t('Checking location… tap again in a moment')); }
+    if (!confirm(t(mode === 'in' ? 'Check in {n} now?' : 'Check out {n} now?', { n: e.name }))) return;
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
     var p = S.proxy.pos;
     api(mode === 'in' ? 'proxyCheckIn' : 'proxyCheckOut', S.token, e.id, p.lat, p.lng, p.accuracy, phoneClock()).then(function (r) {
       S.proxy.data.list = r.list;
       renderProxyList();
-      toast(e.name + (mode === 'in' ? ' checked in at ' + r.time + (r.late ? ' (Late)' : '') : ' checked out at ' + r.time + ' · ' + hrs(r.worked)));
-    }).catch(function (err) { btn.disabled = false; btn.textContent = mode === 'in' ? 'Check In' : 'Check Out'; toast(err.message); });
+      toast(mode === 'in' ? t('{n} checked in at {t}', { n: e.name, t: r.time }) + (r.late ? t(' (Late)') : '')
+        : t('{n} checked out at {t} · {w}', { n: e.name, t: r.time, w: hrs(r.worked) }));
+    }).catch(function (err) { btn.disabled = false; btn.textContent = t(mode === 'in' ? 'Check In' : 'Check Out'); toast(err.message); });
   }
 
   /* ---------- Today ---------- */

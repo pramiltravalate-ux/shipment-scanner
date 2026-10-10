@@ -238,11 +238,11 @@ An admin or a **guard** can check employees in and out from their own phone:
 - **Setting up a guard:** Super Admin → **Employees → Add**, give them an ID and PIN, leave the salary empty and set **Role = Guard**. You can also type `GUARD` in the Role column of the sheet. After login the guard sees only the Mark Attendance screen, with all employees. They can't mark themselves, admins or super admins. Only super admins can see or change a guard.
 - They can't mark admins, super admins or themselves. Only today's check-in and check-out can be marked here; for other days use Entries.
 
-### Hindi / English (employees only)
-Employees see an **English | हिंदी** switch at the top of the Attendance screen.
+### Hindi / English (employees and guards)
+Employees see an **English | हिंदी** switch at the top of the Attendance screen. Guards see it at the top of their Mark Attendance screen, and in Hindi that whole screen is in Hindi too.
 - In Hindi, all of the employee's screens are in Hindi: Attendance, My Month, Requests, the PIN screen and the error messages (for example "too far from the office").
 - Numbers, amounts, times and dates stay in English digits (₹4,355 · 09:30 · 10 अक्टूबर 2026).
-- The phone remembers the choice. The login screen, the payslip and all admin and super-admin screens stay in English. Admins and guards don't see the switch.
+- The phone remembers the choice. The login screen, the payslip and all admin and super-admin screens stay in English. Admins and super admins don't see the switch.
 
 ## 5. Things to know
 
