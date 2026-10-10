@@ -237,6 +237,12 @@ An admin, or anyone you appoint (e.g. a **guard**), can check employees in and o
 - **Setting up a guard:** add them as an employee and make them an **Admin** under Super Admin → Admins. Give them **only** *Mark Attendance for Others*, and choose *All employees* or only the people they should mark. They then see just the Mark Attendance screen, and can't see salaries or change anything else.
 - They can't mark admins, super admins or themselves. Only today's check-in and check-out can be marked here; for other days use Entries.
 
+### Hindi / English (employees only)
+Employees see an **English | हिंदी** switch at the top of the Attendance screen.
+- In Hindi, all of the employee's screens are in Hindi: Attendance, My Month, Requests, the PIN screen and the error messages (for example "too far from the office").
+- Numbers, amounts, times and dates stay in English digits (₹4,355 · 09:30 · 10 अक्टूबर 2026).
+- The phone remembers the choice. The login screen, the payslip and all admin and super-admin screens stay in English. Admins and guards don't see the switch.
+
 ## 5. Things to know
 
 - **30 m is tight.** Indoor GPS is often only accurate to 10–40 m. If genuine employees get "too far" errors, raise the radius to 50 m or raise *Max GPS Accuracy*. Test from different corners of the office first.
