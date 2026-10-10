@@ -178,6 +178,9 @@
     .tabs { display: flex; background: var(--card); border-radius: 14px; padding: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(20,30,60,.07); overflow-x: auto; }
     .tabs button { flex: 1 0 auto; padding: 10px 14px; border-radius: 10px; background: none; color: var(--muted); font-weight: 600; white-space: nowrap; }
     .tabs button.on { background: var(--brand); color: #fff; }
+    .lang { display: inline-flex; background: var(--gray-soft); border-radius: 10px; padding: 3px; margin-bottom: 8px; }
+    .lang button { padding: 6px 14px; border-radius: 8px; background: none; color: var(--muted); font-weight: 600; font-size: 13px; }
+    .lang button.on { background: var(--brand); color: #fff; }
     .checklist { max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
     .checklist label, label.check { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; }
     .checklist label + label { border-top: 1px solid var(--line); }
@@ -236,8 +239,8 @@
         <small id="hdrSub"></small>
       </div>
       <div style="display:flex;gap:6px">
-        <button class="hbtn" onclick="openChangePin()">PIN</button>
-        <button class="hbtn" onclick="doLogout()">Logout</button>
+        <button class="hbtn" id="btnPin" onclick="openChangePin()">PIN</button>
+        <button class="hbtn" id="btnLogout" onclick="doLogout()">Logout</button>
       </div>
     </div>
   </div>
@@ -245,9 +248,9 @@
 
   <div class="nav">
     <div class="in">
-      <button data-tab="home" onclick="go('home')"><span class="ic">⏱</span>Attendance</button>
-      <button data-tab="month" onclick="go('month')"><span class="ic">📅</span>My Month</button>
-      <button data-tab="requests" onclick="go('requests')"><span class="ic">📝</span>Requests<span id="reqBadge" class="badge hidden"></span></button>
+      <button data-tab="home" onclick="go('home')"><span class="ic">⏱</span><span id="navHome">Attendance</span></button>
+      <button data-tab="month" onclick="go('month')"><span class="ic">📅</span><span id="navMonth">My Month</span></button>
+      <button data-tab="requests" onclick="go('requests')"><span class="ic">📝</span><span id="navReq">Requests</span><span id="reqBadge" class="badge hidden"></span></button>
       <button data-tab="admin" id="navAdmin" class="hidden" onclick="go('admin')"><span class="ic">🛠</span><span id="navAdminLabel">Admin</span><span id="adminBadge" class="badge hidden"></span></button>
     </div>
   </div>
@@ -285,9 +288,9 @@
   }
   function chip(status, extra) {
     if (!STATUS[status]) return '';
-    return '<span class="chip s-' + status + '">' + STATUS[status] + '</span>' + (extra || '');
+    return '<span class="chip s-' + status + '">' + t(STATUS[status]) + '</span>' + (extra || '');
   }
-  function lateChip(late) { return late ? ' <span class="chip s-LATE">Late</span>' : ''; }
+  function lateChip(late) { return late ? ' <span class="chip s-LATE">' + t('Late') + '</span>' : ''; }
   function flagChips(flags) {
     var list = Array.isArray(flags) ? flags : String(flags || '').split(/\s+/).filter(String);
     return list.map(function (f) {
@@ -304,6 +307,7 @@
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function toast(t) {
     var el = document.createElement('div'); el.className = 'toast'; el.textContent = t;
+    el.textContent = trMsg(t);
     document.body.appendChild(el); setTimeout(function () { el.remove(); }, 3500);
   }
   function pad(n) { return ('0' + n).slice(-2); }
@@ -313,12 +317,211 @@
   function addDaysLocal(ds, n) { var p = ds.split('-'); var d = new Date(+p[0], +p[1] - 1, +p[2] + n); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function addMinutes(hhmm, add) { var t = +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5) + add; t = Math.min(t, 23 * 60 + 59); return pad(Math.floor(t / 60)) + ':' + pad(t % 60); }
   function monthName(ym) {
+    if (isHi()) return HI_MONTHS[+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
     return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
   }
   function fmtDate(ds) { return ds ? +ds.slice(8) + ' ' + monthName(ds.slice(0, 7)) : ''; }
   function checkAll(cls, on) { Array.prototype.forEach.call(document.querySelectorAll('.' + cls), function (c) { c.checked = on; }); }
   function checkedValues(cls) { return Array.prototype.filter.call(document.querySelectorAll('.' + cls), function (c) { return c.checked; }).map(function (c) { return c.value; }); }
-  function errBox(e) { return '<div class="msg err">' + esc(e.message || e) + '</div>'; }
+  function errBox(e) { return '<div class="msg err">' + esc(trMsg(e.message || e)) + '</div>'; }
+
+  /* ---------------- Language (Hindi / English) – employees only ---------------- */
+  var HI = {
+    // navigation & common
+    'Attendance': 'हाज़िरी', 'My Month': 'मेरा महीना', 'Requests': 'अनुरोध', 'PIN': 'पिन', 'Logout': 'लॉगआउट',
+    'Logout?': 'लॉगआउट करें?', 'Loading…': 'लोड हो रहा है…', 'Try again': 'फिर से कोशिश करें', 'Updating…': 'अपडेट हो रहा है…',
+    'Cancel': 'रद्द करें', 'Close': 'बंद करें', 'Retry': 'फिर से कोशिश करें', 'View': 'देखें', 'Reload': 'रीलोड करें',
+    // statuses
+    'Present': 'उपस्थित', 'Working': 'काम पर', 'Half Day': 'आधा दिन', 'Absent': 'अनुपस्थित', 'Leave': 'छुट्टी',
+    'Week Off': 'साप्ताहिक छुट्टी', 'Holiday': 'अवकाश', 'Worked on Off-day': 'छुट्टी के दिन काम', 'Not Marked': 'दर्ज नहीं',
+    'Not Joined': 'शामिल नहीं', 'Pending': 'लंबित', 'Approved': 'स्वीकृत', 'Rejected': 'अस्वीकृत', 'Cancelled': 'रद्द',
+    'Active': 'चालू', 'Paused': 'रुका हुआ', 'Closed': 'बंद', 'Late': 'देर से',
+    // PIN
+    'Change PIN': 'पिन बदलें', 'Current PIN': 'मौजूदा पिन', 'New PIN (4–6 digits)': 'नया पिन (4–6 अंक)', 'Repeat new PIN': 'नया पिन दोबारा लिखें',
+    'The new PINs do not match.': 'नए पिन मेल नहीं खाते।', 'PIN changed': 'पिन बदल गया',
+    // home
+    '⚠ You did not check out': '⚠ आपने चेक-आउट नहीं किया',
+    '{date} · checked in {time}': '{date} · चेक-इन {time}',
+    'missed.one': 'आधी रात को आपका चेक-आउट अपने-आप कर दिया गया। एडमिन के ठीक करने तक यह दिन चिह्नित रहेगा। अपने असली चेक-आउट समय के साथ सुधार अनुरोध भेजें।',
+    'missed.many': 'आधी रात को आपका चेक-आउट अपने-आप कर दिया गया। एडमिन के ठीक करने तक ये दिन चिह्नित रहेंगे। अपने असली चेक-आउट समय के साथ सुधार अनुरोध भेजें।',
+    'Send correction': 'सुधार भेजें', 'Shift starts {time}': 'शिफ्ट शुरू: {time}', 'Today': 'आज',
+    'Check-in': 'चेक-इन', 'Check-out': 'चेक-आउट', 'Worked': 'काम किया',
+    'marked.today': 'आज आपको <b>{status}</b> दर्ज किया गया है। अगर आप काम पर हैं, तो चेक-इन करने से यह बदल जाएगा।',
+    'CHECK IN': 'चेक-इन करें', 'CHECK OUT': 'चेक-आउट करें', 'CHECK OUT (night shift)': 'चेक-आउट करें (नाइट शिफ्ट)',
+    'open.prev': 'आपने {date} को <b>{time}</b> बजे चेक-इन किया था और अभी तक चेक-आउट नहीं किया है।',
+    '✓ Attendance complete for today': '✓ आज की हाज़िरी पूरी हो गई',
+    'badtime': '<b>⚠ आपके फ़ोन का समय सही नहीं है।</b><br>फ़ोन की <b>सेटिंग्स → दिनांक और समय</b> में जाकर <b>"स्वचालित दिनांक और समय"</b> और <b>"स्वचालित समय क्षेत्र"</b> चालू करें। फिर रीलोड दबाएँ।',
+    'pending.requests': '📝 आपके <b>{n}</b> अनुरोध लंबित हैं।',
+    'home.info': '📍 हाज़िरी लगाने के लिए आपको ऑफिस से <b>{r} मीटर</b> के अंदर होना ज़रूरी है। GPS / लोकेशन चालू रखें और पूछे जाने पर लोकेशन की अनुमति दें।',
+    'home.selfie': ' चेक-इन के समय सेल्फी ज़रूरी है।',
+    'home.forgot': ' चेक-इन या चेक-आउट भूल गए? <b>अनुरोध</b> का उपयोग करें।',
+    // check-in flow
+    'Check In': 'चेक-इन', 'Check Out': 'चेक-आउट', 'Location': 'लोकेशन', 'Selfie': 'सेल्फी',
+    'Getting your location… keep this screen open': 'आपकी लोकेशन ली जा रही है… यह स्क्रीन खुली रखें',
+    '{d} m from office · accuracy ±{a} m': 'ऑफिस से {d} मीटर · सटीकता ±{a} मीटर',
+    'Retake': 'दोबारा लें', '📷 Take Selfie': '📷 सेल्फी लें', 'After location is verified': 'लोकेशन की जाँच के बाद',
+    'Saving…': 'सेव हो रहा है…', 'Confirm Check-In': 'चेक-इन पक्का करें', 'Confirm Check-Out': 'चेक-आउट पक्का करें',
+    '📸 Capture': '📸 फ़ोटो लें', 'Camera is starting, try again': 'कैमरा चालू हो रहा है, फिर से कोशिश करें',
+    'Could not read the photo. Please try again.': 'फ़ोटो नहीं पढ़ी जा सकी। कृपया फिर से कोशिश करें।',
+    'Checked in at {time}': '{time} बजे चेक-इन हो गया', ' (Late)': ' (देर से)',
+    'Checked out at {time} · Worked {w}': '{time} बजे चेक-आउट हो गया · काम किया {w}',
+    'Office location is not set yet. Please contact admin.': 'ऑफिस की लोकेशन अभी सेट नहीं है। कृपया एडमिन से संपर्क करें।',
+    'Live camera is not supported in this browser.': 'इस ब्राउज़र में लाइव कैमरा नहीं चलता।',
+    'Camera permission was not given.': 'कैमरे की अनुमति नहीं दी गई।',
+    ' Allow camera access for this site in your browser settings and try again.': ' ब्राउज़र की सेटिंग्स में इस साइट के लिए कैमरे की अनुमति दें और फिर से कोशिश करें।',
+    // month
+    'Tap any day to add or change its entry': 'किसी भी दिन पर टैप करके एंट्री जोड़ें या बदलें',
+    'All': 'सभी', 'No check-out': 'चेक-आउट नहीं', 'Attendance (summary)': 'हाज़िरी',
+    'missed.days': '⚠ {n} दिन बिना चेक-आउट के',
+    'missed.days.note': 'आधी रात को अपने-आप बंद किया गया और एडमिन के ठीक करने तक {status} गिना जाएगा। कैलेंडर में इन्हें लाल घेरे से दिखाया गया है।',
+    'Absent (Leaves)': 'अनुपस्थित', 'Half Days': 'आधे दिन', 'Late · {m}': 'देर से · {m}', 'Early leaving': 'जल्दी गए',
+    'Net OT': 'कुल ओवरटाइम', 'Paid Leave': 'सवेतन छुट्टी', 'Week Off / Holiday': 'साप्ताहिक छुट्टी / अवकाश',
+    'Net OT = OT {g} − {cuts} = <b>{n}</b>': 'कुल ओवरटाइम = ओवरटाइम {g} − {cuts} = <b>{n}</b>', 'Late {m}': 'देर {m}', 'Early {m}': 'जल्दी {m}',
+    'ot.pending': '{m} ओवरटाइम एडमिन की मंज़ूरी का इंतज़ार कर रहा है (अभी गिना नहीं गया)।',
+    'Salary': 'वेतन', '🔒 Final': '🔒 अंतिम', 'Month in progress': 'महीना जारी है', 'Monthly Salary': 'मासिक वेतन',
+    'Salary till {date} ({e} of {d} days)': '{date} तक का वेतन ({d} में से {e} दिन)',
+    'Rate (salary ÷ {n} days): {day}/day · {hr}/hr · {min}/min': 'दर (वेतन ÷ {n} दिन): {day}/दिन · {hr}/घंटा · {min}/मिनट',
+    'OT ({m})': 'ओवरटाइम ({m})', 'Leaves ({n} days)': 'छुट्टियाँ ({n} दिन)', 'Half Days ({n})': 'आधे दिन ({n})',
+    'Late marks cut ({n} days)': 'देर से आने की कटौती ({n} दिन)', 'Advance recovery': 'एडवांस वसूली',
+    'No advance deduction this month{note}.': 'इस महीने एडवांस की कोई कटौती नहीं{note}।',
+    'Advance deduction changed to {amt} for this month{note}.': 'इस महीने एडवांस की कटौती {amt} की गई है{note}।',
+    'PF Employee (Basic Salary {b})': 'PF कर्मचारी (बेसिक वेतन {b})', 'PF Employer (company contribution)': 'PF नियोक्ता (कंपनी का योगदान)',
+    'Total Salary': 'कुल वेतन', 'Advance {amt}{note}: balance {bal} after this month': 'एडवांस {amt}{note}: इस महीने के बाद बाकी {bal}',
+    'prorated.note': 'वेतन, PF और बेसिक वेतन अभी तक बीते दिनों के हिसाब से दिखाए गए हैं। महीना खत्म होने तक ये हर दिन बढ़ेंगे।',
+    '📄 Payslip': '📄 वेतन पर्ची', 'Daily log': 'रोज़ का रिकॉर्ड', 'no check-out': 'चेक-आउट नहीं', ' (+1 day)': ' (+1 दिन)',
+    'OT {m}': 'ओवरटाइम {m}', 'OT {m} pending': 'ओवरटाइम {m} लंबित', 'Could not update: {e}': 'अपडेट नहीं हो सका: {e}',
+    // day popup
+    'No record': 'कोई रिकॉर्ड नहीं', '(approved, upcoming)': '(स्वीकृत, आने वाला)', 'In': 'अंदर', 'Out': 'बाहर', 'Early': 'जल्दी', 'OT': 'ओवरटाइम',
+    'day.missed': '⚠ चेक-आउट नहीं हुआ। आधी रात को अपने-आप बंद किया गया — एडमिन के ठीक करने का इंतज़ार है। अनुरोध से सुधार भेजें।',
+    'OT {m} waiting for approval': 'ओवरटाइम {m} मंज़ूरी का इंतज़ार कर रहा है', 'OT was not approved for this day': 'इस दिन का ओवरटाइम स्वीकृत नहीं हुआ',
+    'Note: {n}': 'नोट: {n}',
+    // payslip
+    '⬇ Download PDF': '⬇ PDF डाउनलोड करें', '🖨 Print': '🖨 प्रिंट करें',
+    'Printing is not available here. Use Download PDF.': 'यहाँ प्रिंट नहीं हो सकता। PDF डाउनलोड करें।',
+    // requests
+    'New request': 'नया अनुरोध', 'Type': 'प्रकार', 'Attendance correction (forgot check-in / check-out)': 'हाज़िरी सुधार (चेक-इन / चेक-आउट भूल गए)',
+    'Salary advance': 'वेतन एडवांस', 'Amount needed': 'कितनी राशि चाहिए', 'Deduct per month (suggested)': 'हर महीने कटौती (सुझाव)',
+    'e.g. 10000': 'जैसे 10000', 'e.g. 2000': 'जैसे 2000', 'From': 'से', 'To': 'तक', 'Leave type': 'छुट्टी का प्रकार',
+    'Paid leave': 'सवेतन छुट्टी', 'Unpaid leave': 'बिना वेतन छुट्टी', 'Date': 'तारीख', 'Correct check-in': 'सही चेक-इन समय',
+    'Correct check-out': 'सही चेक-आउट समय', 'Leave a time empty to keep what is already recorded.': 'जो समय पहले से सही दर्ज है, उसे खाली छोड़ दें।',
+    'Reason': 'कारण', 'Why?': 'क्यों?', 'Send request': 'अनुरोध भेजें', 'My requests': 'मेरे अनुरोध', 'No requests yet.': 'अभी कोई अनुरोध नहीं।',
+    'Admin: {r}': 'एडमिन: {r}', 'Request sent': 'अनुरोध भेज दिया गया', 'Cancel this request?': 'यह अनुरोध रद्द करें?',
+    'Salary advance {amt}{mon}': 'वेतन एडवांस {amt}{mon}', '/month': '/महीना',
+    'Paid leave · {d}': 'सवेतन छुट्टी · {d}', 'Unpaid leave · {d}': 'बिना वेतन छुट्टी · {d}', 'Correction · {d} · {i} → {o}': 'सुधार · {d} · {i} → {o}',
+    'today': 'आज', 'Leaves': 'छुट्टियाँ', '{n} days': '{n} दिन', 'Late marks cut': 'देर से आने की कटौती',
+    'PF Employee': 'PF कर्मचारी', 'PF Employer': 'PF नियोक्ता', 'Basic Salary {b}': 'बेसिक वेतन {b}', 'company contribution': 'कंपनी का योगदान',
+    'missed.day.note': 'आधी रात को अपने-आप बंद किया गया और एडमिन के ठीक करने तक {status} गिना जाएगा। कैलेंडर में इसे लाल घेरे से दिखाया गया है।'
+  };
+
+  /** English text for the keyed (longer) messages above. */
+  var EN = {
+    'missed.one': 'You were checked out automatically at midnight. This day is marked until an admin fixes it. Send a correction with your real check-out time.',
+    'missed.many': 'You were checked out automatically at midnight. These days are marked until an admin fixes them. Send a correction with your real check-out time.',
+    'marked.today': 'You are marked <b>{status}</b> today. If you are at work, checking in will replace it.',
+    'open.prev': 'You checked in on {date} at <b>{time}</b> and have not checked out yet.',
+    'badtime': '<b>⚠ Your phone time is not correct.</b><br>Open phone <b>Settings → Date &amp; time</b> and turn ON ' +
+      '<b>"Automatic date &amp; time"</b> and <b>"Automatic time zone"</b>. Then tap Reload.',
+    'pending.requests': '📝 You have <b>{n}</b> pending request(s).',
+    'home.info': '📍 You must be within <b>{r} m</b> of the office to mark attendance. Keep GPS / Location ON and allow location access when asked.',
+    'home.selfie': ' A selfie is required at check-in.',
+    'home.forgot': ' Forgot to check in or out? Use <b>Requests</b>.',
+    'missed.days': '⚠ {n} day(s) without check-out',
+    'missed.days.note': 'Auto-closed at midnight and counted as {status} until an admin clears them. They have a red outline in the calendar.',
+    'missed.day.note': 'Auto-closed at midnight and counted as {status} until an admin clears it. It has a red outline in the calendar.',
+    'ot.pending': '{m} OT is waiting for admin approval (not counted yet).',
+    'prorated.note': 'Salary, PF and Basic Salary are shown only for the days passed so far. They grow every day until the month ends.',
+    'day.missed': '⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it. Send a correction from Requests.',
+    'Attendance (summary)': 'Attendance'
+  };
+
+  /** Hindi is used only for employees who switched to it; admins always see English. */
+  function isHi() {
+    var role = S.profile ? S.profile.role : (S.token ? load('att_role') : null); // att_role: before the first server answer
+    return load('att_lang') === 'hi' && role === 'EMPLOYEE';
+  }
+
+  /** Translates an English text (or key) and fills {placeholders}. */
+  function t(en, vars) {
+    var s = (isHi() && HI[en] !== undefined) ? HI[en] : (EN[en] !== undefined ? EN[en] : en);
+    if (vars) Object.keys(vars).forEach(function (k) { s = s.split('{' + k + '}').join(vars[k]); });
+    return s;
+  }
+
+  /** Messages that come from the server, in Hindi when the employee chose Hindi. */
+  var HI_MSG = [
+    [/^You are (\d+) m from the office\. You must be within (\d+) m( to mark attendance)?\.$/, 'आप ऑफिस से $1 मीटर दूर हैं। हाज़िरी के लिए आपको $2 मीटर के अंदर होना चाहिए।'],
+    [/^GPS signal is weak \(±(\d+) m\)\..*$/, 'GPS सिग्नल कमज़ोर है (±$1 मीटर)। खिड़की के पास या खुली जगह पर जाकर फिर से कोशिश करें।'],
+    [/^Location not received\..*$/, 'लोकेशन नहीं मिली। GPS चालू करें और लोकेशन की अनुमति दें।'],
+    [/^Location permission denied\..*$/, 'लोकेशन की अनुमति नहीं दी गई। ब्राउज़र की सेटिंग्स में इस साइट के लिए लोकेशन की अनुमति दें और फिर से कोशिश करें।'],
+    [/^Could not get your location\..*$/, 'आपकी लोकेशन नहीं मिल सकी। GPS चालू करें और फिर से कोशिश करें।'],
+    [/^This browser does not support location\.$/, 'यह ब्राउज़र लोकेशन नहीं दे सकता।'],
+    [/^You have already checked in today\.$/, 'आप आज पहले ही चेक-इन कर चुके हैं।'],
+    [/^You have not checked in today\.$/, 'आपने आज चेक-इन नहीं किया है।'],
+    [/^You have already checked out today \(at (.+)\)\.$/, 'आप आज पहले ही चेक-आउट कर चुके हैं ($1 बजे)।'],
+    [/^Selfie missing\..*$/, 'सेल्फी नहीं है। चेक-इन के लिए सेल्फी लें।'],
+    [/^Your phone time is not correct\..*$/, 'आपके फ़ोन का समय सही नहीं है। फ़ोन की सेटिंग्स → दिनांक और समय में "स्वचालित दिनांक और समय" और "स्वचालित समय क्षेत्र" चालू करें, फिर ऐप दोबारा खोलें।'],
+    [/^Please reload the app and try again\.$/, 'कृपया ऐप रीलोड करके फिर से कोशिश करें।'],
+    [/^Office location is not set\..*$/, 'ऑफिस की लोकेशन सेट नहीं है। एडमिन से संपर्क करें।'],
+    [/^Session expired\..*$/, 'सेशन खत्म हो गया। कृपया फिर से लॉगिन करें।'],
+    [/^Current PIN is wrong\.$/, 'मौजूदा पिन गलत है।'],
+    [/^PIN must be 4 to 6 digits\.$/, 'पिन 4 से 6 अंकों का होना चाहिए।'],
+    [/^Please write a reason\.$/, 'कृपया कारण लिखें।'],
+    [/^Choose the date\.$/, 'तारीख चुनें।'],
+    [/^You can only request for dates from (.+) onwards\.$/, 'आप सिर्फ़ $1 या उसके बाद की तारीखों के लिए अनुरोध कर सकते हैं।'],
+    [/^"To" date must be on or after "From" date\.$/, '"तक" की तारीख "से" की तारीख के बराबर या बाद की होनी चाहिए।'],
+    [/^Leave can be requested at most 90 days ahead\.$/, 'छुट्टी ज़्यादा से ज़्यादा 90 दिन पहले माँगी जा सकती है।'],
+    [/^Corrections are only for past days or today\.$/, 'सुधार सिर्फ़ बीते दिनों या आज के लिए हो सकता है।'],
+    [/^Enter the correct check-in and\/or check-out time\.$/, 'सही चेक-इन और/या चेक-आउट समय डालें।'],
+    [/^You already have a pending request for this date\.$/, 'इस तारीख के लिए आपका एक अनुरोध पहले से लंबित है।'],
+    [/^You already have a pending advance request\.$/, 'आपका एक एडवांस अनुरोध पहले से लंबित है।'],
+    [/^Enter the advance amount you need\.$/, 'आपको कितना एडवांस चाहिए, वह राशि डालें।'],
+    [/^Enter a valid monthly deduction.*$/, 'हर महीने की सही कटौती डालें (या खाली छोड़ दें)।'],
+    [/^Only pending requests can be cancelled\.$/, 'सिर्फ़ लंबित अनुरोध ही रद्द किए जा सकते हैं।'],
+    [/^Payroll for (.+) is locked\..*$/, '$1 का वेतन लॉक हो चुका है। एडमिन से संपर्क करें।'],
+    [/^No internet connection\..*$/, 'इंटरनेट कनेक्शन नहीं है। मोबाइल डेटा / Wi-Fi जाँचें और फिर से कोशिश करें।'],
+    [/^No internet connection, or the server could not be reached\..*$/, 'इंटरनेट नहीं है या सर्वर तक नहीं पहुँच सके। फिर से कोशिश करें।'],
+    [/^The server is busy.*$/, 'सर्वर व्यस्त है। थोड़ी देर बाद फिर से कोशिश करें।'],
+    [/^The server did not answer in time\..*$/, 'सर्वर ने समय पर जवाब नहीं दिया। फिर से कोशिश करें।']
+  ];
+  function trMsg(msg) {
+    if (!isHi()) return msg;
+    for (var i = 0; i < HI_MSG.length; i++) if (HI_MSG[i][0].test(msg)) return msg.replace(HI_MSG[i][0], HI_MSG[i][1]);
+    return msg;
+  }
+
+  var HI_MONTHS = ['जनवरी', 'फ़रवरी', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'];
+  var HI_DAYS = ['रविवार', 'सोमवार', 'मंगलवार', 'बुधवार', 'गुरुवार', 'शुक्रवार', 'शनिवार'];
+  var HI_DOW = ['र', 'सो', 'मं', 'बु', 'गु', 'शु', 'श'];
+  var SHORT_HI = { PRESENT: 'उप', WORKING: 'काम', HALF_DAY: '½', ABSENT: 'अनु', LEAVE: 'छु', WEEK_OFF: 'सा.छु',
+    HOLIDAY: 'अव', OFF_WORK: 'छु.का', NOT_MARKED: '', NOT_JOINED: '–', UPCOMING: '' };
+  /** e.g. 'शनिवार, 10 अक्टूबर 2026' for 'yyyy-MM-dd'. */
+  function hiDateLabel(ds) {
+    var p = ds.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return HI_DAYS[d.getDay()] + ', ' + (+p[2]) + ' ' + HI_MONTHS[+p[1] - 1] + ' ' + p[0];
+  }
+
+  /** English | हिंदी switch (employees only). */
+  function langSwitch() {
+    if (!S.profile || S.profile.role !== 'EMPLOYEE') return '';
+    var hi = load('att_lang') === 'hi';
+    return '<div class="lang"><button class="' + (hi ? '' : 'on') + '" onclick="setLang(\'en\')">English</button>' +
+      '<button class="' + (hi ? 'on' : '') + '" onclick="setLang(\'hi\')">हिंदी</button></div>';
+  }
+  function setLang(l) {
+    store('att_lang', l);
+    applyLang();
+    if (S.tab === 'home' && S.home) renderHome(); else go(S.tab);
+  }
+  /** Header and bottom-navigation labels. */
+  function applyLang() {
+    document.documentElement.lang = isHi() ? 'hi' : 'en';
+    $('btnPin').textContent = t('PIN');
+    $('btnLogout').textContent = t('Logout');
+    $('navHome').textContent = t('Attendance');
+    $('navMonth').textContent = t('My Month');
+    $('navReq').textContent = t('Requests');
+  }
+
 
   /*
    * Two ways to reach the server:
@@ -422,6 +625,7 @@
   /* ---------------- Login & PIN ---------------- */
   function showLogin() {
     S.token = null; store('att_token', null);
+    S.profile = null; store('att_role', null); applyLang(); // the login screen is always English
     S.home = null; S.monthCache = {}; S.prefetchedHome = null;
     $('appView').classList.add('hidden'); $('loadingView').classList.add('hidden');
     $('loginView').classList.remove('hidden');
@@ -434,7 +638,7 @@
     var id = $('empId').value.trim(), pin = $('pin').value.trim();
     $('loginBtn').disabled = true; $('loginMsg').innerHTML = '';
     api('login', id, pin).then(function (r) {
-      S.token = r.token; S.profile = r.profile;
+      S.token = r.token; S.profile = r.profile; store('att_role', r.profile.role);
       store('att_token', r.token); store('att_emp', id.toUpperCase());
       S.prefetchedHome = r.home || null;
       startApp();
@@ -444,29 +648,30 @@
   });
 
   function doLogout() {
-    if (!confirm('Logout?')) return;
+    if (!confirm(t('Logout?'))) return;
     api('logout', S.token).catch(function () {});
     showLogin();
   }
 
   function openChangePin() {
-    openModal('<h2 style="margin-top:0">Change PIN</h2>' +
-      '<div class="field"><label>Current PIN</label><input id="cpOld" type="password" inputmode="numeric"></div>' +
-      '<div class="field"><label>New PIN (4–6 digits)</label><input id="cpNew" type="password" inputmode="numeric"></div>' +
-      '<div class="field"><label>Repeat new PIN</label><input id="cpNew2" type="password" inputmode="numeric"></div>' +
-      '<button class="btn" id="cpBtn" onclick="changePin()">Change PIN</button><button class="btn ghost" onclick="closeModal()">Cancel</button><div id="cpMsg"></div>');
+    openModal('<h2 style="margin-top:0">' + t('Change PIN') + '</h2>' +
+      '<div class="field"><label>' + t('Current PIN') + '</label><input id="cpOld" type="password" inputmode="numeric"></div>' +
+      '<div class="field"><label>' + t('New PIN (4–6 digits)') + '</label><input id="cpNew" type="password" inputmode="numeric"></div>' +
+      '<div class="field"><label>' + t('Repeat new PIN') + '</label><input id="cpNew2" type="password" inputmode="numeric"></div>' +
+      '<button class="btn" id="cpBtn" onclick="changePin()">' + t('Change PIN') + '</button><button class="btn ghost" onclick="closeModal()">' + t('Cancel') + '</button><div id="cpMsg"></div>');
   }
   function changePin() {
-    if ($('cpNew').value !== $('cpNew2').value) { $('cpMsg').innerHTML = errBox('The new PINs do not match.'); return; }
+    if ($('cpNew').value !== $('cpNew2').value) { $('cpMsg').innerHTML = errBox(t('The new PINs do not match.')); return; }
     $('cpBtn').disabled = true;
     api('changePin', S.token, $('cpOld').value, $('cpNew').value)
-      .then(function () { closeModal(); toast('PIN changed'); })
+      .then(function () { closeModal(); toast(t('PIN changed')); })
       .catch(function (e) { $('cpBtn').disabled = false; $('cpMsg').innerHTML = errBox(e); });
   }
 
   function startApp() {
     $('loginView').classList.add('hidden'); $('loadingView').classList.add('hidden');
     $('appView').classList.remove('hidden');
+    applyLang();
     go('home');
   }
 
@@ -484,11 +689,11 @@
   }
 
   function setLoading(msg) {
-    $('content').innerHTML = '<div class="card center"><div class="spinner"></div> <span class="muted">' + esc(msg || 'Loading…') + '</span></div>';
+    $('content').innerHTML = '<div class="card center"><div class="spinner"></div> <span class="muted">' + esc(msg || t('Loading…')) + '</span></div>';
   }
   function setError(err, retry) {
     $('content').innerHTML = '<div class="card">' + errBox(err) +
-      (retry ? '<button class="btn ghost" onclick="' + retry + '">Try again</button>' : '') + '</div>';
+      (retry ? '<button class="btn ghost" onclick="' + retry + '">' + t('Try again') + '</button>' : '') + '</div>';
   }
 
   /* ---------------- Home / check-in ---------------- */
@@ -506,6 +711,8 @@
   function showHome(h, sentAt) {
       S.homeStale = false;
       S.home = h; S.profile = h.profile;
+      store('att_role', h.profile.role);
+      applyLang();
       S.homeLoadedAt = Date.now();
       S.homeLoadedPhoneEpoch = Math.round((sentAt + S.homeLoadedAt) / 2); // phone time at the moment the server answered
       $('hdrName').textContent = h.profile.name;
@@ -545,47 +752,43 @@
 
     var html = '';
     if (h.missedCheckouts && h.missedCheckouts.length) {
-      html += '<div class="card alert"><h2>⚠ You did not check out</h2>' + h.missedCheckouts.map(function (x) {
-        return '<div>' + esc(fmtDate(x.date)) + ' · checked in ' + esc(x.in) + '</div>';
-      }).join('') + '<p class="small" style="margin:8px 0 0">You were checked out automatically at midnight. ' +
-        (h.missedCheckouts.length > 1 ? 'These days are' : 'This day is') + ' marked until an admin fixes ' + (h.missedCheckouts.length > 1 ? 'them' : 'it') +
-        '. Send a correction with your real check-out time.</p>' +
-        '<button class="btn red" onclick="go(\'requests\')">Send correction</button></div>';
+      html += '<div class="card alert"><h2>' + t('⚠ You did not check out') + '</h2>' + h.missedCheckouts.map(function (x) {
+        return '<div>' + t('{date} · checked in {time}', { date: esc(fmtDate(x.date)), time: esc(x.in) }) + '</div>';
+      }).join('') + '<p class="small" style="margin:8px 0 0">' + t(h.missedCheckouts.length > 1 ? 'missed.many' : 'missed.one') + '</p>' +
+        '<button class="btn red" onclick="go(\'requests\')">' + t('Send correction') + '</button></div>';
     }
     if (h.adminMissed) {
       html += '<div class="card"><div class="row"><span>⚠ <b>' + h.adminMissed + '</b> missed check-out(s) to clear.</span><button class="link" onclick="S.admin.tab=\'today\';go(\'admin\')">Open</button></div></div>';
     }
-    html += '<div class="card center">' +
-      '<div class="muted">' + esc(h.todayLabel) + '</div>' +
+    html += '<div class="card center">' + langSwitch() +
+      '<div class="muted">' + esc(isHi() ? hiDateLabel(h.today) : h.todayLabel) + '</div>' +
       '<div class="clock" id="clock">--:--</div>' +
-      '<div>' + (h.offType ? chip(h.offType) + ' ' : '') + 'Shift starts ' + esc(h.shiftStart) + '</div>' +
+      '<div>' + (h.offType ? chip(h.offType) + ' ' : '') + t('Shift starts {time}', { time: esc(h.shiftStart) }) + '</div>' +
       '</div>';
 
-    html += '<div class="card"><div class="row"><h2 style="margin:0">Today</h2><div>' + chip(d.status) + lateChip(d.late) + '</div></div>';
+    html += '<div class="card"><div class="row"><h2 style="margin:0">' + t('Today') + '</h2><div>' + chip(d.status) + lateChip(d.late) + '</div></div>';
     html += '<div class="kv" style="margin-top:12px">' +
-      '<div><b>' + esc(r && r.in || '--:--') + '</b><span>Check-in</span></div>' +
-      '<div><b>' + esc(r && r.out || '--:--') + '</b><span>Check-out</span></div>' +
-      '<div><b>' + (d.worked ? hrs(d.worked) : '–') + '</b><span>Worked' + (d.ot ? ' · OT ' + hrs(d.ot) : '') + '</span></div>' +
+      '<div><b>' + esc(r && r.in || '--:--') + '</b><span>' + t('Check-in') + '</span></div>' +
+      '<div><b>' + esc(r && r.out || '--:--') + '</b><span>' + t('Check-out') + '</span></div>' +
+      '<div><b>' + (d.worked ? hrs(d.worked) : '–') + '</b><span>' + t('Worked') + (d.ot ? ' · ' + t('OT {m}', { m: hrs(d.ot) }) : '') + '</span></div>' +
       '</div>';
 
     if (r && !checkedIn && r.override && state === 'in') {
-      html += '<div class="msg info">You are marked <b>' + esc(STATUS[r.override]) + '</b> today. If you are at work, checking in will replace it.</div>';
+      html += '<div class="msg info">' + t('marked.today', { status: esc(t(STATUS[r.override])) }) + '</div>';
     }
-    if (state === 'in') html += '<button class="big-btn" style="background:var(--green)" onclick="startFlow(\'in\')">CHECK IN</button>';
-    if (state === 'out') html += '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT</button>';
-    if (state === 'outPrev') html += '<div class="msg info">You checked in on ' + esc(fmtDate(prev.date)) + ' at <b>' + esc(prev.in) + '</b> and have not checked out yet.</div>' +
-      '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">CHECK OUT (night shift)</button>';
-    if (state === 'done') html += '<div class="msg ok center">✓ Attendance complete for today</div>';
-    if (state === 'refreshing') html += '<button class="big-btn" style="background:var(--gray)" disabled><span class="spinner"></span> Updating…</button>';
-    if (state === 'badtime') html += '<div class="msg err"><b>⚠ Your phone time is not correct.</b><br>Open phone <b>Settings → Date &amp; time</b> and turn ON ' +
-      '<b>"Automatic date &amp; time"</b> and <b>"Automatic time zone"</b>. Then tap Reload.</div>' +
-      '<button class="btn" onclick="loadHome()">Reload</button>';
+    if (state === 'in') html += '<button class="big-btn" style="background:var(--green)" onclick="startFlow(\'in\')">' + t('CHECK IN') + '</button>';
+    if (state === 'out') html += '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">' + t('CHECK OUT') + '</button>';
+    if (state === 'outPrev') html += '<div class="msg info">' + t('open.prev', { date: esc(fmtDate(prev.date)), time: esc(prev.in) }) + '</div>' +
+      '<button class="big-btn" style="background:var(--red)" onclick="startFlow(\'out\')">' + t('CHECK OUT (night shift)') + '</button>';
+    if (state === 'done') html += '<div class="msg ok center">' + t('✓ Attendance complete for today') + '</div>';
+    if (state === 'refreshing') html += '<button class="big-btn" style="background:var(--gray)" disabled><span class="spinner"></span> ' + t('Updating…') + '</button>';
+    if (state === 'badtime') html += '<div class="msg err">' + t('badtime') + '</div>' +
+      '<button class="btn" onclick="loadHome()">' + t('Reload') + '</button>';
     html += '</div><div id="flow"></div>';
 
-    if (h.pendingRequests) html += '<div class="card"><div class="row"><span>📝 You have <b>' + h.pendingRequests + '</b> pending request(s).</span><button class="link" onclick="go(\'requests\')">View</button></div></div>';
-    html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">📍 You must be within <b>' +
-      esc(h.office.radius) + ' m</b> of the office to mark attendance. Keep GPS / Location ON and allow location access when asked.' +
-      (h.selfieRequired ? ' A selfie is required at check-in.' : '') + ' Forgot to check in or out? Use <b>Requests</b>.</p></div>';
+    if (h.pendingRequests) html += '<div class="card"><div class="row"><span>' + t('pending.requests', { n: h.pendingRequests }) + '</span><button class="link" onclick="go(\'requests\')">' + t('View') + '</button></div></div>';
+    html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">' + t('home.info', { r: esc(h.office.radius) }) +
+      (h.selfieRequired ? t('home.selfie') : '') + t('home.forgot') + '</p></div>';
 
     $('content').innerHTML = html;
     tickClock();
@@ -613,7 +816,7 @@
       S.flow.locating = false;
       S.flow.pos = p;
       p.distance = distance(p.lat, p.lng, S.home.office.lat, S.home.office.lng);
-      if (S.home.office.lat == null || S.home.office.lng == null) S.flow.error = 'Office location is not set yet. Please contact admin.';
+      if (S.home.office.lat == null || S.home.office.lng == null) S.flow.error = t('Office location is not set yet. Please contact admin.');
       else if (p.accuracy > S.home.office.maxAccuracy) S.flow.error = 'GPS signal is weak (±' + Math.round(p.accuracy) + ' m). Move near a window or open area and try again.';
       else if (p.distance > S.home.office.radius) S.flow.error = 'You are ' + Math.round(p.distance) + ' m from the office. You must be within ' + S.home.office.radius + ' m.';
       renderFlow();
@@ -628,27 +831,27 @@
     var f = S.flow, el = $('flow'); if (!el || !f) return;
     var needSelfie = f.mode === 'in' && S.home.selfieRequired;
     var locOk = f.pos && !f.error;
-    var html = '<div class="card"><h2>' + (f.mode === 'in' ? 'Check In' : 'Check Out') + '</h2>';
+    var html = '<div class="card"><h2>' + t(f.mode === 'in' ? 'Check In' : 'Check Out') + '</h2>';
 
     html += '<div class="flow-step ' + (locOk ? 'done' : (f.error ? 'fail' : '')) + '"><div class="dot">' + (locOk ? '✓' : (f.error ? '!' : '1')) + '</div><div style="flex:1">' +
-      '<b>Location</b><br>';
-    if (f.locating) html += '<span class="spinner"></span> <span class="muted">Getting your location… keep this screen open</span>';
-    else if (f.pos) html += '<span class="muted">' + Math.round(f.pos.distance) + ' m from office · accuracy ±' + Math.round(f.pos.accuracy) + ' m</span>';
-    if (f.error) html += errBox(f.error) + '<button class="btn ghost" onclick="startFlow(\'' + f.mode + '\')">Retry</button>';
+      '<b>' + t('Location') + '</b><br>';
+    if (f.locating) html += '<span class="spinner"></span> <span class="muted">' + t('Getting your location… keep this screen open') + '</span>';
+    else if (f.pos) html += '<span class="muted">' + t('{d} m from office · accuracy ±{a} m', { d: Math.round(f.pos.distance), a: Math.round(f.pos.accuracy) }) + '</span>';
+    if (f.error) html += errBox(f.error) + '<button class="btn ghost" onclick="startFlow(\'' + f.mode + '\')">' + t('Retry') + '</button>';
     html += '</div></div>';
 
     if (needSelfie) {
-      html += '<div class="flow-step ' + (f.selfie ? 'done' : '') + '"><div class="dot">' + (f.selfie ? '✓' : '2') + '</div><div style="flex:1"><b>Selfie</b><br>';
-      if (f.selfie) html += '<img class="selfie-preview" src="' + f.selfie + '"><button class="btn ghost" onclick="takeSelfie()">Retake</button>';
-      else if (locOk) html += '<button class="btn" onclick="takeSelfie()">📷 Take Selfie</button>';
-      else html += '<span class="muted">After location is verified</span>';
+      html += '<div class="flow-step ' + (f.selfie ? 'done' : '') + '"><div class="dot">' + (f.selfie ? '✓' : '2') + '</div><div style="flex:1"><b>' + t('Selfie') + '</b><br>';
+      if (f.selfie) html += '<img class="selfie-preview" src="' + f.selfie + '"><button class="btn ghost" onclick="takeSelfie()">' + t('Retake') + '</button>';
+      else if (locOk) html += '<button class="btn" onclick="takeSelfie()">' + t('📷 Take Selfie') + '</button>';
+      else html += '<span class="muted">' + t('After location is verified') + '</span>';
       html += '</div></div>';
     }
 
     var ready = locOk && (!needSelfie || f.selfie);
     html += '<button class="btn ' + (f.mode === 'in' ? 'green' : 'red') + '" ' + (ready && !f.busy ? '' : 'disabled') + ' onclick="submitFlow()">' +
-      (f.busy ? '<span class="spinner"></span> Saving…' : (f.mode === 'in' ? 'Confirm Check-In' : 'Confirm Check-Out')) + '</button>';
-    html += '<button class="btn ghost" onclick="cancelFlow()" ' + (f.busy ? 'disabled' : '') + '>Cancel</button></div>';
+      (f.busy ? '<span class="spinner"></span> ' + t('Saving…') : t(f.mode === 'in' ? 'Confirm Check-In' : 'Confirm Check-Out')) + '</button>';
+    html += '<button class="btn ghost" onclick="cancelFlow()" ' + (f.busy ? 'disabled' : '') + '>' + t('Cancel') + '</button></div>';
     el.innerHTML = html;
   }
 
@@ -657,17 +860,17 @@
   /** Live front camera first; the phone's camera app (file input) only if live camera is not available and allowed. */
   function takeSelfie() {
     var live = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
-    if (!live) return fallbackSelfie('Live camera is not supported in this browser.');
+    if (!live) return fallbackSelfie(t('Live camera is not supported in this browser.'));
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 } }, audio: false }).then(function (stream) {
       S.camStream = stream;
-      openModal('<h2 style="margin-top:0">Selfie</h2><video id="camVideo" class="cam" autoplay playsinline muted></video>' +
-        '<button class="btn green" onclick="snapSelfie()">📸 Capture</button><button class="btn ghost" onclick="closeModal()">Cancel</button>');
+      openModal('<h2 style="margin-top:0">' + t('Selfie') + '</h2><video id="camVideo" class="cam" autoplay playsinline muted></video>' +
+        '<button class="btn green" onclick="snapSelfie()">' + t('📸 Capture') + '</button><button class="btn ghost" onclick="closeModal()">' + t('Cancel') + '</button>');
       $('camVideo').srcObject = stream;
-    }).catch(function () { fallbackSelfie('Camera permission was not given.'); });
+    }).catch(function () { fallbackSelfie(t('Camera permission was not given.')); });
   }
   function fallbackSelfie(why) {
     if (S.home.liveCameraOnly) {
-      S.flow.error = why + ' Allow camera access for this site in your browser settings and try again.';
+      S.flow.error = why + t(' Allow camera access for this site in your browser settings and try again.');
       renderFlow();
       return;
     }
@@ -675,7 +878,7 @@
   }
   function snapSelfie() {
     var v = $('camVideo');
-    if (!v || !v.videoWidth) return toast('Camera is starting, try again');
+    if (!v || !v.videoWidth) return toast(t('Camera is starting, try again'));
     var scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
     var c = document.createElement('canvas');
     c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
@@ -695,7 +898,7 @@
     if (!file || !S.flow) return;
     compressImage(file, 640, 0.72).then(function (dataUrl) {
       S.flow.selfie = dataUrl; renderFlow();
-    }).catch(function () { toast('Could not read the photo. Please try again.'); });
+    }).catch(function () { toast(t('Could not read the photo. Please try again.')); });
   });
 
   function submitFlow() {
@@ -708,8 +911,8 @@
     call.then(function (r) {
       S.flow = null; S.monthCache = {};
       toast(f.mode === 'in'
-        ? 'Checked in at ' + r.time + (r.late ? ' (Late)' : '')
-        : 'Checked out at ' + r.time + ' · Worked ' + hrs(r.worked) + (r.ot ? ' · OT ' + hrs(r.ot) : ''));
+        ? t('Checked in at {time}', { time: r.time }) + (r.late ? t(' (Late)') : '')
+        : t('Checked out at {time} · Worked {w}', { time: r.time, w: hrs(r.worked) }) + (r.ot ? ' · ' + t('OT {m}', { m: hrs(r.ot) }) : ''));
       loadHome();
     }).catch(function (err) {
       f.busy = false; f.error = err.message; renderFlow();
@@ -771,20 +974,20 @@
     S.month = ym;
     S.monthCache = S.monthCache || {};
     var cached = S.monthCache[ym];
-    if (cached) $('content').innerHTML = monthHtml(cached, 'loadMonth') + '<p class="center muted small" id="monthUpd"><span class="spinner"></span> Updating…</p>';
+    if (cached) $('content').innerHTML = monthHtml(cached, 'loadMonth') + '<p class="center muted small" id="monthUpd"><span class="spinner"></span> ' + t('Updating…') + '</p>';
     else setLoading();
     api('getMyMonth', S.token, ym).then(function (m) {
       S.monthCache[ym] = m;
       if (S.tab === 'month' && S.month === ym) $('content').innerHTML = monthHtml(m, 'loadMonth');
     }).catch(function (e) {
-      if (cached) { var u = $('monthUpd'); if (u) u.textContent = 'Could not update: ' + e.message; }
+      if (cached) { var u = $('monthUpd'); if (u) u.textContent = t('Could not update: {e}', { e: trMsg(e.message) }); }
       else setError(e, "loadMonth('" + ym + "')");
     });
   }
 
   /** Shared by employee view and admin employee detail. navFn is called with the new 'yyyy-MM'. */
   function monthHtml(m, navFn, navArg) {
-    var t = m.totals, p = m.pay, cur = m.currency;
+    var tt = m.totals, p = m.pay, cur = m.currency;
     var call = function (ym) { return navFn + '(' + (navArg ? "'" + navArg + "'," : '') + "'" + ym + "')"; };
     var callSel = navFn + '(' + (navArg ? "'" + navArg + "'," : '') + 'this.value)';
 
@@ -800,101 +1003,103 @@
       '<button onclick="' + call(ymShift(m.ym, 1)) + '">›</button></div>';
     if (navArg) html += '<p class="center" style="margin:8px 0 0"><b>' + esc(m.employee.name) + '</b> <span class="muted">' + esc(m.employee.id) + '</span>' +
       (m.locked ? ' <span class="chip s-LOCK">🔒 Locked</span>' : '') + '</p>' +
-      (m.canEdit ? '<p class="center muted small" style="margin:4px 0 0">Tap any day to add or change its entry</p>' : '');
+      (m.canEdit ? '<p class="center muted small" style="margin:4px 0 0">' + t('Tap any day to add or change its entry') + '</p>' : '');
 
     var f = S.calFilter || 'ALL';
-    html += '<div class="filters">' + [['ALL', 'All'], ['ABSENT', 'Absent'], ['HALF_DAY', 'Half Day'], ['OT', 'OT'], ['LATE', 'Late']].concat(t.missedCheckouts ? [['MISSED', 'No check-out']] : [])
-      .map(function (x) { return '<button class="fchip fc-' + x[0] + (f === x[0] ? ' on' : '') + '" onclick="setCalFilter(\'' + x[0] + '\')">' + x[1] + '</button>'; }).join('') + '</div>';
+    html += '<div class="filters">' + [['ALL', 'All'], ['ABSENT', 'Absent'], ['HALF_DAY', 'Half Day'], ['OT', 'OT'], ['LATE', 'Late']].concat(tt.missedCheckouts ? [['MISSED', 'No check-out']] : [])
+      .map(function (x) { return '<button class="fchip fc-' + x[0] + (f === x[0] ? ' on' : '') + '" onclick="setCalFilter(\'' + x[0] + '\')">' + t(x[1]) + '</button>'; }).join('') + '</div>';
 
     html += '<div class="cal f-' + f + '" id="cal">';
-    ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (d) { html += '<div class="h">' + d + '</div>'; });
+    (isHi() ? HI_DOW : ['S', 'M', 'T', 'W', 'T', 'F', 'S']).forEach(function (d) { html += '<div class="h">' + d + '</div>'; });
     for (var i = 0; i < m.days[0].dow; i++) html += '<div></div>';
     var todayStr = todayLocal();
     m.days.forEach(function (d, i) {
       var cls = 'd s-' + d.status + ' m-' + d.status + (d.otMin ? ' m-OT' : '') + (d.late ? ' m-LATE' : '') + (d.autoOut ? ' m-MISSED' : '') + (d.date === todayStr ? ' today' : '');
       html += '<button class="' + cls + '" onclick="showDay(' + i + ')">' + d.day +
-        '<small>' + (SHORT[d.status] || '') + '</small>' +
+        '<small>' + ((isHi() ? SHORT_HI : SHORT)[d.status] || '') + '</small>' +
         (d.otMin || d.otPending ? '<span class="ot-dot"' + (d.otPending ? ' style="opacity:.4"' : '') + '></span>' : '') +
         (d.late ? '<span class="late-dot"></span>' : '') + (navArg && d.flags && !d.autoOut ? '<span class="flag-dot"></span>' : '') + (d.autoOut ? '<span class="miss-mark">!</span>' : '') + '</button>';
     });
     html += '</div><div class="legend">' +
       ['PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'WEEK_OFF', 'HOLIDAY', 'OFF_WORK'].map(function (s) { return chip(s); }).join('') +
-      '<span class="chip s-OT">● OT</span><span class="chip s-LATE">● Late</span>' + (t.missedCheckouts ? '<span class="chip s-FLAG">! No check-out</span>' : '') + '</div></div>';
+      '<span class="chip s-OT">● ' + t('OT') + '</span><span class="chip s-LATE">● ' + t('Late') + '</span>' + (tt.missedCheckouts ? '<span class="chip s-FLAG">! ' + t('No check-out') + '</span>' : '') + '</div></div>';
 
     // Attendance summary
-    if (t.missedCheckouts) html += '<div class="card alert"><b style="color:var(--red)">⚠ ' + t.missedCheckouts + ' day(s) without check-out</b>' +
-      '<p class="small" style="margin:6px 0 0">Auto-closed at midnight and counted as ' + esc(STATUS[m.rules.noCheckoutStatus] || 'Half Day') + ' until an admin clears ' + (t.missedCheckouts > 1 ? 'them' : 'it') + '. They have a red outline in the calendar.</p></div>';
-    html += '<div class="card"><h2>Attendance</h2><div class="kv">' +
-      '<div><b>' + t.present + '</b><span>Present</span></div>' +
-      '<div class="k-red"><b>' + (t.absent + t.notJoined) + '</b><span>Absent (Leaves)</span></div>' +
-      '<div class="k-amber"><b>' + t.halfDay + '</b><span>Half Days</span></div>' +
-      '<div class="k-orange"><b>' + t.late + '</b><span>Late · ' + mins(t.lateMin) + '</span></div>' +
-      '<div class="k-orange"><b>' + mins(t.earlyMin) + '</b><span>Early leaving</span></div>' +
-      '<div class="k-ot"><b>' + mins(t.otMin) + '</b><span>Net OT</span></div>' +
-      '<div><b>' + t.leave + '</b><span>Paid Leave</span></div>' +
-      '<div><b>' + (t.weekOff + t.holiday) + '</b><span>Week Off / Holiday</span></div>' +
-      '<div><b>' + num(t.workedHours) + 'h</b><span>Worked</span></div>' +
+    var noOutStatus = STATUS[m.rules.noCheckoutStatus] || 'Half Day';
+    if (tt.missedCheckouts) html += '<div class="card alert"><b style="color:var(--red)">' + t('missed.days', { n: tt.missedCheckouts }) + '</b>' +
+      '<p class="small" style="margin:6px 0 0">' + t(tt.missedCheckouts > 1 ? 'missed.days.note' : 'missed.day.note', { status: esc(t(noOutStatus)) }) + '</p></div>';
+    html += '<div class="card"><h2>' + t('Attendance (summary)') + '</h2><div class="kv">' +
+      '<div><b>' + tt.present + '</b><span>' + t('Present') + '</span></div>' +
+      '<div class="k-red"><b>' + (tt.absent + tt.notJoined) + '</b><span>' + t('Absent (Leaves)') + '</span></div>' +
+      '<div class="k-amber"><b>' + tt.halfDay + '</b><span>' + t('Half Days') + '</span></div>' +
+      '<div class="k-orange"><b>' + tt.late + '</b><span>' + t('Late · {m}', { m: mins(tt.lateMin) }) + '</span></div>' +
+      '<div class="k-orange"><b>' + mins(tt.earlyMin) + '</b><span>' + t('Early leaving') + '</span></div>' +
+      '<div class="k-ot"><b>' + mins(tt.otMin) + '</b><span>' + t('Net OT') + '</span></div>' +
+      '<div><b>' + tt.leave + '</b><span>' + t('Paid Leave') + '</span></div>' +
+      '<div><b>' + (tt.weekOff + tt.holiday) + '</b><span>' + t('Week Off / Holiday') + '</span></div>' +
+      '<div><b>' + num(tt.workedHours) + 'h</b><span>' + t('Worked') + '</span></div>' +
       '</div>';
     var cuts = [];
-    if (m.rules.lateReducesOt && t.lateMin) cuts.push('Late ' + mins(t.lateMin));
-    if (m.rules.earlyReducesOt && t.earlyMin) cuts.push('Early ' + mins(t.earlyMin));
-    if (cuts.length) html += '<p class="muted small" style="margin:10px 0 0">Net OT = OT ' + mins(t.otMinGross) + ' − ' + cuts.join(' − ') + ' = <b>' + mins(t.otMin) + '</b></p>';
-    if (t.otPendingMin) html += '<div class="msg warn">' + mins(t.otPendingMin) + ' OT is waiting for admin approval (not counted yet).</div>';
+    if (m.rules.lateReducesOt && tt.lateMin) cuts.push(t('Late {m}', { m: mins(tt.lateMin) }));
+    if (m.rules.earlyReducesOt && tt.earlyMin) cuts.push(t('Early {m}', { m: mins(tt.earlyMin) }));
+    if (cuts.length) html += '<p class="muted small" style="margin:10px 0 0">' + t('Net OT = OT {g} − {cuts} = <b>{n}</b>', { g: mins(tt.otMinGross), cuts: cuts.join(' − '), n: mins(tt.otMin) }) + '</p>';
+    if (tt.otPendingMin) html += '<div class="msg warn">' + t('ot.pending', { m: mins(tt.otPendingMin) }) + '</div>';
     html += '</div>';
 
     // Salary (hidden for admins without "View Payroll")
     if (p) {
-      html += '<div class="card"><h2>Salary ' + (m.locked ? '<span class="chip s-LOCK">🔒 Final</span>' : (m.inProgress ? '<span class="chip s-WORKING">Month in progress</span>' : '')) +
+      html += '<div class="card"><h2>' + t('Salary') + ' ' + (m.locked ? '<span class="chip s-LOCK">' + t('🔒 Final') + '</span>' : (m.inProgress ? '<span class="chip s-WORKING">' + t('Month in progress') + '</span>' : '')) +
         (p.pf ? ' <span class="chip s-PF">PF</span>' : '') + '</h2>' +
         (p.prorated
-          ? payLine('Monthly Salary', '<span class="muted">' + money(p.salary, cur) + '</span>') +
-            payLine('Salary till ' + (t.elapsedUntil ? esc(fmtDate(t.elapsedUntil)) : 'today') + ' <span class="muted">(' + p.elapsedDays + ' of ' + p.daysInMonth + ' days)</span>', money(p.earned, cur), '', true)
-          : payLine('Monthly Salary', money(p.salary, cur), '', true)) +
-        '<div class="rate-line">Rate (salary ÷ ' + (m.rules.salaryDays || t.daysInMonth) + ' days): ' +
-          money(p.perDay, cur) + '/day · ' + money(p.hourly, cur) + '/hr · ' + money(p.perMin, cur) + '/min</div>' +
-        payLine('OT <span class="muted">(' + mins(t.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
-        payLine('Leaves <span class="muted">(' + (t.absent + t.notJoined) + ' days)</span>', '− ' + money(p.leaveDed, cur), 'red') +
-        payLine('Half Days <span class="muted">(' + t.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
-        (p.lateCutDed ? payLine('Late marks cut <span class="muted">(' + num(t.lateCutDays) + ' days)</span>', '− ' + money(p.lateCutDed, cur), 'red') : '') +
-        (p.advance ? payLine('Advance recovery', '− ' + money(p.advance, cur), 'red') : '');
+          ? payLine(t('Monthly Salary'), '<span class="muted">' + money(p.salary, cur) + '</span>') +
+            payLine(t('Salary till {date} ({e} of {d} days)', { date: tt.elapsedUntil ? esc(fmtDate(tt.elapsedUntil)) : t('today'), e: p.elapsedDays, d: p.daysInMonth })
+              .replace(/ ?\((.*)\)$/, ' <span class="muted">($1)</span>'), money(p.earned, cur), '', true)
+          : payLine(t('Monthly Salary'), money(p.salary, cur), '', true)) +
+        '<div class="rate-line">' + t('Rate (salary ÷ {n} days): {day}/day · {hr}/hr · {min}/min', { n: m.rules.salaryDays || tt.daysInMonth,
+          day: money(p.perDay, cur), hr: money(p.hourly, cur), min: money(p.perMin, cur) }) + '</div>' +
+        payLine(t('OT') + ' <span class="muted">(' + mins(tt.otMin) + (m.rules.otMultiplier != 1 ? ' × ' + m.rules.otMultiplier : '') + ')</span>', '+ ' + money(p.otPay, cur), 'green') +
+        payLine(t('Leaves') + ' <span class="muted">(' + t('{n} days', { n: tt.absent + tt.notJoined }) + ')</span>', '− ' + money(p.leaveDed, cur), 'red') +
+        payLine(t('Half Days') + ' <span class="muted">(' + tt.halfDay + ')</span>', '− ' + money(p.halfDayDed, cur), 'red') +
+        (p.lateCutDed ? payLine(t('Late marks cut') + ' <span class="muted">(' + t('{n} days', { n: num(tt.lateCutDays) }) + ')</span>', '− ' + money(p.lateCutDed, cur), 'red') : '') +
+        (p.advance ? payLine(t('Advance recovery'), '− ' + money(p.advance, cur), 'red') : '');
       (m.advances || []).forEach(function (a, ai) {
         if (navArg && m.canManageAdvance) {
           // Admins: change / skip this month's deduction right here.
           html += '<div class="row small" style="padding:6px 0;border-top:1px dashed var(--line)"><span>Advance ' + money(a.amount, cur) + (a.note ? ' <span class="muted">(' + esc(a.note) + ')</span>' : '') +
             ': ' + (a.wanted ? 'deduct ' + money(a.wanted, cur) : '<b>no deduction</b>') + ' this month' + (a.changed ? ' <span class="chip s-OT">changed</span>' : '') + '</span>' +
             '<button class="btn small" onclick="changeMonthAdv(' + ai + ')">Change</button></div>';
-        } else if (a.changed && !a.wanted) html += '<p class="muted small" style="margin:6px 0 0">No advance deduction this month' + (a.changeNote ? ' (' + esc(a.changeNote) + ')' : '') + '.</p>';
-        else if (a.changed) html += '<p class="muted small" style="margin:6px 0 0">Advance deduction changed to ' + money(a.wanted, cur) + ' for this month' + (a.changeNote ? ' (' + esc(a.changeNote) + ')' : '') + '.</p>';
+        } else if (a.changed && !a.wanted) html += '<p class="muted small" style="margin:6px 0 0">' + t('No advance deduction this month{note}.', { note: a.changeNote ? ' (' + esc(a.changeNote) + ')' : '' }) + '</p>';
+        else if (a.changed) html += '<p class="muted small" style="margin:6px 0 0">' + t('Advance deduction changed to {amt} for this month{note}.', { amt: money(a.wanted, cur), note: a.changeNote ? ' (' + esc(a.changeNote) + ')' : '' }) + '</p>';
       });
       if (p.pf) {
-        html += payLine('PF Employee <span class="muted">(Basic Salary ' + money(p.pfBankSalary, cur) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
-          payLine('PF Employer <span class="muted">(company contribution)</span>', money(p.pfEmployer, cur), 'blue');
+        html += payLine(t('PF Employee') + ' <span class="muted">(' + t('Basic Salary {b}', { b: money(p.pfBankSalary, cur) }) + ')</span>', '− ' + money(p.pfEmployee, cur), 'red') +
+          payLine(t('PF Employer') + ' <span class="muted">(' + t('company contribution') + ')</span>', money(p.pfEmployer, cur), 'blue');
       }
       if (p.pf && p.bank !== undefined) {
         // Only for admins with the "View Bank / Cash Split" permission.
         html += '<div class="split"><div><span>🏦 In Bank</span><b>' + money(p.bank, cur) + '</b></div>' +
           '<div><span>💵 In Cash</span><b>' + money(p.cash, cur) + '</b></div></div>';
       }
-      html += '<div class="total-tile"><span>Total Salary</span><b>' + money(p.net, cur) + '</b></div>';
+      html += '<div class="total-tile"><span>' + t('Total Salary') + '</span><b>' + money(p.net, cur) + '</b></div>';
       (m.advances || []).forEach(function (a) {
-        html += '<p class="muted small" style="margin:8px 0 0">Advance ' + money(a.amount, cur) + (a.note ? ' (' + esc(a.note) + ')' : '') +
-          ': balance ' + money(a.balanceAfter, cur) + ' after this month' + (a.status !== 'ACTIVE' ? ' · ' + esc(STATUS[a.status] || a.status) : '') + '</p>';
+        html += '<p class="muted small" style="margin:8px 0 0">' + t('Advance {amt}{note}: balance {bal} after this month', { amt: money(a.amount, cur),
+          note: a.note ? ' (' + esc(a.note) + ')' : '', bal: money(a.balanceAfter, cur) }) + (a.status !== 'ACTIVE' ? ' · ' + esc(t(STATUS[a.status] || a.status)) : '') + '</p>';
       });
-      if (p.prorated) html += '<p class="muted small" style="margin:8px 0 0">Salary, PF and Basic Salary are shown only for the days passed so far. They grow every day until the month ends.</p>';
-      if (!navArg || m.canPayslip) html += '<button class="btn ghost" onclick="openPayslip(\'' + m.ym + '\'' + (navArg ? ',\'' + esc(m.employee.id) + '\'' : '') + ')">📄 Payslip</button>';
+      if (p.prorated) html += '<p class="muted small" style="margin:8px 0 0">' + t('prorated.note') + '</p>';
+      if (!navArg || m.canPayslip) html += '<button class="btn ghost" onclick="openPayslip(\'' + m.ym + '\'' + (navArg ? ',\'' + esc(m.employee.id) + '\'' : '') + ')">' + t('📄 Payslip') + '</button>';
       html += '</div>';
     }
 
     var worked = m.days.filter(function (d) { return d.in; });
     if (worked.length) {
-      html += '<div class="card"><h2>Daily log</h2>';
+      html += '<div class="card"><h2>' + t('Daily log') + '</h2>';
       worked.slice().reverse().forEach(function (d) {
         html += '<div class="list-item"><div><div class="name">' + esc(fmtDate(d.date)) + '</div>' +
-          '<div class="sub">' + esc(d.in) + ' → ' + (d.autoOut ? '<b style="color:var(--red)">no check-out</b>' : esc(d.out || '—')) + (d.overnight ? ' (+1 day)' : '') + ' · ' + hrs(d.worked) +
-          (d.otMin ? ' · <span style="color:var(--ot)">OT ' + mins(d.otMin) + '</span>' : '') +
-          (d.otPending ? ' · <span style="color:var(--amber)">OT ' + mins(d.otPending) + ' pending</span>' : '') +
-          (d.lateMin ? ' · <span style="color:var(--orange)">Late ' + mins(d.lateMin) + '</span>' : '') +
-          (d.earlyMin ? ' · <span style="color:var(--orange)">Early ' + mins(d.earlyMin) + '</span>' : '') + '</div></div>' +
+          '<div class="sub">' + esc(d.in) + ' → ' + (d.autoOut ? '<b style="color:var(--red)">' + t('no check-out') + '</b>' : esc(d.out || '—')) + (d.overnight ? t(' (+1 day)') : '') + ' · ' + hrs(d.worked) +
+          (d.otMin ? ' · <span style="color:var(--ot)">' + t('OT {m}', { m: mins(d.otMin) }) + '</span>' : '') +
+          (d.otPending ? ' · <span style="color:var(--amber)">' + t('OT {m} pending', { m: mins(d.otPending) }) + '</span>' : '') +
+          (d.lateMin ? ' · <span style="color:var(--orange)">' + t('Late {m}', { m: mins(d.lateMin) }) + '</span>' : '') +
+          (d.earlyMin ? ' · <span style="color:var(--orange)">' + t('Early {m}', { m: mins(d.earlyMin) }) + '</span>' : '') + '</div></div>' +
           '<div class="right">' + chip(d.status) + lateChip(d.late) + '</div></div>';
       });
       html += '</div>';
@@ -916,17 +1121,16 @@
 
   function showDay(i) {
     var m = S.viewMonth, d = m.days[i];
-    var html = '<h2 style="margin-top:0">' + esc(fmtDate(d.date)) + '</h2><p>' + (chip(d.status) || '<span class="muted">No record</span>') + lateChip(d.late) +
-      (d.planned ? ' <span class="muted small">(approved, upcoming)</span>' : '') + '</p>';
+    var html = '<h2 style="margin-top:0">' + esc(fmtDate(d.date)) + '</h2><p>' + (chip(d.status) || '<span class="muted">' + t('No record') + '</span>') + lateChip(d.late) +
+      (d.planned ? ' <span class="muted small">' + t('(approved, upcoming)') + '</span>' : '') + '</p>';
     if (d.holidayName) html += '<p>🎉 ' + esc(d.holidayName) + '</p>';
-    if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>In</span></div><div><b>' + esc(d.out || '—') + (d.overnight ? '<small> +1</small>' : '') + '</b><span>Out</span></div><div><b>' + hrs(d.worked) + '</b><span>Worked</span></div></div>' +
-      '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>Late</span></div><div class="k-orange"><b>' + mins(d.earlyMin) + '</b><span>Early</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>OT</span></div></div>';
-    if (d.autoOut) html += '<div class="msg err">⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it.' +
-      (S.viewMonthAdmin ? '' : ' Send a correction from Requests.') + '</div>';
-    if (d.otPending) html += '<div class="msg warn">OT ' + mins(d.otPending) + ' waiting for approval</div>';
-    if (d.otRejected) html += '<div class="msg err">OT was not approved for this day</div>';
+    if (d.in) html += '<div class="kv"><div><b>' + esc(d.in) + '</b><span>' + t('In') + '</span></div><div><b>' + esc(d.out || '—') + (d.overnight ? '<small> +1</small>' : '') + '</b><span>' + t('Out') + '</span></div><div><b>' + hrs(d.worked) + '</b><span>' + t('Worked') + '</span></div></div>' +
+      '<div class="kv" style="margin-top:10px"><div class="k-orange"><b>' + mins(d.lateMin) + '</b><span>' + t('Late') + '</span></div><div class="k-orange"><b>' + mins(d.earlyMin) + '</b><span>' + t('Early') + '</span></div><div class="k-ot"><b>' + mins(d.otMin) + '</b><span>' + t('OT') + '</span></div></div>';
+    if (d.autoOut) html += '<div class="msg err">' + (S.viewMonthAdmin ? '⚠ No check-out. Auto-closed at midnight — waiting for an admin to clear it.' : t('day.missed')) + '</div>';
+    if (d.otPending) html += '<div class="msg warn">' + t('OT {m} waiting for approval', { m: mins(d.otPending) }) + '</div>';
+    if (d.otRejected) html += '<div class="msg err">' + t('OT was not approved for this day') + '</div>';
     if (S.viewMonthAdmin && d.flags) html += '<p>' + flagChips(d.flags) + '</p>';
-    if (d.note) html += '<div class="msg info">Note: ' + esc(d.note) + '</div>';
+    if (d.note) html += '<div class="msg info">' + t('Note: {n}', { n: esc(d.note) }) + '</div>';
     if (S.viewMonthAdmin && m.canApproveOt && d.otPending) {
       html += '<div class="btns"><button class="btn green" onclick="decideOt(\'' + esc(m.employee.id) + '\',\'' + d.date + '\',true)">Approve OT</button>' +
         '<button class="btn soft-red" onclick="decideOt(\'' + esc(m.employee.id) + '\',\'' + d.date + '\',false)">Reject OT</button></div>';
@@ -934,7 +1138,7 @@
     if (m.canEdit && d.date <= todayLocal() && d.date >= m.minDate) {
       html += '<button class="btn" onclick="openEntryEditor(\'' + esc(m.employee.id) + '\',\'' + d.date + '\')">✏️ ' + (d.in || d.status === 'LEAVE' ? 'Edit' : 'Add') + ' entry</button>';
     }
-    html += '<button class="btn ghost" onclick="closeModal()">Close</button>';
+    html += '<button class="btn ghost" onclick="closeModal()">' + t('Close') + '</button>';
     openModal(html);
   }
 
@@ -944,15 +1148,15 @@
     api('getPayslip', S.token, ym, empId || null, false).then(function (r) {
       S.slip = { ym: ym, empId: empId || null, fileName: r.fileName };
       openModal('<iframe id="slipFrame" class="slip"></iframe>' +
-        '<div class="btns"><button class="btn" id="slipPdf" onclick="downloadPayslip()">⬇ Download PDF</button>' +
-        '<button class="btn ghost" onclick="printPayslip()">🖨 Print</button></div>' +
-        '<button class="btn ghost" onclick="closeModal()">Close</button>');
+        '<div class="btns"><button class="btn" id="slipPdf" onclick="downloadPayslip()">' + t('⬇ Download PDF') + '</button>' +
+        '<button class="btn ghost" onclick="printPayslip()">' + t('🖨 Print') + '</button></div>' +
+        '<button class="btn ghost" onclick="closeModal()">' + t('Close') + '</button>');
       $('slipFrame').srcdoc = r.html;
-    }).catch(function (e) { openModal(errBox(e) + '<button class="btn ghost" onclick="closeModal()">Close</button>'); });
+    }).catch(function (e) { openModal(errBox(e) + '<button class="btn ghost" onclick="closeModal()">' + t('Close') + '</button>'); });
   }
   function printPayslip() {
     try { $('slipFrame').contentWindow.focus(); $('slipFrame').contentWindow.print(); }
-    catch (e) { toast('Printing is not available here. Use Download PDF.'); }
+    catch (e) { toast(t('Printing is not available here. Use Download PDF.')); }
   }
   function downloadPayslip() {
     var sl = S.slip; $('slipPdf').disabled = true;
@@ -974,39 +1178,39 @@
 
   function renderMyRequests(list) {
     var today = todayLocal();
-    var html = '<div class="card"><h2>New request</h2>' +
-      '<div class="field"><label>Type</label><select id="rqType" class="inp" onchange="toggleReqType()">' +
-      '<option value="LEAVE">Leave</option><option value="CORRECTION">Attendance correction (forgot check-in / check-out)</option>' +
-      '<option value="ADVANCE">Salary advance</option></select></div>' +
-      '<div id="rqAdv" class="hidden"><div class="grid2"><div class="field"><label>Amount needed</label><input id="rqAmt" class="inp" inputmode="decimal" placeholder="e.g. 10000"></div>' +
-      '<div class="field"><label>Deduct per month (suggested)</label><input id="rqMon" class="inp" inputmode="decimal" placeholder="e.g. 2000"></div></div></div>' +
-      '<div id="rqLeave"><div class="grid2"><div class="field"><label>From</label><input id="rqFrom" class="inp" type="date" value="' + today + '"></div>' +
-      '<div class="field"><label>To</label><input id="rqTo" class="inp" type="date" value="' + today + '"></div></div>' +
-      '<div class="field"><label>Leave type</label><select id="rqLeaveType" class="inp"><option value="PAID">Paid leave</option><option value="UNPAID">Unpaid leave</option></select></div></div>' +
-      '<div id="rqCorr" class="hidden"><div class="field"><label>Date</label><input id="rqDate" class="inp" type="date" max="' + today + '" value="' + today + '"></div>' +
-      '<div class="grid2"><div class="field"><label>Correct check-in</label><input id="rqIn" class="inp" type="time"></div>' +
-      '<div class="field"><label>Correct check-out</label><input id="rqOut" class="inp" type="time"></div></div>' +
-      '<p class="muted small" style="margin:6px 0 0">Leave a time empty to keep what is already recorded.</p></div>' +
-      '<div class="field"><label>Reason</label><textarea id="rqReason" class="inp" placeholder="Why?"></textarea></div>' +
-      '<button class="btn" id="rqBtn" onclick="sendRequest()">Send request</button><div id="rqMsg"></div></div>';
+    var html = '<div class="card"><h2>' + t('New request') + '</h2>' +
+      '<div class="field"><label>' + t('Type') + '</label><select id="rqType" class="inp" onchange="toggleReqType()">' +
+      '<option value="LEAVE">' + t('Leave') + '</option><option value="CORRECTION">' + t('Attendance correction (forgot check-in / check-out)') + '</option>' +
+      '<option value="ADVANCE">' + t('Salary advance') + '</option></select></div>' +
+      '<div id="rqAdv" class="hidden"><div class="grid2"><div class="field"><label>' + t('Amount needed') + '</label><input id="rqAmt" class="inp" inputmode="decimal" placeholder="' + t('e.g. 10000') + '"></div>' +
+      '<div class="field"><label>' + t('Deduct per month (suggested)') + '</label><input id="rqMon" class="inp" inputmode="decimal" placeholder="' + t('e.g. 2000') + '"></div></div></div>' +
+      '<div id="rqLeave"><div class="grid2"><div class="field"><label>' + t('From') + '</label><input id="rqFrom" class="inp" type="date" value="' + today + '"></div>' +
+      '<div class="field"><label>' + t('To') + '</label><input id="rqTo" class="inp" type="date" value="' + today + '"></div></div>' +
+      '<div class="field"><label>' + t('Leave type') + '</label><select id="rqLeaveType" class="inp"><option value="PAID">' + t('Paid leave') + '</option><option value="UNPAID">' + t('Unpaid leave') + '</option></select></div></div>' +
+      '<div id="rqCorr" class="hidden"><div class="field"><label>' + t('Date') + '</label><input id="rqDate" class="inp" type="date" max="' + today + '" value="' + today + '"></div>' +
+      '<div class="grid2"><div class="field"><label>' + t('Correct check-in') + '</label><input id="rqIn" class="inp" type="time"></div>' +
+      '<div class="field"><label>' + t('Correct check-out') + '</label><input id="rqOut" class="inp" type="time"></div></div>' +
+      '<p class="muted small" style="margin:6px 0 0">' + t('Leave a time empty to keep what is already recorded.') + '</p></div>' +
+      '<div class="field"><label>' + t('Reason') + '</label><textarea id="rqReason" class="inp" placeholder="' + t('Why?') + '"></textarea></div>' +
+      '<button class="btn" id="rqBtn" onclick="sendRequest()">' + t('Send request') + '</button><div id="rqMsg"></div></div>';
 
-    html += '<div class="card"><h2>My requests</h2>';
-    if (!list.length) html += '<p class="muted">No requests yet.</p>';
+    html += '<div class="card"><h2>' + t('My requests') + '</h2>';
+    if (!list.length) html += '<p class="muted">' + t('No requests yet.') + '</p>';
     list.forEach(function (r) {
       html += '<div class="list-item"><div><div class="name">' + reqTitle(r) + '</div>' +
         '<div class="sub">' + esc(r.reason) + '</div>' +
-        (r.remark ? '<div class="sub">Admin: ' + esc(r.remark) + '</div>' : '') + '</div>' +
+        (r.remark ? '<div class="sub">' + t('Admin: {r}', { r: esc(r.remark) }) + '</div>' : '') + '</div>' +
         '<div class="right">' + chip(r.status) +
-        (r.status === 'PENDING' ? '<div><button class="link" style="color:var(--red)" onclick="cancelMyRequest(\'' + esc(r.id) + '\')">Cancel</button></div>' : '') + '</div></div>';
+        (r.status === 'PENDING' ? '<div><button class="link" style="color:var(--red)" onclick="cancelMyRequest(\'' + esc(r.id) + '\')">' + t('Cancel') + '</button></div>' : '') + '</div></div>';
     });
     html += '</div>';
     $('content').innerHTML = html;
   }
 
   function reqTitle(r) {
-    if (r.type === 'ADVANCE') return 'Salary advance ' + money(r.amount, '₹') + (r.monthly ? ' · ' + money(r.monthly, '₹') + '/month' : '');
-    if (r.type === 'LEAVE') return (r.leaveType === 'UNPAID' ? 'Unpaid' : 'Paid') + ' leave · ' + esc(fmtDate(r.from)) + (r.to !== r.from ? ' – ' + esc(fmtDate(r.to)) : '');
-    return 'Correction · ' + esc(fmtDate(r.from)) + ' · ' + esc(r.in || '—') + ' → ' + esc(r.out || '—');
+    if (r.type === 'ADVANCE') return t('Salary advance {amt}{mon}', { amt: money(r.amount, '₹'), mon: r.monthly ? ' · ' + money(r.monthly, '₹') + t('/month') : '' });
+    if (r.type === 'LEAVE') return t(r.leaveType === 'UNPAID' ? 'Unpaid leave · {d}' : 'Paid leave · {d}', { d: esc(fmtDate(r.from)) + (r.to !== r.from ? ' – ' + esc(fmtDate(r.to)) : '') });
+    return t('Correction · {d} · {i} → {o}', { d: esc(fmtDate(r.from)), i: esc(r.in || '—'), o: esc(r.out || '—') });
   }
   function toggleReqType() {
     var t = $('rqType').value;
@@ -1022,11 +1226,11 @@
         ? { type: 'ADVANCE', amount: $('rqAmt').value, monthly: $('rqMon').value, reason: $('rqReason').value }
         : { type: 'CORRECTION', from: $('rqDate').value, in: $('rqIn').value, out: $('rqOut').value, reason: $('rqReason').value };
     $('rqBtn').disabled = true;
-    api('submitRequest', S.token, req).then(function (list) { renderMyRequests(list); toast('Request sent'); })
+    api('submitRequest', S.token, req).then(function (list) { renderMyRequests(list); toast(t('Request sent')); })
       .catch(function (e) { $('rqBtn').disabled = false; $('rqMsg').innerHTML = errBox(e); });
   }
   function cancelMyRequest(id) {
-    if (!confirm('Cancel this request?')) return;
+    if (!confirm(t('Cancel this request?'))) return;
     api('cancelRequest', S.token, id).then(renderMyRequests).catch(function (e) { toast(e.message); });
   }
 
