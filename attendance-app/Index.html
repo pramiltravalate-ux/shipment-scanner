@@ -277,7 +277,8 @@
   var FLAGS = {
     WEAK_GPS: 'Weak GPS', WEAK_GPS_OUT: 'Weak GPS at check-out', REPEAT_GPS: 'Same GPS as another day',
     SHARED_GPS: 'Same GPS as another person', NO_SELFIE: 'No selfie', NO_CHECKOUT: 'Did not check out',
-    PROXY: 'Check-in marked by someone else', PROXY_OUT: 'Check-out marked by someone else'
+    PROXY: 'Check-in marked by someone else', PROXY_OUT: 'Check-out marked by someone else',
+    OUTSIDE: 'Checked in outside office', OUTSIDE_OUT: 'Checked out outside office'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -298,12 +299,15 @@
     return list.map(function (f) {
       var who = f === 'PROXY' ? by.in : f === 'PROXY_OUT' ? by.out : null;
       if (who) return ' <span class="chip s-LEAVE">👤 ' + (f === 'PROXY' ? 'Check-in' : 'Check-out') + ' marked by ' + esc(who) + '</span>';
+      if (/^OUTSIDE/.test(f)) return ' <span class="chip s-LEAVE">📍 ' + esc(FLAGS[f]) + '</span>';
       return /^PROXY/.test(f) ? ' <span class="chip s-LEAVE">👤 ' + esc(FLAGS[f]) + '</span>' : ' <span class="chip s-FLAG">⚠ ' + esc(FLAGS[f] || f) + '</span>';
     }).join('');
   }
   function money(n, cur) {
     return (cur || '') + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
+  /** 850 → '850 m', 12345 → '12.3 km' */
+  function dist(m) { m = Number(m); return m >= 1000 ? (Math.round(m / 100) / 10) + ' km' : Math.round(m) + ' m'; }
   function num(n) { return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
   function hrs(n) { n = Number(n || 0); var h = Math.floor(n), m = Math.round((n - h) * 60); return h + 'h ' + (m < 10 ? '0' : '') + m + 'm'; }
   function mins(n) { n = Math.round(Number(n || 0)); var h = Math.floor(n / 60), m = n % 60; return h ? h + 'h ' + (m < 10 ? '0' : '') + m + 'm' : m + 'm'; }
@@ -356,6 +360,8 @@
     '✓ Attendance complete for today': '✓ आज की हाज़िरी पूरी हो गई',
     'badtime': '<b>⚠ आपके फ़ोन का समय सही नहीं है।</b><br>फ़ोन की <b>सेटिंग्स → दिनांक और समय</b> में जाकर <b>"स्वचालित दिनांक और समय"</b> और <b>"स्वचालित समय क्षेत्र"</b> चालू करें। फिर रीलोड दबाएँ।',
     'pending.requests': '📝 आपके <b>{n}</b> अनुरोध लंबित हैं।',
+    'home.anywhere': '📍 आप <b>कहीं से भी</b> हाज़िरी लगा सकते हैं (बाहर/आउटस्टेशन)। GPS / लोकेशन चालू रखें: हर चेक-इन और चेक-आउट के साथ आपकी लोकेशन दर्ज होती है।',
+    'Outside office · {d} away · allowed': 'ऑफिस से बाहर · {d} दूर · अनुमति है', 'Location recorded · allowed from anywhere': 'लोकेशन दर्ज · कहीं से भी अनुमति है',
     'home.info': '📍 हाज़िरी लगाने के लिए आपको ऑफिस से <b>{r} मीटर</b> के अंदर होना ज़रूरी है। GPS / लोकेशन चालू रखें और पूछे जाने पर लोकेशन की अनुमति दें।',
     'home.selfie': ' चेक-इन के समय सेल्फी ज़रूरी है।',
     'home.forgot': ' चेक-इन या चेक-आउट भूल गए? <b>अनुरोध</b> का उपयोग करें।',
@@ -442,6 +448,7 @@
     'badtime': '<b>⚠ Your phone time is not correct.</b><br>Open phone <b>Settings → Date &amp; time</b> and turn ON ' +
       '<b>"Automatic date &amp; time"</b> and <b>"Automatic time zone"</b>. Then tap Reload.',
     'pending.requests': '📝 You have <b>{n}</b> pending request(s).',
+    'home.anywhere': '📍 You can mark attendance <b>from anywhere</b> (outstation). Keep GPS / Location ON: your location is recorded with every check-in and check-out.',
     'home.info': '📍 You must be within <b>{r} m</b> of the office to mark attendance. Keep GPS / Location ON and allow location access when asked.',
     'home.selfie': ' A selfie is required at check-in.',
     'home.forgot': ' Forgot to check in or out? Use <b>Requests</b>.',
@@ -825,7 +832,7 @@
     html += '</div><div id="flow"></div>';
 
     if (h.pendingRequests) html += '<div class="card"><div class="row"><span>' + t('pending.requests', { n: h.pendingRequests }) + '</span><button class="link" onclick="go(\'requests\')">' + t('View') + '</button></div></div>';
-    html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">' + t('home.info', { r: esc(h.office.radius) }) +
+    html += '<div class="card"><p class="muted" style="margin:0;font-size:13px">' + (h.anywhere ? t('home.anywhere') : t('home.info', { r: esc(h.office.radius) })) +
       (h.selfieRequired ? t('home.selfie') : '') + t('home.forgot') + '</p></div>';
 
     $('content').innerHTML = html;
@@ -854,7 +861,8 @@
       S.flow.locating = false;
       S.flow.pos = p;
       p.distance = distance(p.lat, p.lng, S.home.office.lat, S.home.office.lng);
-      if (S.home.office.lat == null || S.home.office.lng == null) S.flow.error = t('Office location is not set yet. Please contact admin.');
+      if (S.home.anywhere) p.outside = S.home.office.lat == null || p.distance > S.home.office.radius || p.accuracy > S.home.office.maxAccuracy;
+      else if (S.home.office.lat == null || S.home.office.lng == null) S.flow.error = t('Office location is not set yet. Please contact admin.');
       else if (p.accuracy > S.home.office.maxAccuracy) S.flow.error = 'GPS signal is weak (±' + Math.round(p.accuracy) + ' m). Move near a window or open area and try again.';
       else if (p.distance > S.home.office.radius) S.flow.error = 'You are ' + Math.round(p.distance) + ' m from the office. You must be within ' + S.home.office.radius + ' m.';
       renderFlow();
@@ -874,6 +882,8 @@
     html += '<div class="flow-step ' + (locOk ? 'done' : (f.error ? 'fail' : '')) + '"><div class="dot">' + (locOk ? '✓' : (f.error ? '!' : '1')) + '</div><div style="flex:1">' +
       '<b>' + t('Location') + '</b><br>';
     if (f.locating) html += '<span class="spinner"></span> <span class="muted">' + t('Getting your location… keep this screen open') + '</span>';
+    else if (f.pos && f.pos.outside) html += '<span class="muted">' + (isFinite(f.pos.distance) ? t('Outside office · {d} away · allowed', { d: dist(f.pos.distance) })
+      : t('Location recorded · allowed from anywhere')) + '</span>';
     else if (f.pos) html += '<span class="muted">' + t('{d} m from office · accuracy ±{a} m', { d: Math.round(f.pos.distance), a: Math.round(f.pos.accuracy) }) + '</span>';
     if (f.error) html += errBox(f.error) + '<button class="btn ghost" onclick="startFlow(\'' + f.mode + '\')">' + t('Retry') + '</button>';
     html += '</div></div>';
@@ -1487,7 +1497,7 @@
       S.adminToday = r.list;
       r.list.forEach(function (e, i) {
         html += '<div class="list-item"><div><div class="name">' + esc(e.name) + ' <span class="muted" style="font-weight:400">' + esc(e.id) + '</span></div>' +
-          '<div class="sub">' + (e.in ? esc(e.in) + ' → ' + esc(e.out || '—') + (e.distance !== '' ? ' · ' + esc(e.distance) + ' m' : '') + (e.accuracy !== '' ? ' · ±' + esc(e.accuracy) + ' m' : '') : 'No check-in yet') + '</div>' +
+          '<div class="sub">' + (e.in ? esc(e.in) + ' → ' + esc(e.out || '—') + (e.distance !== '' ? ' · ' + esc(dist(e.distance)) : '') + (e.accuracy !== '' ? ' · ±' + esc(e.accuracy) + ' m' : '') : 'No check-in yet') + '</div>' +
           (e.flags.length ? '<div>' + flagChips(e.flags, e.markedBy) + '</div>' : '') +
           (e.hasSelfie ? '<button class="link" onclick="viewSelfie(' + i + ')">View selfie</button>' : '') +
           '</div><div class="right">' + chip(e.status) + lateChip(e.late) + '</div></div>';
@@ -1929,6 +1939,7 @@
       '<div class="field"><label>Phone</label><input id="sfPhone" class="inp" inputmode="tel" value="' + esc(e.phone) + '"></div>' +
       (isNew ? '<div class="field"><label>PIN (4–6 digits)</label><input id="sfPin" class="inp" inputmode="numeric"></div>' : '') +
       (S.staff.canSetRole && e.role !== 'SUPER_ADMIN' ? '<div class="field"><label>Role</label><select id="sfRole" class="inp"><option value="EMPLOYEE"' + (e.role === 'EMPLOYEE' ? ' selected' : '') + '>Employee</option><option value="ADMIN"' + (e.role === 'ADMIN' ? ' selected' : '') + '>Admin</option><option value="GUARD"' + (e.role === 'GUARD' ? ' selected' : '') + '>Guard (only marks others)</option></select></div>' : '') +
+      (e.role === 'GUARD' ? '' : '<label class="check" style="margin-top:10px"><input type="checkbox" id="sfAnywhere"' + (e.anywhere ? ' checked' : '') + '> Can mark from anywhere (outstation): no office distance check, location still recorded</label>') +
       (isNew ? '' : '<label class="check" style="margin-top:10px"><input type="checkbox" id="sfActive"' + (e.active ? ' checked' : '') + '> Active (untick when someone leaves the company)</label>') +
       '<button class="btn" id="sfSave" onclick="saveStaff(' + i + ')">Save</button>' +
       (isNew ? '' : '<div class="card" style="background:var(--bg);margin-top:16px"><b>Reset PIN</b><div class="row" style="margin-top:8px"><input id="sfNewPin" class="inp" inputmode="numeric" placeholder="New PIN"><button class="btn small" onclick="resetPin(\'' + esc(e.id) + '\')">Reset</button></div></div>') +
@@ -1941,6 +1952,7 @@
     var data = { isNew: isNew, id: isNew ? $('sfId').value : S.staff.list[i].id, name: $('sfName').value, salary: $('sfSalary').value,
       joinDate: $('sfJoin').value, phone: $('sfPhone').value };
     if (isNew) data.pin = $('sfPin').value; else data.active = $('sfActive').checked;
+    if ($('sfAnywhere')) data.anywhere = $('sfAnywhere').checked;
     if ($('sfRole')) data.role = $('sfRole').value;
     $('sfSave').disabled = true;
     api('adminSaveStaff', S.token, data).then(function (r) {
